@@ -1,4 +1,4 @@
-import LoginPage from "@/components/auth/login-page"
+import LoginPage from "../components/auth/login-page"
 
 export default function Home() {
   // This component now acts as the entry point for the login flow.
