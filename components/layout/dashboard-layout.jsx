@@ -11,7 +11,8 @@ import ClientsView from "@/components/clients/clients-view"
 import SessionsView from "@/components/sessions/sessions-view"
 import BillingView from "@/components/billing/billing-view"
 import ParentPortal from "@/components/portal/parent-portal"
-import { SidebarProvider } from "@/components/ui/sidebar" // Removed SidebarInset
+import StaffView from "@/components/staff/staff-view"
+import { SidebarProvider } from "@/components/ui/sidebar"
 import AppSidebar from "@/components/layout/app-sidebar"
 
 export default function DashboardLayout({ userRole }) {
@@ -38,6 +39,8 @@ export default function DashboardLayout({ userRole }) {
         return <ClientsView />
       case "sessions":
         return <SessionsView />
+      case "staff":
+        return <StaffView />
       case "billing":
         return <BillingView />
       case "portal":
@@ -48,11 +51,11 @@ export default function DashboardLayout({ userRole }) {
   }
 
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={true}>
       <AppSidebar userRole={userRole} currentView={currentView} setCurrentView={setCurrentView} />
-      <div className="flex-1">
+      <div className="w-full bg-gray-50 min-h-screen">
         <Header userRole={userRole} />
-        <main className="p-6">{renderContent()}</main>
+        <main className="p-6 bg-white">{renderContent()}</main>
       </div>
     </SidebarProvider>
   )

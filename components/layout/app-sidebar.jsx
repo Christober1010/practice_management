@@ -1,6 +1,17 @@
 "use client"
 
-import { Heart, LayoutDashboard, Calendar, Users, FileText, CreditCard, Baby, Settings, LogOut } from "lucide-react"
+import {
+  Heart,
+  LayoutDashboard,
+  Calendar,
+  Users,
+  FileText,
+  CreditCard,
+  Baby,
+  Settings,
+  LogOut,
+  UserCheck,
+} from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -23,7 +34,10 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
     ]
 
     if (userRole === "admin" || userRole === "bcba") {
-      baseItems.push({ id: "billing", label: "Billing", icon: CreditCard, color: "text-emerald-600" })
+      baseItems.push(
+        { id: "staff", label: "Staff", icon: UserCheck, color: "text-orange-600" },
+        { id: "billing", label: "Billing", icon: CreditCard, color: "text-emerald-600" },
+      )
     }
 
     if (userRole === "parent") {
@@ -53,7 +67,7 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
   }
 
   return (
-    <Sidebar collapsible="icon" className="shadow-xl border-r border-slate-200">
+    <Sidebar collapsible="icon" className="shadow-xl border-r border-slate-200 bg-white">
       {/* Logo Header */}
       <SidebarHeader className="bg-slate-50">
         <div className="flex items-center space-x-3">
@@ -77,13 +91,15 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
               return (
                 <SidebarMenuItem key={item.id}>
                   <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
-                    {/* Added event.preventDefault() to stop full page reloads */}
                     <a
                       href="#"
                       onClick={(e) => {
                         e.preventDefault()
                         setCurrentView(item.id)
                       }}
+                      className={`flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
+                        isActive ? "bg-teal-50 text-teal-700" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      }`}
                     >
                       <Icon className={`h-5 w-5 ${isActive ? "text-teal-600" : item.color}`} />
                       <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">{item.label}</span>
@@ -107,6 +123,7 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
                   e.preventDefault()
                   setCurrentView("settings")
                 }}
+                className="flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               >
                 <Settings className="h-5 w-5" />
                 <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">Settings</span>
@@ -121,6 +138,7 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
                   e.preventDefault()
                   setCurrentView("logout")
                 }}
+                className="flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               >
                 <LogOut className="h-5 w-5" />
                 <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">Sign Out</span>
