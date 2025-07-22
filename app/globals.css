@@ -59,3 +59,19 @@ body {
     color: hsl(var(--foreground));
   }
 }
+
+@keyframes shadowColor {
+  0% {
+    box-shadow: 0 4px 24px 0 rgba(137, 148, 13, 0.5); /* teal */
+  }
+  50% {
+    box-shadow: 0 4px 24px 0 rgba(59, 130, 246, 0.5); /* blue */
+  }
+  100% {
+    box-shadow: 0 4px 24px 0 rgba(13, 148, 136, 0.5); /* teal */
+  }
+}
+
+.animate-shadowColor {
+  animation: shadowColor 2s infinite linear;
+}

@@ -1,13 +1,15 @@
 "use client"
 
 import { useState } from "react"
+import { Toaster } from "react-hot-toast";
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Eye, EyeOff, Shield, Users, FileText, Heart } from "lucide-react"
 import DashboardLayout from "@/components/layout/dashboard-layout"
-
+import Image from "next/image"
+import img from "public/favicon.ico"
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [userRole, setUserRole] = useState("")
@@ -33,15 +35,16 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-teal-50 via-blue-50 to-indigo-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-teal-200 via-blue-200 to-indigo-200 flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
         {/* Logo and Header */}
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center space-x-2">
-            <div className="bg-teal-600 p-3 rounded-xl shadow-lg">
-              <Heart className="h-8 w-8 text-white" />
+            <div className="rounded-full shadow-3xl transition-shadow duration-700 animate-shadowColor">
+              {/* <Heart className="h-8 w-8 text-white" /> */}
+              <Image src={img} className="h-16 w-16 rounded-full" alt="logo"/>
             </div>
-            <div>
+            <div className="">
               <h1 className="text-3xl font-bold text-slate-800">ABA Connect</h1>
               <p className="text-sm text-teal-600 font-medium">Practice Management</p>
             </div>
@@ -163,6 +166,7 @@ export default function LoginPage() {
           <p>Your data is encrypted and protected with enterprise-grade security</p>
         </div>
       </div>
+      <Toaster position="bottom-right"/>
     </div>
   )
 }

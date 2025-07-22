@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge"
 import { Users, Plus, Search, Calendar, Edit, Archive, ArchiveRestore, Eye, Clock, MapPin } from "lucide-react"
 import AddStaffModal from "./add-staff-modal"
+import toast from "react-hot-toast"
 
 export default function StaffView() {
   const [searchTerm, setSearchTerm] = useState("")
@@ -159,7 +160,7 @@ export default function StaffView() {
   const handleArchiveStaff = (staffId) => {
     const member = staff.find((s) => s.id === staffId)
     if (!member) {
-      alert("Staff member not found")
+      toast.error("Staff member not found")
       return
     }
 

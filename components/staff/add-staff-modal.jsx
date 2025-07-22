@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
+import toast from "react-hot-toast"
 
 export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = null }) {
   const [formData, setFormData] = useState(() => ({
@@ -162,13 +163,13 @@ export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = 
       .map(([, label]) => label)
 
     if (missingFields.length > 0) {
-      alert(`Please fill in the following required fields: ${missingFields.join(", ")}`)
+      toast.error(`Please fill in the following required fields: ${missingFields.join(", ")}`)
       return
     }
 
     // Email validation
     if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      alert("Please enter a valid email address")
+      toast.error("Please enter a valid email address")
       return
     }
 

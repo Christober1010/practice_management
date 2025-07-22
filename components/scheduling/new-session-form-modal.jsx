@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import toast from "react-hot-toast"
 
 export default function NewSessionFormModal({ isOpen, onClose, onSave }) {
   const [clientName, setClientName] = useState("")
@@ -25,7 +26,7 @@ export default function NewSessionFormModal({ isOpen, onClose, onSave }) {
 
   const handleSubmit = () => {
     if (!clientName || !therapist || !sessionType || !date || !time || !duration || !location) {
-      alert("Please fill in all fields.")
+      toast.error("Please fill in all fields.")
       return
     }
 

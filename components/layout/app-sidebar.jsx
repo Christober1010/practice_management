@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import {
   Heart,
@@ -11,7 +11,7 @@ import {
   Settings,
   LogOut,
   UserCheck,
-} from "lucide-react"
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -22,57 +22,103 @@ import {
   SidebarMenuItem,
   SidebarRail,
   SidebarHeader,
-} from "@/components/ui/sidebar"
+} from "@/components/ui/sidebar";
+import img from "public/favicon.ico";
+import Image from "next/image";
 
 export default function AppSidebar({ userRole, currentView, setCurrentView }) {
   const getMenuItems = () => {
     const baseItems = [
-      { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, color: "text-teal-600" },
-      { id: "scheduling", label: "Scheduling", icon: Calendar, color: "text-blue-600" },
-      { id: "clients", label: "Clients", icon: Users, color: "text-indigo-600" },
-      { id: "sessions", label: "Sessions", icon: FileText, color: "text-purple-600" },
-    ]
+      {
+        id: "dashboard",
+        label: "Dashboard",
+        icon: LayoutDashboard,
+        color: "text-teal-600",
+      },
+      {
+        id: "scheduling",
+        label: "Scheduling",
+        icon: Calendar,
+        color: "text-blue-600",
+      },
+      {
+        id: "clients",
+        label: "Clients",
+        icon: Users,
+        color: "text-indigo-600",
+      },
+      {
+        id: "sessions",
+        label: "Sessions",
+        icon: FileText,
+        color: "text-purple-600",
+      },
+    ];
 
     if (userRole === "admin" || userRole === "bcba") {
       baseItems.push(
-        { id: "staff", label: "Staff", icon: UserCheck, color: "text-orange-600" },
-        { id: "billing", label: "Billing", icon: CreditCard, color: "text-emerald-600" },
-      )
+        {
+          id: "staff",
+          label: "Staff",
+          icon: UserCheck,
+          color: "text-orange-600",
+        },
+        {
+          id: "billing",
+          label: "Billing",
+          icon: CreditCard,
+          color: "text-emerald-600",
+        }
+      );
     }
 
     if (userRole === "parent") {
       return [
-        { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, color: "text-teal-600" },
+        {
+          id: "dashboard",
+          label: "Dashboard",
+          icon: LayoutDashboard,
+          color: "text-teal-600",
+        },
         { id: "portal", label: "My Child", icon: Baby, color: "text-pink-600" },
-        { id: "billing", label: "Billing", icon: CreditCard, color: "text-emerald-600" },
-      ]
+        {
+          id: "billing",
+          label: "Billing",
+          icon: CreditCard,
+          color: "text-emerald-600",
+        },
+      ];
     }
 
-    return baseItems
-  }
+    return baseItems;
+  };
 
   const getRoleColor = () => {
     switch (userRole) {
       case "admin":
-        return "bg-teal-600"
+        return "bg-teal-600";
       case "bcba":
-        return "bg-blue-600"
+        return "bg-blue-600";
       case "rbt":
-        return "bg-indigo-600"
+        return "bg-indigo-600";
       case "parent":
-        return "bg-emerald-600"
+        return "bg-emerald-600";
       default:
-        return "bg-teal-600"
+        return "bg-teal-600";
     }
-  }
+  };
 
   return (
-    <Sidebar collapsible="icon" className="shadow-xl border-r border-slate-200 bg-white">
+    <Sidebar
+      collapsible="icon"
+      className="shadow-xl border-r border-slate-200 bg-white"
+    >
       {/* Logo Header */}
       <SidebarHeader className="bg-slate-50">
         <div className="flex items-center space-x-3">
-          <div className={`${getRoleColor()} p-2 rounded-xl shadow-md`}>
-            <Heart className="h-6 w-6 text-white" />
+          <div className={`${getRoleColor()} p-0.5 rounded-full shadow-md`}>
+            {/* <Heart className="h-6 w-6 text-white" /> */}
+            <Image src={img} className="h-16 w-16 rounded-full" alt="logo" />
           </div>
           <span className="text-xl font-bold text-slate-800 group-data-[state=collapsed]/sidebar-wrapper:hidden">
             ABA Connect
@@ -85,28 +131,40 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
         <SidebarGroup>
           <SidebarMenu>
             {getMenuItems().map((item) => {
-              const Icon = item.icon
-              const isActive = currentView === item.id
+              const Icon = item.icon;
+              const isActive = currentView === item.id;
 
               return (
                 <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive}
+                    tooltip={item.label}
+                  >
                     <a
                       href="#"
                       onClick={(e) => {
-                        e.preventDefault()
-                        setCurrentView(item.id)
+                        e.preventDefault();
+                        setCurrentView(item.id);
                       }}
                       className={`flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
-                        isActive ? "bg-teal-50 text-teal-700" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                        isActive
+                          ? "bg-teal-50 text-teal-700"
+                          : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                       }`}
                     >
-                      <Icon className={`h-5 w-5 ${isActive ? "text-teal-600" : item.color}`} />
-                      <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">{item.label}</span>
+                      <Icon
+                        className={`h-5 w-5 ${
+                          isActive ? "text-teal-600" : item.color
+                        }`}
+                      />
+                      <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">
+                        {item.label}
+                      </span>
                     </a>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              )
+              );
             })}
           </SidebarMenu>
         </SidebarGroup>
@@ -120,13 +178,15 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
               <a
                 href="#"
                 onClick={(e) => {
-                  e.preventDefault()
-                  setCurrentView("settings")
+                  e.preventDefault();
+                  setCurrentView("settings");
                 }}
                 className="flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               >
                 <Settings className="h-5 w-5" />
-                <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">Settings</span>
+                <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">
+                  Settings
+                </span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -135,13 +195,15 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
               <a
                 href="#"
                 onClick={(e) => {
-                  e.preventDefault()
-                  setCurrentView("logout")
+                  e.preventDefault();
+                  setCurrentView("logout");
                 }}
                 className="flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               >
                 <LogOut className="h-5 w-5" />
-                <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">Sign Out</span>
+                <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">
+                  Sign Out
+                </span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -149,5 +211,5 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
-  )
+  );
 }
