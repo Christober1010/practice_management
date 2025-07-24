@@ -13,40 +13,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { PlusCircle, MinusCircle } from "lucide-react"
 
-// Define the shape of the form data
-// Note: In .jsx, these are for conceptual clarity, not strict type enforcement
-/**
- * @typedef {object} ClientFormData
- * @property {string} [id] - Optional for new clients, required for editing
- * @property {string} firstName
- * @property {string} lastName
- * @property {string} dob - YYYY-MM-DD format
- * @property {string} address
- * @property {string} parentGuardianName
- * @property {string} parentEmail
- * @property {string} parentPhone
- * @property {string} insuranceProvider
- * @property {string} insuranceId
- * @property {string} groupNumber
- * @property {"Active" | "Inactive" | "On Hold" | "Discharged"} status
- * @property {string} authorizationNumber
- * @property {string} billingCodes
- * @property {number} unitsApproved
- * @property {string} startDate - YYYY-MM-DD format
- * @property {string} endDate - YYYY-MM-DD format
- * @property {boolean} [archived] - Optional, handled by parent
- */
-
-/**
- * @param {object} props
- * @param {boolean} props.isOpen
- * @param {function(): void} props.onClose
- * @param {(clientData: ClientFormData) => void} props.onSave
- * @param {ClientFormData | null} props.editingClient
- */
 export default function AddClientModal({ isOpen, onClose, onSave, editingClient }) {
-  const [formData, setFormData] = useState({
+  const initialFormData = {
     firstName: "",
     lastName: "",
     dob: "",
@@ -55,43 +25,30 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
     parentEmail: "",
     parentPhone: "",
     insuranceProvider: "",
-    insuranceId: "",
-    groupNumber: "",
+    subscriberId: "", // Renamed
+    groupNumber: "", // Renamed
     status: "Active",
-    authorizationNumber: "",
-    billingCodes: "",
-    unitsApproved: 0,
-    startDate: "",
-    endDate: "",
-  })
+    authorizations: [{ authNumber: "", billingCodes: "", unitsApproved: 0, startDate: "", endDate: "" }], // Initialize with one empty auth
+  }
+
+  const [formData, setFormData] = useState(initialFormData)
 
   // Effect to populate form when editingClient changes
   useEffect(() => {
     if (editingClient) {
       setFormData({
         ...editingClient,
-        unitsApproved: Number(editingClient.unitsApproved), // Ensure number type
+        // Ensure authorizations array is always present and has correct types
+        authorizations: editingClient.authorizations?.length
+          ? editingClient.authorizations.map((auth) => ({
+              ...auth,
+              unitsApproved: Number(auth.unitsApproved),
+            }))
+          : [{ authNumber: "", billingCodes: "", unitsApproved: 0, startDate: "", endDate: "" }], // Default if empty
       })
     } else {
       // Reset form for new client
-      setFormData({
-        firstName: "",
-        lastName: "",
-        dob: "",
-        address: "",
-        parentGuardianName: "",
-        parentEmail: "",
-        parentPhone: "",
-        insuranceProvider: "",
-        insuranceId: "",
-        groupNumber: "",
-        status: "Active",
-        authorizationNumber: "",
-        billingCodes: "",
-        unitsApproved: 0,
-        startDate: "",
-        endDate: "",
-      })
+      setFormData(initialFormData)
     }
   }, [editingClient, isOpen]) // Re-run when modal opens or editingClient changes
 
@@ -107,6 +64,32 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
     setFormData((prev) => ({
       ...prev,
       [field]: value,
+    }))
+  }
+
+  const handleAuthorizationChange = (index, field, value) => {
+    const newAuthorizations = [...formData.authorizations]
+    newAuthorizations[index][field] = field === "unitsApproved" ? Number(value) : value
+    setFormData((prev) => ({
+      ...prev,
+      authorizations: newAuthorizations,
+    }))
+  }
+
+  const addAuthorization = () => {
+    setFormData((prev) => ({
+      ...prev,
+      authorizations: [
+        ...prev.authorizations,
+        { authNumber: "", billingCodes: "", unitsApproved: 0, startDate: "", endDate: "" },
+      ],
+    }))
+  }
+
+  const removeAuthorization = (index) => {
+    setFormData((prev) => ({
+      ...prev,
+      authorizations: prev.authorizations.filter((_, i) => i !== index),
     }))
   }
 
@@ -128,53 +111,53 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
         <form onSubmit={handleSubmit} className="grid gap-4 py-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="firstName">First Name</Label>
+              <Label htmlFor="firstName">Client First Name</Label>
               <Input id="firstName" value={formData.firstName} onChange={handleChange} required />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="lastName">Last Name</Label>
+              <Label htmlFor="lastName">Client Last Name</Label>
               <Input id="lastName" value={formData.lastName} onChange={handleChange} required />
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="dob">Date of Birth</Label>
+            <Label htmlFor="dob">DOB</Label>
             <Input id="dob" type="date" value={formData.dob} onChange={handleChange} required />
           </div>
           <div className="space-y-2">
             <Label htmlFor="address">Address</Label>
-            <Input id="address" value={formData.address} onChange={handleChange} />
+            <Input id="address" value={formData.address} onChange={handleChange} required />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="parentGuardianName">Parent/Guardian Name</Label>
-              <Input id="parentGuardianName" value={formData.parentGuardianName} onChange={handleChange} />
+              <Input id="parentGuardianName" value={formData.parentGuardianName} onChange={handleChange} required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="parentEmail">Parent Email</Label>
-              <Input id="parentEmail" type="email" value={formData.parentEmail} onChange={handleChange} />
+              <Input id="parentEmail" type="email" value={formData.parentEmail} onChange={handleChange} required />
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="parentPhone">Parent Phone</Label>
-            <Input id="parentPhone" type="tel" value={formData.parentPhone} onChange={handleChange} />
+            <Label htmlFor="parentPhone">Parent Phone Number</Label>
+            <Input id="parentPhone" type="tel" value={formData.parentPhone} onChange={handleChange} required />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="insuranceProvider">Insurance Provider</Label>
-              <Input id="insuranceProvider" value={formData.insuranceProvider} onChange={handleChange} />
+              <Label htmlFor="insuranceProvider">Insurance Provider Name</Label>
+              <Input id="insuranceProvider" value={formData.insuranceProvider} onChange={handleChange} required />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="insuranceId">Insurance ID</Label>
-              <Input id="insuranceId" value={formData.insuranceId} onChange={handleChange} />
+              <Label htmlFor="subscriberId">Subscriber Id</Label>
+              <Input id="subscriberId" value={formData.subscriberId} onChange={handleChange} required />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="groupNumber">Group Number</Label>
-              <Input id="groupNumber" value={formData.groupNumber} onChange={handleChange} />
+              <Input id="groupNumber" value={formData.groupNumber} onChange={handleChange} required />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="status">Status</Label>
+              <Label htmlFor="status">Client Status</Label>
               <Select value={formData.status} onValueChange={(val) => handleSelectChange(val, "status")}>
                 <SelectTrigger id="status">
                   <SelectValue placeholder="Select status" />
@@ -188,30 +171,79 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="authorizationNumber">Authorization Number</Label>
-              <Input id="authorizationNumber" value={formData.authorizationNumber} onChange={handleChange} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="billingCodes">Billing Codes</Label>
-              <Input id="billingCodes" value={formData.billingCodes} onChange={handleChange} />
-            </div>
+
+          {/* Authorization Information List */}
+          <div className="space-y-4 border p-4 rounded-md bg-slate-50">
+            <h3 className="text-lg font-semibold text-slate-800 flex items-center justify-between">
+              Authorization Information
+              <Button type="button" variant="ghost" size="sm" onClick={addAuthorization}>
+                <PlusCircle className="h-4 w-4 mr-1" /> Add Authorization
+              </Button>
+            </h3>
+            {formData.authorizations.map((auth, index) => (
+              <div key={index} className="grid grid-cols-1 gap-4 border p-4 rounded-md bg-white shadow-sm">
+                <div className="flex justify-between items-center">
+                  <h4 className="font-medium text-slate-700">Authorization #{index + 1}</h4>
+                  {formData.authorizations.length > 1 && (
+                    <Button type="button" variant="ghost" size="sm" onClick={() => removeAuthorization(index)}>
+                      <MinusCircle className="h-4 w-4 text-red-500" />
+                    </Button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`authNumber-${index}`}>Authorization Number</Label>
+                  <Input
+                    id={`authNumber-${index}`}
+                    value={auth.authNumber}
+                    onChange={(e) => handleAuthorizationChange(index, "authNumber", e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`billingCodes-${index}`}>Billing Codes</Label>
+                  <Input
+                    id={`billingCodes-${index}`}
+                    value={auth.billingCodes}
+                    onChange={(e) => handleAuthorizationChange(index, "billingCodes", e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor={`unitsApproved-${index}`}>Units Approved (per 15 min)</Label>
+                  <Input
+                    id={`unitsApproved-${index}`}
+                    type="number"
+                    value={auth.unitsApproved}
+                    onChange={(e) => handleAuthorizationChange(index, "unitsApproved", e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor={`startDate-${index}`}>Start Date</Label>
+                    <Input
+                      id={`startDate-${index}`}
+                      type="date"
+                      value={auth.startDate}
+                      onChange={(e) => handleAuthorizationChange(index, "startDate", e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`endDate-${index}`}>End Date</Label>
+                    <Input
+                      id={`endDate-${index}`}
+                      type="date"
+                      value={auth.endDate}
+                      onChange={(e) => handleAuthorizationChange(index, "endDate", e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="unitsApproved">Units Approved (per 15 min)</Label>
-            <Input id="unitsApproved" type="number" value={formData.unitsApproved} onChange={handleChange} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="startDate">Start Date</Label>
-              <Input id="startDate" type="date" value={formData.startDate} onChange={handleChange} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="endDate">End Date</Label>
-              <Input id="endDate" type="date" value={formData.endDate} onChange={handleChange} />
-            </div>
-          </div>
+
           <DialogFooter>
             <Button type="submit">{editingClient ? "Save Changes" : "Add Client"}</Button>
           </DialogFooter>

@@ -26,7 +26,41 @@ import {
 import img from "public/favicon.ico";
 import Image from "next/image";
 
+import { useState, useEffect, useRef } from "react";
+
 export default function AppSidebar({ userRole, currentView, setCurrentView }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const lastScrollY = useRef(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      // Only run on mobile view (adjust breakpoint as needed)
+      if (window.innerWidth > 768) return;
+
+      const currentScrollY = window.scrollY;
+
+      if (currentScrollY < lastScrollY.current) {
+        // Scroll UP - show sidebar
+        setCollapsed(false);
+      } else if (currentScrollY > lastScrollY.current) {
+        // Scroll DOWN - hide sidebar
+        setCollapsed(true);
+      }
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener("scroll", handleScroll);
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
+  const handleMenuSelect = (id) => {
+    setCurrentView(id);
+    setCollapsed(true); // Collapse sidebar after selection
+  };
+
   const getMenuItems = () => {
     const baseItems = [
       {
@@ -111,13 +145,14 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
   return (
     <Sidebar
       collapsible="icon"
+      collapsed={collapsed}
+      onCollapseChange={setCollapsed}
       className="shadow-xl border-r border-slate-200 bg-white"
     >
       {/* Logo Header */}
       <SidebarHeader className="bg-slate-50">
         <div className="flex items-center space-x-3">
           <div className={`${getRoleColor()} p-0.5 rounded-full shadow-md`}>
-            {/* <Heart className="h-6 w-6 text-white" /> */}
             <Image src={img} className="h-16 w-16 rounded-full" alt="logo" />
           </div>
           <span className="text-xl font-bold text-slate-800 group-data-[state=collapsed]/sidebar-wrapper:hidden">
@@ -136,16 +171,12 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
 
               return (
                 <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={isActive}
-                    tooltip={item.label}
-                  >
+                  <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
                     <a
                       href="#"
                       onClick={(e) => {
                         e.preventDefault();
-                        setCurrentView(item.id);
+                        handleMenuSelect(item.id);
                       }}
                       className={`flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
                         isActive
@@ -154,9 +185,7 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
                       }`}
                     >
                       <Icon
-                        className={`h-5 w-5 ${
-                          isActive ? "text-teal-600" : item.color
-                        }`}
+                        className={`h-5 w-5 ${isActive ? "text-teal-600" : item.color}`}
                       />
                       <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">
                         {item.label}
@@ -184,9 +213,7 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
                 className="flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               >
                 <Settings className="h-5 w-5" />
-                <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">
-                  Settings
-                </span>
+                <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">Settings</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -201,14 +228,13 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
                 className="flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               >
                 <LogOut className="h-5 w-5" />
-                <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">
-                  Sign Out
-                </span>
+                <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">Sign Out</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
+
       <SidebarRail />
     </Sidebar>
   );

@@ -1,282 +1,321 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Users, Plus, Search, Calendar, Edit, Archive, ArchiveRestore } from "lucide-react"
-import AddClientModal from "./add-client-modal"
-import toast from "react-hot-toast"
-import { Toaster } from "react-hot-toast" // Import Toaster component
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import {
+  Users,
+  Plus,
+  Search,
+  Calendar,
+  Edit,
+  Archive,
+  ArchiveRestore,
+  ChevronDown,
+  ChevronUp,
+} from "lucide-react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import AddClientModal from "./add-client-modal";
+import toast, { Toaster } from "react-hot-toast";
 
-// Helper to generate a simple UUID (for client-side ID generation)
 function generateUUID() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    var r = (Math.random() * 16) | 0,
-      v = c == "x" ? r : (r & 0x3) | 0x8
-    return v.toString(16)
-  })
+    const r = (Math.random() * 16) | 0,
+      v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
-// Define the Client interface for conceptual clarity in .jsx
-/**
- * @typedef {object} Client
- * @property {string} id
- * @property {string} firstName
- * @property {string} lastName
- * @property {string} fullName - Derived from firstName and lastName
- * @property {string} dob - YYYY-MM-DD format
- * @property {string} address
- * @property {string} parentGuardianName
- * @property {string} parentEmail
- * @property {string} parentPhone
- * @property {string} insuranceProvider
- * @property {string} insuranceId
- * @property {string} groupNumber
- * @property {"Active" | "Inactive" | "On Hold" | "Discharged"} status
- * @property {string} authorizationNumber
- * @property {string} billingCodes
- * @property {number} unitsApproved
- * @property {string} startDate - YYYY-MM-DD format
- * @property {string} endDate - YYYY-MM-DD format
- * @property {boolean} archived
- */
-
 export default function ClientsView() {
-  const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [showArchived, setShowArchived] = useState(false)
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  /** @type {Client | null} */
-  const [editingClient, setEditingClient] = useState(null)
-  /** @type {Client[]} */
-  const [clients, setClients] = useState([])
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [showArchived, setShowArchived] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingClient, setEditingClient] = useState(null);
+  const [clients, setClients] = useState([]);
+  const [expandedClients, setExpandedClients] = useState(new Set()); // Track expanded client IDs
+
+  const activeClientCount = clients.filter((client) => !client.archived).length;
+  const archivedClientCount = clients.filter(
+    (client) => client.archived
+  ).length;
 
   const filteredClients = clients.filter((client) => {
-    const lowerCaseSearchTerm = searchTerm.toLowerCase()
+    const matchesSearch = Object.values(client).some((value) =>
+      typeof value === "string"
+        ? value.toLowerCase().includes(searchTerm.toLowerCase())
+        : typeof value === "number"
+        ? String(value).includes(searchTerm)
+        : false
+    );
+    const matchesStatus =
+      statusFilter === "all" || client.status === statusFilter;
+    const matchesArchived = client.archived === showArchived;
+    return matchesSearch && matchesStatus && matchesArchived;
+  });
 
-    // Check if any string or number field in the client matches the search term
-    const matchesSearch = Object.values(client).some((value) => {
-      if (typeof value === "string") {
-        return value.toLowerCase().includes(lowerCaseSearchTerm)
-      }
-      if (typeof value === "number") {
-        return String(value).includes(lowerCaseSearchTerm)
-      }
-      // Ignore boolean or other types for general text search
-      return false
-    })
-
-    const matchesStatus = statusFilter === "all" || client.status === statusFilter
-
-    // Filter based on showArchived state
-    const matchesArchived = client.archived === showArchived
-
-    return matchesSearch && matchesStatus && matchesArchived
-  })
-
-  /**
-   * @param {Omit<Client, "id" | "fullName" | "archived">} clientData
-   */
   const handleAddClient = async (clientData) => {
-    const newClientWithId = {
+    const newClient = {
       ...clientData,
-      id: generateUUID(), // Generate a unique ID for new client
-      fullName: `${clientData.firstName} ${clientData.lastName}`,
-      archived: false, // New clients are not archived by default
-    }
-
+      id: generateUUID(),
+      archived: false,
+    };
     try {
-      const res = await fetch("https://www.mahabehavioralhealth.com/update-clients.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...newClientWithId, archived: 0 }), // Send archived as 0 for PHP
-      })
-      const result = await res.json()
-
+      const res = await fetch(
+        "https://www.mahabehavioralhealth.com/update-clients.php",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...newClient, archived: 0 }), // Ensure archived is sent as 0 for new clients
+        }
+      );
+      const result = await res.json();
       if (res.ok && result.success) {
-        setClients((prev) => [...prev, newClientWithId])
-        setIsAddModalOpen(false) // Close modal on success
-        toast.success("Client added successfully!")
+        setClients((prev) => [...prev, newClient]);
+        setIsAddModalOpen(false);
+        fetchClients(); // Re-fetch to ensure data consistency
+        toast.success("Client added successfully!");
       } else {
-        toast.error(`Failed to add client: ${result.message || "Unknown error"}`)
-        console.error("Add client error:", result)
+        toast.error(
+          `Failed to add client: ${result.message || "Unknown error"}`
+        );
       }
     } catch (err) {
-      console.error("Add client fetch error:", err)
-      toast.error("An error occurred while adding the client.")
+      console.error("Error adding client:", err);
+      toast.error("An error occurred while adding the client.");
     }
-  }
+  };
 
-  /**
-   * @param {Client} clientData
-   */
   const handleEditClient = async (clientData) => {
     try {
-      const res = await fetch("https://www.mahabehavioralhealth.com/update-clients.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...clientData, archived: clientData.archived ? 1 : 0 }), // Send archived as 0 or 1 for PHP
-      })
-      const result = await res.json()
-
+      const res = await fetch(
+        "https://www.mahabehavioralhealth.com/update-clients.php",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...clientData,
+            archived: clientData.archived ? 1 : 0,
+          }),
+        }
+      );
+      const result = await res.json();
       if (res.ok && result.success) {
         setClients((prev) =>
           prev.map((client) =>
             client.id === clientData.id
-              ? { ...clientData, fullName: `${clientData.firstName} ${clientData.lastName}` } // Update fullName on edit
-              : client,
-          ),
-        )
-        setEditingClient(null) // Clear editing state
-        setIsAddModalOpen(false) // Close modal on success
-        toast.success("Client updated successfully!")
+              ? {
+                  ...clientData,
+                }
+              : client
+          )
+        );
+        setEditingClient(null);
+        setIsAddModalOpen(false);
+        fetchClients(); // Re-fetch to ensure data consistency
+        toast.success("Client updated successfully!");
       } else {
-        toast.error(`Failed to update client: ${result.message || "Unknown error"}`)
-        console.error("Edit client error:", result)
+        toast.error(
+          `Failed to update client: ${result.message || "Unknown error"}`
+        );
       }
     } catch (err) {
-      console.error("Edit client fetch error:", err)
-      toast.error("An error occurred while updating the client.")
+      console.error("Error updating client:", err);
+      toast.error("An error occurred while updating the client.");
     }
-  }
+  };
 
-  /**
-   * @param {Client} client
-   */
   const handleOpenEditModal = (client) => {
-    setEditingClient(client)
-    setIsAddModalOpen(true) // Open the modal
-  }
+    setEditingClient(client);
+    setIsAddModalOpen(true);
+  };
 
-  /**
-   * @param {string} clientId
-   */
   const handleArchiveClient = async (clientId) => {
-    const clientToUpdate = clients.find((c) => c.id === clientId)
-    if (!clientToUpdate) return
+    const clientToUpdate = clients.find((c) => c.id === clientId);
+    if (!clientToUpdate) return;
 
-    const updatedClient = { ...clientToUpdate, archived: !clientToUpdate.archived }
-
+    const updatedClient = {
+      ...clientToUpdate,
+      archived: !clientToUpdate.archived,
+    };
     try {
-      const res = await fetch("https://www.mahabehavioralhealth.com/update-clients.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...updatedClient, archived: updatedClient.archived ? 1 : 0 }), // Send archived as 0 or 1 for PHP
-      })
-      const result = await res.json()
-
+      const res = await fetch(
+        "https://www.mahabehavioralhealth.com/update-clients.php",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...updatedClient,
+            archived: updatedClient.archived ? 1 : 0,
+          }),
+        }
+      );
+      const result = await res.json();
       if (res.ok && result.success) {
-        setClients((prev) => prev.map((c) => (c.id === clientId ? updatedClient : c)))
-        toast.success(updatedClient.archived ? "Client archived successfully!" : "Client restored successfully!")
+        setClients((prev) =>
+          prev.map((c) => (c.id === clientId ? updatedClient : c))
+        );
+        toast.success(
+          updatedClient.archived ? "Client archived!" : "Client restored!"
+        );
       } else {
-        toast.error(`Failed to update client status: ${result.message || "Unknown error"}`)
-        console.error("Archive/Restore error:", result)
+        toast.error(
+          `Failed to update client: ${result.message || "Unknown error"}`
+        );
       }
     } catch (err) {
-      console.error("Archive/Restore fetch error:", err)
-      toast.error("An error occurred while updating client status.")
+      console.error("Error archiving/restoring client:", err);
+      toast.error("An error occurred while updating client status.");
     }
-  }
+  };
 
-  /**
-   * @param {Client["status"]} status
-   */
   const getStatusColor = (status) => {
     switch (status) {
       case "Active":
-        return "bg-green-100 text-green-800"
+        return "bg-green-100 text-green-800";
       case "Inactive":
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
       case "On Hold":
-        return "bg-yellow-100 text-yellow-800"
+        return "bg-yellow-100 text-yellow-800";
       case "Discharged":
-        return "bg-red-100 text-red-800"
+        return "bg-red-100 text-red-800";
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
     }
-  }
+  };
 
-  /**
-   * @param {string} dob - YYYY-MM-DD format
-   */
   const calculateAge = (dob) => {
-    const today = new Date()
-    const birthDate = new Date(dob)
-    let age = today.getFullYear() - birthDate.getFullYear()
-    const monthDiff = today.getMonth() - birthDate.getMonth()
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--
+    if (!dob) return "N/A";
+    const today = new Date();
+    const birthDate = new Date(dob);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
     }
-    return age
-  }
+    return age;
+  };
 
   const fetchClients = async () => {
     try {
-      const res = await fetch("https://www.mahabehavioralhealth.com/get-clients.php")
-      const json = await res.json()
-
+      const res = await fetch(
+        "https://www.mahabehavioralhealth.com/get-clients.php"
+      );
+      const json = await res.json();
       if (json.success && Array.isArray(json.clients)) {
         const formattedClients = json.clients.map((client) => ({
           ...client,
-          fullName: `${client.firstName || ""} ${client.lastName || ""}`.trim(), // Ensure fullName is always present
-          status: client.STATUS || "Active", // Map PHP's STATUS to client's status
-          archived: client.archived == 1, // Cast 0/1 to boolean
-          dob: client.dob ? client.dob.slice(0, 10) : "", // Slice date string to YYYY-MM-DD
-          startDate: client.startDate ? client.startDate.slice(0, 10) : "", // Slice date string
-          endDate: client.endDate ? client.endDate.slice(0, 10) : "", // Slice date string
-          unitsApproved: Number(client.unitsApproved) || 0, // Ensure unitsApproved is a number
-        }))
-        setClients(formattedClients)
+          // Ensure all fields are present, even if empty strings
+          firstName: client.firstName || "",
+          lastName: client.lastName || "",
+          dob: client.dob?.slice(0, 10) || "",
+          address: client.address || "",
+          parentGuardianName: client.parentGuardianName || "",
+          parentEmail: client.parentEmail || "",
+          parentPhone: client.parentPhone || "",
+          insuranceProvider: client.insuranceProvider || "",
+          subscriberId: client.subscriberId || "", // Renamed
+          groupNumber: client.groupNumber || "", // Renamed
+          status: client.STATUS || "Active",
+          // Robustly parse authorizations: if it's a string, parse it; otherwise, use as is or default to empty array
+          authorizations: client.authorizations
+            ? typeof client.authorizations === "string"
+              ? JSON.parse(client.authorizations)
+              : client.authorizations
+            : [],
+          archived: client.archived == 1,
+        }));
+        setClients(formattedClients);
       } else {
-        console.error("Failed to fetch clients:", json.message)
-        toast.error(`Failed to fetch clients: ${json.message || "Unknown error"}`)
+        toast.error(`Failed to fetch: ${json.message || "Unknown error"}`);
       }
-    } catch (error) {
-      console.error("Fetch error:", error)
-      toast.error("An error occurred while fetching clients.")
+    } catch (err) {
+      console.error("Error fetching clients:", err);
+      toast.error("An error occurred while fetching clients.");
     }
-  }
+  };
 
   useEffect(() => {
-    fetchClients()
-  }, [])
+    fetchClients();
+  }, []);
+
+  // Toggle the expanded view for a client (open/close)
+  const toggleExpanded = (clientId) => {
+    setExpandedClients((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(clientId)) {
+        newSet.delete(clientId);
+      } else {
+        newSet.add(clientId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleExportPDF = () => {
+    toast.success("Exporting data...");
+  };
 
   return (
-    <div className="space-y-8">
-      <Toaster /> {/* Toaster component for displaying toasts */}
+    <div className="space-y-8 px-2 sm:px-4 md:px-6">
+      <Toaster />
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-3xl font-bold text-slate-800">Client Management</h2>
-          <p className="text-slate-600 mt-1">Manage client profiles and information</p>
+          <h2 className="text-3xl font-bold text-slate-800">
+            Client Management
+          </h2>
+          <p className="text-slate-600 mt-1">
+            Manage client profiles and information
+          </p>
         </div>
-        <div className="flex space-x-3">
-          <Button variant="outline" onClick={() => setShowArchived(!showArchived)} className="border-slate-300">
+        <div className="flex flex-row flex-wrap gap-2 sm:items-center sm:space-x-3 sm:justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowArchived(!showArchived)}
+            className="border-slate-300"
+          >
             {showArchived ? (
               <>
                 <ArchiveRestore className="h-4 w-4 mr-2" />
-                Show Active
+                Show Active ({activeClientCount})
               </>
             ) : (
               <>
                 <Archive className="h-4 w-4 mr-2" />
-                Show Archived
+                Show Archived ({archivedClientCount})
               </>
             )}
           </Button>
-          <Button onClick={() => setIsAddModalOpen(true)} className="bg-teal-600 hover:bg-teal-700 shadow-lg">
+          <Button
+            onClick={() => setIsAddModalOpen(true)}
+            className="bg-teal-600 hover:bg-teal-700 shadow-lg"
+          >
             <Plus className="h-4 w-4 mr-2" />
             Add Client
           </Button>
         </div>
       </div>
+
       {/* Search and Filters */}
       <Card className="shadow-lg border-0">
         <CardContent className="p-6">
-          <div className="flex items-center space-x-4">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:space-x-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
               <Input
@@ -287,138 +326,454 @@ export default function ClientsView() {
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-48 border-slate-200">
+              <SelectTrigger className="w-full sm:w-48 border-slate-200">
                 <SelectValue placeholder="Filter by status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="all">All</SelectItem>
                 <SelectItem value="Active">Active</SelectItem>
                 <SelectItem value="Inactive">Inactive</SelectItem>
                 <SelectItem value="On Hold">On Hold</SelectItem>
                 <SelectItem value="Discharged">Discharged</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" className="border-slate-300 bg-transparent">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full sm:w-auto border-slate-300 bg-transparent"
+              onClick={handleExportPDF}
+            >
               Export
             </Button>
           </div>
         </CardContent>
       </Card>
+
       {/* Client List */}
       <Card className="shadow-lg border-0">
         <CardHeader className="pb-4">
           <CardTitle className="text-slate-800 flex items-center">
             <Users className="h-5 w-5 mr-2 text-teal-600" />
-            {showArchived ? "Archived" : "Active"} Clients ({filteredClients.length})
+            {showArchived ? "Archived" : "Active"} Clients (
+            {filteredClients.length})
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="px-0">
           <div className="space-y-4">
-            {filteredClients.map((client) => (
-              <div
-                key={client.id}
-                className="border border-slate-200 rounded-xl p-6 hover:shadow-md transition-shadow bg-white"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start space-x-4 flex-1">
-                    <div className="bg-teal-100 p-4 rounded-xl">
-                      <Users className="h-6 w-6 text-teal-600" />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-2">
-                        <h3 className="text-lg font-semibold text-slate-800">{client.fullName}</h3>
-                        <Badge className={getStatusColor(client.status)}>{client.status}</Badge>
-                        {client.archived && (
-                          <Badge variant="outline" className="border-amber-300 text-amber-700">
-                            Archived
+            {filteredClients.map((client) => {
+              const isExpanded = expandedClients.has(client.id || "");
+              return (
+                <div
+                  key={client.id}
+                  className="border-b border-slate-200 rounded-t-xl p-6 hover:shadow-md transition-shadow bg-white"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                    {/* Left section with icon and client basic info */}
+                    <div className="flex items-start space-x-4 flex-1">
+                      <div className="bg-teal-100 p-2 rounded-xl flex-shrink-0">
+                        <Users className="h-6 w-6 text-teal-600" />
+                      </div>
+                      <div className="flex-1 flex flex-col min-w-0">
+                        <div className="flex items-center flex-wrap gap-2 mb-2">
+                          <h3 className="text-lg font-semibold text-slate-800">
+                            {client.firstName} {client.lastName}
+                          </h3>
+                          <Badge className={getStatusColor(client.status)}>
+                            {client.status}
                           </Badge>
+                          {client.archived && (
+                            <Badge
+                              variant="outline"
+                              className="border-amber-300 text-amber-700"
+                            >
+                              Archived
+                            </Badge>
+                          )}
+                        </div>
+                        {/* Minimal info always visible (esp. on mobile) */}
+                        <div className="text-sm space-y-2">
+                          <p>
+                            <span className="font-medium text-slate-800">
+                              Client ID:
+                            </span>{" "}
+                            {client.id}
+                          </p>
+                          <p>
+                            <span className="font-medium text-slate-800">
+                              Age:
+                            </span>{" "}
+                            {calculateAge(client.dob)} years old
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Desktop-only action buttons */}
+                    <div className="hidden sm:flex flex-row flex-wrap gap-2 sm:items-center sm:justify-end flex-shrink-0">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenEditModal(client)}
+                        className="border-slate-300"
+                      >
+                        <Edit className="h-4 w-4 mr-1" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleArchiveClient(client.id || "")}
+                        className="border-slate-300"
+                      >
+                        {client.archived ? (
+                          <>
+                            <ArchiveRestore className="h-4 w-4 mr-1" />
+                            Restore
+                          </>
+                        ) : (
+                          <>
+                            <Archive className="h-4 w-4 mr-1" />
+                            Archive
+                          </>
                         )}
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
-                        <div>
-                          <p className="text-slate-500">Client ID:</p>
-                          <p className="font-medium text-slate-800">{client.id}</p>
-                        </div>
-                        <div>
-                          <p className="text-slate-500">Age:</p>
-                          <p className="font-medium text-slate-800">{calculateAge(client.dob)} years old</p>
-                        </div>
-                        <div>
-                          <p className="text-slate-500">Parent/Guardian:</p>
-                          <p className="font-medium text-slate-800">{client.parentGuardianName}</p>
-                        </div>
-                        <div>
-                          <p className="text-slate-500">Insurance:</p>
-                          <p className="font-medium text-slate-800">{client.insuranceProvider}</p>
-                        </div>
-                        <div>
-                          <p className="text-slate-500">Authorization:</p>
-                          <p className="font-medium text-slate-800">{client.authorizationNumber}</p>
-                        </div>
-                        <div>
-                          <p className="text-slate-500">Units Approved:</p>
-                          <p className="font-medium text-slate-800">{client.unitsApproved} per 15 min</p>
-                        </div>
-                      </div>
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-slate-300 bg-transparent"
+                      >
+                        <Calendar className="h-4 w-4 mr-1" />
+                        Schedule
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleOpenEditModal(client)}
-                      className="border-slate-300"
-                    >
-                      <Edit className="h-4 w-4 mr-1" />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleArchiveClient(client.id)}
-                      className="border-slate-300"
-                    >
-                      {client.archived ? (
-                        <>
-                          <ArchiveRestore className="h-4 w-4 mr-1" />
-                          Restore
-                        </>
+
+                  {/* Mobile-only collapsible details section and View More/Less button */}
+                  <div className="sm:hidden mt-4">
+                    {/* Mobile-only action buttons */}
+                    <div className="my-4 flex flex-row  gap-1 sm:hidden justify-center">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleOpenEditModal(client)}
+                        className="border-slate-300"
+                      >
+                        <Edit className="h-4 w-4 mr-1" />
+                        Edit
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleArchiveClient(client.id || "")}
+                        className="border-slate-300"
+                      >
+                        {client.archived ? (
+                          <>
+                            <ArchiveRestore className="h-4 w-4 mr-1" />
+                            Restore
+                          </>
+                        ) : (
+                          <>
+                            <Archive className="h-4 w-4 mr-1" />
+                            Archive
+                          </>
+                        )}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-slate-300 bg-transparent"
+                      >
+                        <Calendar className="h-4 w-4 mr-1" />
+                        Schedule
+                      </Button>
+                    </div>
+                    <div className="flex justify-center">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleExpanded(client.id || "")}
+                        className="text-teal-600 border-teal-200 w-full max-w-xs font-semibold"
+                      >
+                        {isExpanded ? (
+                          <>
+                            View Less <ChevronUp className="ml-1 h-4 w-4" />
+                          </>
+                        ) : (
+                          <>
+                            View More <ChevronDown className="ml-1 h-4 w-4" />
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    {isExpanded && (
+                      <div className="bg-slate-50 rounded-lg p-4 mt-4 shadow-inner overflow-x-auto">
+                        {/* Client details like Address, Parent/Guardian, Insurance etc. */}
+                        <div className="space-y-1 grid grid-cols-1 gap-2">
+                          <div>
+                            <span className="block text-slate-500 text-xs">
+                              Address:
+                            </span>
+                            <span className="font-medium text-slate-800 break-words">
+                              {client.address || "N/A"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-slate-500 text-xs">
+                              Parent/Guardian Name:
+                            </span>
+                            <span className="font-medium text-slate-800 break-words">
+                              {client.parentGuardianName || "N/A"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-slate-500 text-xs">
+                              Parent Email:
+                            </span>
+                            <span className="font-medium text-slate-800 break-words">
+                              {client.parentEmail || "N/A"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-slate-500 text-xs">
+                              Parent Phone:
+                            </span>
+                            <span className="font-medium text-slate-800 break-words">
+                              {client.parentPhone || "N/A"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-slate-500 text-xs">
+                              Insurance Provider:
+                            </span>
+                            <span className="font-medium text-slate-800 break-words">
+                              {client.insuranceProvider || "N/A"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-slate-500 text-xs">
+                              Subscriber Id:
+                            </span>
+                            <span className="font-medium text-slate-800 break-words">
+                              {client.subscriberId || "N/A"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-slate-500 text-xs">
+                              Group Number:
+                            </span>
+                            <span className="font-medium text-slate-800 break-words">
+                              {client.groupNumber || "N/A"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block text-slate-500 text-xs">
+                              Date of Birth:
+                            </span>
+                            <span className="font-medium text-slate-800 break-words">
+                              {client.dob || "N/A"}
+                            </span>
+                          </div>
+                        </div>
+                        {/* Authorization Information List (Accordion) */}
+                        <div className="mt-4">
+                          <h4 className="text-md font-semibold text-slate-800 mb-2">
+                            Authorization Information
+                          </h4>
+                          {Array.isArray(client.authorizations) &&
+                          client.authorizations.length > 0 ? (
+                            <div className="grid grid-cols-1 gap-2">
+                              {client.authorizations.map((auth, index) => (
+                                <Accordion
+                                  key={index}
+                                  type="single"
+                                  collapsible
+                                  className="w-full"
+                                >
+                                  <AccordionItem value={`item-${index}`}>
+                                    <AccordionTrigger className="text-sm font-medium text-slate-700 hover:no-underline">
+                                      <div className="flex flex-col items-start">
+                                        <span>
+                                          Authorization Number:{" "}
+                                          {auth.authNumber || "N/A"}
+                                        </span>
+                                        <span className="text-xs text-slate-500">
+                                          Start Date: {auth.startDate || "N/A"}
+                                        </span>
+                                      </div>
+                                    </AccordionTrigger>
+                                    <AccordionContent className="text-sm space-y-1 p-2 bg-teal-50/60 rounded-b-md border border-teal-200">
+                                      <p>
+                                        <span className="font-medium text-slate-700">
+                                          Billing Codes:
+                                        </span>{" "}
+                                        {auth.billingCodes || "N/A"}
+                                      </p>
+                                      <p>
+                                        <span className="font-medium text-slate-700">
+                                          Units Approved:
+                                        </span>{" "}
+                                        {auth.unitsApproved || 0} per 15 min
+                                      </p>
+                                      <p>
+                                        <span className="font-medium text-slate-700">
+                                          End Date:
+                                        </span>{" "}
+                                        {auth.endDate || "N/A"}
+                                      </p>
+                                    </AccordionContent>
+                                  </AccordionItem>
+                                </Accordion>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-slate-500">
+                              No authorization information available.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Desktop-only details section */}
+                  <div className="hidden sm:block text-sm max-h-screen opacity-100 mt-4">
+                    {/* Client details like Address, Parent/Guardian, Insurance etc. */}
+                    <div className="space-y-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div>
+                        <p className="text-slate-500">Address:</p>
+                        <p className="font-medium text-slate-800">
+                          {client.address || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Parent/Guardian Name:</p>
+                        <p className="font-medium text-slate-800">
+                          {client.parentGuardianName || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Parent Email:</p>
+                        <p className="font-medium text-slate-800">
+                          {client.parentEmail || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Parent Phone:</p>
+                        <p className="font-medium text-slate-800">
+                          {client.parentPhone || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Insurance Provider:</p>
+                        <p className="font-medium text-slate-800">
+                          {client.insuranceProvider || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Subscriber Id:</p>
+                        <p className="font-medium text-slate-800">
+                          {client.subscriberId || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Group Number:</p>
+                        <p className="font-medium text-slate-800">
+                          {client.groupNumber || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Date of Birth:</p>
+                        <p className="font-medium text-slate-800">
+                          {client.dob || "N/A"}
+                        </p>
+                      </div>
+                    </div>
+                    {/* Authorization Information List (Accordion) */}
+                    <div className="mt-6">
+                      <h4 className="text-md font-semibold text-slate-800 mb-2">
+                        Authorization Information
+                      </h4>
+                      {Array.isArray(client.authorizations) &&
+                      client.authorizations.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {client.authorizations.map((auth, index) => (
+                            <Accordion
+                              key={index}
+                              type="single"
+                              collapsible
+                              className="w-full"
+                            >
+                              <AccordionItem value={`item-${index}`}>
+                                <AccordionTrigger className="text-sm font-medium text-slate-700 hover:no-underline">
+                                  <div className="flex flex-col items-start">
+                                    <span>
+                                      Authorization Number:{" "}
+                                      {auth.authNumber || "N/A"}
+                                    </span>
+                                    <span className="text-xs text-slate-500">
+                                      Start Date: {auth.startDate || "N/A"}
+                                    </span>
+                                  </div>
+                                </AccordionTrigger>
+                                <AccordionContent className="text-sm space-y-1 p-2 bg-slate-50 rounded-b-md">
+                                  <p>
+                                    <span className="font-medium text-slate-700">
+                                      Billing Codes:
+                                    </span>{" "}
+                                    {auth.billingCodes || "N/A"}
+                                  </p>
+                                  <p>
+                                    <span className="font-medium text-slate-700">
+                                      Units Approved:
+                                    </span>{" "}
+                                    {auth.unitsApproved || 0} per 15 min
+                                  </p>
+                                  <p>
+                                    <span className="font-medium text-slate-700">
+                                      End Date:
+                                    </span>{" "}
+                                    {auth.endDate || "N/A"}
+                                  </p>
+                                </AccordionContent>
+                              </AccordionItem>
+                            </Accordion>
+                          ))}
+                        </div>
                       ) : (
-                        <>
-                          <Archive className="h-4 w-4 mr-1" />
-                          Archive
-                        </>
+                        <p className="text-slate-500">
+                          No authorization information available.
+                        </p>
                       )}
-                    </Button>
-                    <Button variant="outline" size="sm" className="border-slate-300 bg-transparent">
-                      <Calendar className="h-4 w-4 mr-1" />
-                      Schedule
-                    </Button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {filteredClients.length === 0 && (
               <div className="text-center py-12">
                 <Users className="h-12 w-12 text-slate-400 mx-auto mb-4" />
                 <p className="text-slate-500">
-                  {showArchived ? "No archived clients found." : "No clients found matching your criteria."}
+                  {showArchived
+                    ? "No archived clients found."
+                    : "No clients match your search."}
                 </p>
               </div>
             )}
           </div>
         </CardContent>
       </Card>
-      {/* Add/Edit Client Modal */}
+
+      {/* Add/Edit Modal */}
       <AddClientModal
-        isOpen={isAddModalOpen} // Only open if explicitly requested or editing
+        isOpen={isAddModalOpen}
         onClose={() => {
-          setIsAddModalOpen(false)
-          setEditingClient(null)
+          setIsAddModalOpen(false);
+          setEditingClient(null);
         }}
         onSave={editingClient ? handleEditClient : handleAddClient}
         editingClient={editingClient}
       />
     </div>
-  )
+  );
 }
