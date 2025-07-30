@@ -288,10 +288,11 @@ export default function ClientsView() {
   };
 
   return (
-    <div className="space-y-8 px-2 sm:px-0 md:px-6">
+    <div className="space-y-8 px-2 sm:px-4 md:px-6">
       <Toaster />
+
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row lg:justify-between sm:justify-center sm:items-center ">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-3xl font-bold text-slate-800">
             Client Management
@@ -321,7 +322,6 @@ export default function ClientsView() {
           </Button>
           <Button
             onClick={() => setIsAddModalOpen(true)}
-            size="sm"
             className="bg-teal-600 hover:bg-teal-700 shadow-lg"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -380,33 +380,32 @@ export default function ClientsView() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-auto">
+          <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-50 border-b">
-                  <TableHead className="font-semibold text-slate-700">
+                  <TableHead className="font-semibold text-slate-700 px-6">
                     Client
                   </TableHead>
-                  {/* HIDE all these columns in mobile: */}
-                  <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                  <TableHead className="font-semibold text-slate-700">
                     Client ID
                   </TableHead>
-                  <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                  <TableHead className="font-semibold text-slate-700">
                     Age
                   </TableHead>
-                  <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                  <TableHead className="font-semibold text-slate-700">
                     Gender
                   </TableHead>
-                  <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                  <TableHead className="font-semibold text-slate-700">
                     Language
                   </TableHead>
-                  <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                  <TableHead className="font-semibold text-slate-700">
                     Status
                   </TableHead>
-                  <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                  <TableHead className="font-semibold text-slate-700">
                     Contact
                   </TableHead>
-                  <TableHead className="font-semibold text-slate-700 lg:text-center text-right">
+                  <TableHead className="font-semibold text-slate-700 text-center">
                     Actions
                   </TableHead>
                 </TableRow>
@@ -417,28 +416,24 @@ export default function ClientsView() {
                   return (
                     <>
                       {/* Main Row */}
-                      <TableRow
+                      <TableRow 
                         key={client.id}
                         className="hover:bg-slate-50 transition-colors border-b"
                       >
-                        <TableCell className="lg:px-4 sm:px-2 py-4">
+                        <TableCell className="px-6 py-4">
                           <div className="flex items-center space-x-3">
-                            {/* User icon visible only on >=sm screens  */}
-                            <span className="hidden sm:inline-block">
-                              <div className="bg-teal-100 p-2 rounded-lg flex-shrink-0">
-                                <Users className="h-4 w-4 text-teal-600" />
-                              </div>
-                            </span>
+                            <div className="bg-teal-100 p-2 rounded-lg flex-shrink-0">
+                              <Users className="h-4 w-4 text-teal-600" />
+                            </div>
                             <div>
                               <div className="font-semibold text-slate-800">
-                                {client.first_name} {client.middle_name}{" "}
-                                {client.last_name}
+                                {client.first_name} {client.middle_name} {client.last_name}
                               </div>
-                              <div className="lg:visible sm:hidden flex flex-wrap gap-1 mt-1">
+                              <div className="flex flex-wrap gap-1 mt-1">
                                 {client.wait_list_status === "Yes" && (
                                   <Badge
                                     variant="outline"
-                                    className=" border-yellow-300 text-yellow-700 text-xs"
+                                    className="border-yellow-300 text-yellow-700 text-xs"
                                   >
                                     Wait List
                                   </Badge>
@@ -455,29 +450,32 @@ export default function ClientsView() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell className="py-4 hidden sm:table-cell">
+                        
+                        <TableCell className="py-4">
                           <span className="font-mono text-sm">
                             {client.client_uuid}
                           </span>
                         </TableCell>
-                        {/* Hide these columns on mobile */}
-                        <TableCell className="hidden sm:table-cell py-4">
+                        
+                        <TableCell className="py-4">
                           {calculateAge(client.date_of_birth)} years
                         </TableCell>
-                        <TableCell className="hidden sm:table-cell py-4">
+                        
+                        <TableCell className="py-4">
                           {client.gender || "N/A"}
                         </TableCell>
-                        <TableCell className="hidden sm:table-cell py-4">
+                        
+                        <TableCell className="py-4">
                           {client.preferred_language || "N/A"}
                         </TableCell>
-                        <TableCell className="hidden sm:table-cell py-4">
-                          <Badge
-                            className={getStatusColor(client.client_status)}
-                          >
+                        
+                        <TableCell className="py-4">
+                          <Badge className={getStatusColor(client.client_status)}>
                             {client.client_status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="hidden sm:table-cell py-4">
+                        
+                        <TableCell className="py-4">
                           <div className="text-sm">
                             {client.phone && (
                               <div className="flex items-center gap-1">
@@ -492,6 +490,7 @@ export default function ClientsView() {
                             )}
                           </div>
                         </TableCell>
+                        
                         <TableCell className="py-4">
                           <div className="flex items-center justify-center gap-2">
                             <Button
@@ -512,6 +511,7 @@ export default function ClientsView() {
                                 </>
                               )}
                             </Button>
+                            
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button
@@ -535,14 +535,8 @@ export default function ClientsView() {
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem
-                                  onClick={() =>
-                                    handleArchiveClient(client.id || "")
-                                  }
-                                  className={
-                                    client.archived
-                                      ? "text-green-600"
-                                      : "text-amber-600"
-                                  }
+                                  onClick={() => handleArchiveClient(client.id || "")}
+                                  className={client.archived ? "text-green-600" : "text-amber-600"}
                                 >
                                   {client.archived ? (
                                     <>
@@ -561,7 +555,8 @@ export default function ClientsView() {
                           </div>
                         </TableCell>
                       </TableRow>
-                      {/* Expanded Details Row - always full width, always visible */}
+
+                      {/* Expanded Details Row */}
                       {isExpanded && (
                         <TableRow className="bg-slate-50">
                           <TableCell colSpan={8} className="px-6 py-6">
@@ -581,8 +576,7 @@ export default function ClientsView() {
                                         Street Address
                                       </p>
                                       <p className="font-medium">
-                                        {client.address_line_1 ||
-                                          "Not specified"}
+                                        {client.address_line_1 || "Not specified"}
                                         {client.address_line_2 && (
                                           <>
                                             <br />
@@ -593,25 +587,19 @@ export default function ClientsView() {
                                     </div>
                                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                       <div>
-                                        <p className="text-slate-500 mb-1">
-                                          City
-                                        </p>
+                                        <p className="text-slate-500 mb-1">City</p>
                                         <p className="font-medium">
                                           {client.city || "Not specified"}
                                         </p>
                                       </div>
                                       <div>
-                                        <p className="text-slate-500 mb-1">
-                                          State
-                                        </p>
+                                        <p className="text-slate-500 mb-1">State</p>
                                         <p className="font-medium">
                                           {client.state || "Not specified"}
                                         </p>
                                       </div>
                                       <div>
-                                        <p className="text-slate-500 mb-1">
-                                          ZIP
-                                        </p>
+                                        <p className="text-slate-500 mb-1">ZIP</p>
                                         <p className="font-medium">
                                           {client.zipcode || "Not specified"}
                                         </p>
@@ -629,17 +617,13 @@ export default function ClientsView() {
                                   </CardHeader>
                                   <CardContent className="space-y-3 text-sm">
                                     <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Phone
-                                      </p>
+                                      <p className="text-slate-500 mb-1">Phone</p>
                                       <p className="font-medium">
                                         {client.phone || "Not specified"}
                                       </p>
                                     </div>
                                     <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Email
-                                      </p>
+                                      <p className="text-slate-500 mb-1">Email</p>
                                       <p className="font-medium">
                                         {client.email || "Not specified"}
                                       </p>
@@ -649,8 +633,7 @@ export default function ClientsView() {
                                         Appointment Reminder
                                       </p>
                                       <p className="font-medium capitalize">
-                                        {client.appointment_reminder ||
-                                          "Not specified"}
+                                        {client.appointment_reminder || "Not specified"}
                                       </p>
                                     </div>
                                   </CardContent>
@@ -668,13 +651,10 @@ export default function ClientsView() {
                                   </CardHeader>
                                   <CardContent className="space-y-3 text-sm">
                                     <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Name
-                                      </p>
+                                      <p className="text-slate-500 mb-1">Name</p>
                                       <p className="font-medium">
                                         {client.parent_first_name}{" "}
-                                        {client.parent_last_name ||
-                                          "Not specified"}
+                                        {client.parent_last_name || "Not specified"}
                                       </p>
                                     </div>
                                     <div>
@@ -682,8 +662,7 @@ export default function ClientsView() {
                                         Relationship
                                       </p>
                                       <p className="font-medium">
-                                        {client.relationship_to_insured ===
-                                        "Other"
+                                        {client.relationship_to_insured === "Other"
                                           ? client.relation_other
                                           : client.relationship_to_insured ||
                                             "Not specified"}
@@ -702,9 +681,7 @@ export default function ClientsView() {
                                   <CardContent className="space-y-3 text-sm">
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                       <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Name
-                                        </p>
+                                        <p className="text-slate-500 mb-1">Name</p>
                                         <p className="font-medium">
                                           {client.emergency_contact_name ||
                                             "Not specified"}
@@ -715,22 +692,17 @@ export default function ClientsView() {
                                           Relationship
                                         </p>
                                         <p className="font-medium">
-                                          {client.emg_relationship ||
-                                            "Not specified"}
+                                          {client.emg_relationship || "Not specified"}
                                         </p>
                                       </div>
                                       <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Phone
-                                        </p>
+                                        <p className="text-slate-500 mb-1">Phone</p>
                                         <p className="font-medium">
                                           {client.emg_phone || "Not specified"}
                                         </p>
                                       </div>
                                       <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Email
-                                        </p>
+                                        <p className="text-slate-500 mb-1">Email</p>
                                         <p className="font-medium">
                                           {client.emg_email || "Not specified"}
                                         </p>
@@ -753,110 +725,106 @@ export default function ClientsView() {
                                     </CardHeader>
                                     <CardContent>
                                       <div className="space-y-4">
-                                        {client.insurances.map(
-                                          (insurance, index) => (
-                                            <div
-                                              key={index}
-                                              className="border rounded-lg p-4 bg-slate-50"
-                                            >
-                                              <div className="flex items-center justify-between mb-3">
-                                                <h4 className="font-semibold">
-                                                  Insurance #{index + 1}
-                                                </h4>
-                                                <Badge
-                                                  variant="outline"
-                                                  className={
-                                                    insurance.insurance_type ===
-                                                    "Primary"
-                                                      ? "border-blue-300 text-blue-700"
-                                                      : "border-green-300 text-green-700"
-                                                  }
-                                                >
-                                                  {insurance.insurance_type}
-                                                </Badge>
-                                              </div>
-
-                                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Provider
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {insurance.insurance_provider ||
-                                                      "Not specified"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Treatment Type
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {insurance.treatment_type ||
-                                                      "Not specified"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Insurance ID
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {insurance.insurance_id_number ||
-                                                      "Not specified"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Group Number
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {insurance.group_number ||
-                                                      "Not specified"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Coinsurance
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {insurance.coinsurance ||
-                                                      "Not specified"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Deductible
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {insurance.deductible ||
-                                                      "Not specified"}
-                                                  </p>
-                                                </div>
-                                              </div>
-
-                                              {insurance.start_date && (
-                                                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Start Date
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {insurance.start_date}
-                                                    </p>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      End Date
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {insurance.end_date ||
-                                                        "Ongoing"}
-                                                    </p>
-                                                  </div>
-                                                </div>
-                                              )}
+                                        {client.insurances.map((insurance, index) => (
+                                          <div
+                                            key={index}
+                                            className="border rounded-lg p-4 bg-slate-50"
+                                          >
+                                            <div className="flex items-center justify-between mb-3">
+                                              <h4 className="font-semibold">
+                                                Insurance #{index + 1}
+                                              </h4>
+                                              <Badge
+                                                variant="outline"
+                                                className={
+                                                  insurance.insurance_type === "Primary"
+                                                    ? "border-blue-300 text-blue-700"
+                                                    : "border-green-300 text-green-700"
+                                                }
+                                              >
+                                                {insurance.insurance_type}
+                                              </Badge>
                                             </div>
-                                          )
-                                        )}
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+                                              <div>
+                                                <p className="text-slate-500 mb-1">
+                                                  Provider
+                                                </p>
+                                                <p className="font-medium">
+                                                  {insurance.insurance_provider ||
+                                                    "Not specified"}
+                                                </p>
+                                              </div>
+                                              <div>
+                                                <p className="text-slate-500 mb-1">
+                                                  Treatment Type
+                                                </p>
+                                                <p className="font-medium">
+                                                  {insurance.treatment_type ||
+                                                    "Not specified"}
+                                                </p>
+                                              </div>
+                                              <div>
+                                                <p className="text-slate-500 mb-1">
+                                                  Insurance ID
+                                                </p>
+                                                <p className="font-medium">
+                                                  {insurance.insurance_id_number ||
+                                                    "Not specified"}
+                                                </p>
+                                              </div>
+                                              <div>
+                                                <p className="text-slate-500 mb-1">
+                                                  Group Number
+                                                </p>
+                                                <p className="font-medium">
+                                                  {insurance.group_number ||
+                                                    "Not specified"}
+                                                </p>
+                                              </div>
+                                              <div>
+                                                <p className="text-slate-500 mb-1">
+                                                  Coinsurance
+                                                </p>
+                                                <p className="font-medium">
+                                                  {insurance.coinsurance ||
+                                                    "Not specified"}
+                                                </p>
+                                              </div>
+                                              <div>
+                                                <p className="text-slate-500 mb-1">
+                                                  Deductible
+                                                </p>
+                                                <p className="font-medium">
+                                                  {insurance.deductible ||
+                                                    "Not specified"}
+                                                </p>
+                                              </div>
+                                            </div>
+
+                                            {insurance.start_date && (
+                                              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                                                <div>
+                                                  <p className="text-slate-500 mb-1">
+                                                    Start Date
+                                                  </p>
+                                                  <p className="font-medium">
+                                                    {insurance.start_date}
+                                                  </p>
+                                                </div>
+                                                <div>
+                                                  <p className="text-slate-500 mb-1">
+                                                    End Date
+                                                  </p>
+                                                  <p className="font-medium">
+                                                    {insurance.end_date || "Ongoing"}
+                                                  </p>
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+                                        ))}
                                       </div>
                                     </CardContent>
                                   </Card>
@@ -875,67 +843,63 @@ export default function ClientsView() {
                                     </CardHeader>
                                     <CardContent>
                                       <div className="space-y-4">
-                                        {client.authorizations.map(
-                                          (auth, index) => (
-                                            <div
-                                              key={index}
-                                              className="border rounded-lg p-4 bg-slate-50"
-                                            >
-                                              <h4 className="font-semibold mb-3">
-                                                Authorization #{index + 1}
-                                              </h4>
+                                        {client.authorizations.map((auth, index) => (
+                                          <div
+                                            key={index}
+                                            className="border rounded-lg p-4 bg-slate-50"
+                                          >
+                                            <h4 className="font-semibold mb-3">
+                                              Authorization #{index + 1}
+                                            </h4>
 
-                                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Authorization Number
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {auth.authorization_number ||
-                                                      "Not specified"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Billing Codes
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {auth.billing_codes ||
-                                                      "Not specified"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Units Approved (per 15 min)
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {auth.units_approved_per_15_min ||
-                                                      "Not specified"}
-                                                  </p>
-                                                </div>
-                                                <div className="sm:col-span-2 lg:col-span-3">
-                                                  <p className="text-slate-500 mb-1">
-                                                    Period
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {auth.start_date &&
-                                                    auth.end_date
-                                                      ? `${auth.start_date} to ${auth.end_date}`
-                                                      : "Not specified"}
-                                                  </p>
-                                                </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+                                              <div>
+                                                <p className="text-slate-500 mb-1">
+                                                  Authorization Number
+                                                </p>
+                                                <p className="font-medium">
+                                                  {auth.authorization_number ||
+                                                    "Not specified"}
+                                                </p>
+                                              </div>
+                                              <div>
+                                                <p className="text-slate-500 mb-1">
+                                                  Billing Codes
+                                                </p>
+                                                <p className="font-medium">
+                                                  {auth.billing_codes ||
+                                                    "Not specified"}
+                                                </p>
+                                              </div>
+                                              <div>
+                                                <p className="text-slate-500 mb-1">
+                                                  Units Approved (per 15 min)
+                                                </p>
+                                                <p className="font-medium">
+                                                  {auth.units_approved_per_15_min ||
+                                                    "Not specified"}
+                                                </p>
+                                              </div>
+                                              <div className="sm:col-span-2 lg:col-span-3">
+                                                <p className="text-slate-500 mb-1">
+                                                  Period
+                                                </p>
+                                                <p className="font-medium">
+                                                  {auth.start_date && auth.end_date
+                                                    ? `${auth.start_date} to ${auth.end_date}`
+                                                    : "Not specified"}
+                                                </p>
                                               </div>
                                             </div>
-                                          )
-                                        )}
+                                          </div>
+                                        ))}
                                       </div>
                                     </CardContent>
                                   </Card>
                                 )}
 
                               {/* Notes */}
-                              {(client.client_notes ||
-                                client.other_information) && (
+                              {(client.client_notes || client.other_information) && (
                                 <Card className="border-slate-200">
                                   <CardHeader className="pb-3">
                                     <CardTitle className="flex items-center gap-2 text-base">
@@ -976,6 +940,7 @@ export default function ClientsView() {
                 })}
               </TableBody>
             </Table>
+
             {filteredClients.length === 0 && (
               <div className="text-center py-12">
                 <Users className="h-12 w-12 text-slate-400 mx-auto mb-4" />
@@ -989,6 +954,7 @@ export default function ClientsView() {
           </div>
         </CardContent>
       </Card>
+
       {/* Add/Edit Modal */}
       <AddClientModal
         isOpen={isAddModalOpen}

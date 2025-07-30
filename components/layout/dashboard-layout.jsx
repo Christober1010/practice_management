@@ -53,7 +53,7 @@ export default function DashboardLayout({ userRole }) {
   return (
     <SidebarProvider defaultOpen={true}>
       <AppSidebar userRole={userRole} currentView={currentView} setCurrentView={setCurrentView} />
-      <div className="w-full bg-gray-50 min-h-screen">
+      <div className="w-full bg-gray-50 ">
         <Header userRole={userRole} />
         <main className="p-6 bg-white">{renderContent()}</main>
       </div>
