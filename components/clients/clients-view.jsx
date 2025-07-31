@@ -30,6 +30,7 @@ import {
   Heart,
   User,
   MoreVertical,
+  File,
 } from "lucide-react"
 import AddClientModal from "./add-client-modal"
 import toast, { Toaster } from "react-hot-toast"
@@ -48,23 +49,6 @@ function generateClientUUID() {
     .padStart(16, "0")
 }
 
-function extractAllStringValues(obj) {
-  let result = [];
-  function recurse(current) {
-    if (typeof current === 'string') {
-      result.push(current);
-    } else if (typeof current === 'number') {
-      result.push(current.toString());
-    } else if (Array.isArray(current)) {
-      current.forEach(item => recurse(item));
-    } else if (typeof current === 'object' && current !== null) {
-      Object.values(current).forEach(value => recurse(value));
-    }
-  }
-  recurse(obj);
-  return result;
-}
-
 export default function ClientsView() {
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")
@@ -77,40 +61,28 @@ export default function ClientsView() {
   const activeClientCount = clients.filter((client) => !client.archived).length
   const archivedClientCount = clients.filter((client) => client.archived).length
 
-  // const filteredClients = clients.filter((client) => {
-  //   const matchesSearch = Object.values(client).some((value) =>
-  //     typeof value === "string"
-  //       ? value.toLowerCase().includes(searchTerm.toLowerCase())
-  //       : typeof value === "number"
-  //         ? String(value).includes(searchTerm)
-  //         : false,
-  //   )
-  //   const matchesStatus = statusFilter === "all" || client.client_status === statusFilter
-  //   const matchesArchived = client.archived === showArchived
-  //   return matchesSearch && matchesStatus && matchesArchived
-  // })
   const filteredClients = clients.filter((client) => {
-  // NEW: collect all string values from client, its insurances, and authorizations.
-  const allValues = extractAllStringValues(client);
-  const matchesSearch = allValues.some(value =>
-    value.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-  const matchesStatus =
-    statusFilter === "all" || client.client_status === statusFilter;
-  const matchesArchived = client.archived === showArchived;
-  return matchesSearch && matchesStatus && matchesArchived;
-});
-
+    const matchesSearch = Object.values(client).some((value) =>
+      typeof value === "string"
+        ? value.toLowerCase().includes(searchTerm.toLowerCase())
+        : typeof value === "number"
+          ? String(value).includes(searchTerm)
+          : false,
+    )
+    const matchesStatus = statusFilter === "all" || client.client_status === statusFilter
+    const matchesArchived = client.archived === showArchived
+    return matchesSearch && matchesStatus && matchesArchived
+  })
 
   const handleAddClient = async (clientData) => {
     const newClient = {
       ...clientData,
-      id: generateUUID(),
-      client_id: "", // Add this line and assign below
+      id: generateUUID(), // This will be mapped to client_id in PHP
+      client_id: "", // Will be set to 'id' value before sending
       client_uuid: generateClientUUID(),
       archived: false,
     }
-    // Set client_id equal to id
+    // Set client_id equal to id for backend consistency
     newClient.client_id = newClient.id
 
     try {
@@ -119,14 +91,14 @@ export default function ClientsView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...newClient,
-          archived: 0,
+          archived: 0, // Ensure archived is sent as 0 for new clients
         }),
       })
       const result = await res.json()
       if (result.success) {
         setClients((prev) => [...prev, newClient])
         setIsAddModalOpen(false)
-        fetchClients()
+        fetchClients() // Re-fetch to get fresh data including new IDs
         toast.success("Client added successfully!")
       } else {
         toast.error(`Failed to add client: ${result.message || "Unknown error"}`)
@@ -152,7 +124,7 @@ export default function ClientsView() {
         setClients((prev) => prev.map((client) => (client.id === clientData.id ? clientData : client)))
         setEditingClient(null)
         setIsAddModalOpen(false)
-        fetchClients()
+        fetchClients() // Re-fetch to get fresh data
         toast.success("Client updated successfully!")
       } else {
         toast.error(`Failed to update client: ${result.message || "Unknown error"}`)
@@ -256,16 +228,21 @@ export default function ClientsView() {
               })
             : []
 
+          // Ensure documents is always an array
+          const documents = Array.isArray(client.documents) ? client.documents : []
+
           return {
             ...client,
-            id: client.client_id || client.id,
+            id: client.client_id || client.id, // Use client_id as the primary ID for frontend
+            client_id: client.client_id || client.id, // Ensure client_id is present
             first_name: client.first_name || client.firstName || "",
             last_name: client.last_name || client.lastName || "",
-            date_of_birth: client.date_of_birth || client.dob?.slice(0, 10) || "",
+            date_of_birth: client.date_of_birth?.slice(0, 10) || "",
             client_status: client.client_status || client.STATUS || "Active",
             archived: client.archived == 1,
             insurances,
             authorizations,
+            documents, // Add documents to the client object
           }
         })
         setClients(formattedClients)
@@ -816,6 +793,47 @@ export default function ClientsView() {
                                         <p className="bg-slate-50 p-3 rounded-lg">{client.other_information}</p>
                                       </div>
                                     )}
+                                  </CardContent>
+                                </Card>
+                              )}
+
+                              {/* Documents Display */}
+                              {client.documents && client.documents.length > 0 && (
+                                <Card className="border-slate-200">
+                                  <CardHeader className="pb-3">
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                      <File className="h-4 w-4 text-teal-600" />
+                                      Client Documents
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="space-y-4">
+                                      {client.documents.map((doc, index) => (
+                                        <div key={index} className="border rounded-lg p-4 bg-slate-50">
+                                          <div className="flex items-center justify-between mb-3">
+                                            <h4 className="font-semibold">Document #{index + 1}</h4>
+                                            <Badge variant="outline" className="border-gray-300 text-gray-700">
+                                              {doc.document_type || "N/A"}
+                                            </Badge>
+                                          </div>
+                                          <div className="text-sm">
+                                            <p className="text-slate-500 mb-1">File URL</p>
+                                            {doc.file_url ? (
+                                              <a
+                                                href={doc.file_url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="font-medium text-blue-600 hover:underline break-all"
+                                              >
+                                                {doc.file_url}
+                                              </a>
+                                            ) : (
+                                              <p className="font-medium">Not provided</p>
+                                            )}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
                                   </CardContent>
                                 </Card>
                               )}

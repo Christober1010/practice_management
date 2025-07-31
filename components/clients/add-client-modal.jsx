@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Plus, Trash2, Users, Shield, FileText, Phone, MapPin, Heart, User } from "lucide-react"
+import { Plus, Trash2, Users, Shield, FileText, Phone, MapPin, Heart, User, File } from "lucide-react" // Added File icon
 
 const popularCountries = [
   "United States",
@@ -22,6 +22,7 @@ const popularCountries = [
   "Other",
 ]
 const authorizationStatuses = ["Active", "Inactive", "Expired"]
+const documentTypes = ["Insurance", "Intake Doc", "Clinical Doc", "Service Doc", "Misc"] // Defined document types
 
 const initialClientState = {
   // Personal
@@ -61,6 +62,7 @@ const initialClientState = {
   // Arrays
   insurances: [],
   authorizations: [],
+  documents: [], // Added documents array
 }
 
 const initialInsurance = {
@@ -83,6 +85,21 @@ const initialAuthorization = {
   end_date: "",
   insurance_id: "", // will store insurance index linked
   status: "Active",
+}
+
+const emptyDocument = {
+  // Renamed to emptyDocument as it won't have a UUID by default
+  document_type: "",
+  file_url: "",
+}
+
+// Helper to generate a UUID for documents
+function generateDocUUID() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0,
+      v = c === "x" ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
 }
 
 export default function AddClientModal({ isOpen, onClose, onSave, editingClient }) {
@@ -112,6 +129,10 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                 insurance_id: auth.insurance_id || "", // ensure present and is index
               }))
             : [initialAuthorization],
+        documents:
+          Array.isArray(editingClient.documents) && editingClient.documents.length > 0
+            ? editingClient.documents
+            : [{ ...emptyDocument, doc_uuid: generateDocUUID() }], // Generate UUID for initial empty doc if none exist
         date_of_birth: editingClient.date_of_birth?.slice(0, 10) || "",
         country: editingClient.country || "",
         countryOther: editingClient.countryOther || "",
@@ -121,6 +142,7 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
         ...initialClientState,
         insurances: [initialInsurance],
         authorizations: [initialAuthorization],
+        documents: [{ ...emptyDocument, doc_uuid: generateDocUUID() }], // Start with one empty document form with a UUID
       })
     }
     setErrors({})
@@ -147,6 +169,8 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
           insurance_id: auth.insurance_id || "", // Ensure it's a string index or empty string
           status: auth.status || "Active",
         })),
+      // Filter out empty documents. Ensure doc_uuid is always present for valid documents.
+      documents: formData.documents.filter((doc) => doc.document_type || doc.file_url),
     }
     delete cleanedData.countryOther // Remove temporary field
     return cleanedData
@@ -211,6 +235,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
     }))
   }
 
+  const handleDocumentChange = (index, field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      documents: prev.documents.map((doc, i) => (i === index ? { ...doc, [field]: value } : doc)),
+    }))
+  }
+
   const addInsurance = () => {
     setFormData((prev) => ({
       ...prev,
@@ -256,6 +287,27 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
         return {
           ...prev,
           authorizations: updatedAuthorizations.length === 0 ? [initialAuthorization] : updatedAuthorizations,
+        }
+      })
+    }
+  }
+
+  const addDocument = () => {
+    setFormData((prev) => ({
+      ...prev,
+      documents: [...prev.documents, { ...emptyDocument, doc_uuid: generateDocUUID() }], // Generate UUID here
+    }))
+  }
+
+  const removeDocument = (index) => {
+    if (formData.documents.length > 0) {
+      setFormData((prev) => {
+        const updatedDocuments = prev.documents.filter((_, i) => i !== index)
+        // If all documents are removed, add an initial one with a new UUID
+        return {
+          ...prev,
+          documents:
+            updatedDocuments.length === 0 ? [{ ...emptyDocument, doc_uuid: generateDocUUID() }] : updatedDocuments,
         }
       })
     }
@@ -1024,6 +1076,73 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       rows={4}
                     />
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* Documents Section */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <File className="h-5 w-5 text-teal-600" />
+                    Client Documents
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {formData.documents.map((doc, index) => (
+                    <div key={index} className="border rounded-lg p-4 bg-slate-50 relative">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="font-medium">Document #{index + 1}</h4>
+                        {formData.documents.length > 0 && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => removeDocument(index)}
+                            className="text-red-600 border-red-300 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                      <div className="space-y-4">
+                        <div>
+                          <Label>Document Type</Label>
+                          <Select
+                            value={doc.document_type}
+                            onValueChange={(value) => handleDocumentChange(index, "document_type", value)}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select document type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {documentTypes.map((type) => (
+                                <SelectItem key={type} value={type}>
+                                  {type}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label>Document URL/Path</Label>
+                          <Input
+                            value={doc.file_url}
+                            onChange={(e) => handleDocumentChange(index, "file_url", e.target.value)}
+                            placeholder="Enter URL or path to document"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={addDocument}
+                    className="w-full border-dashed border-slate-300 bg-transparent"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Another Document
+                  </Button>
                 </CardContent>
               </Card>
             </TabsContent>
