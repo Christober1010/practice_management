@@ -1,25 +1,30 @@
-"use client";
+"use client"
+import { useState, useEffect } from "react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Plus, Trash2, Users, Shield, FileText, Phone, MapPin, Heart, User } from "lucide-react"
 
-import { useState, useEffect } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Trash2, Users, Shield, FileText, Phone, MapPin, Heart, User } from "lucide-react";
+const popularCountries = [
+  "United States",
+  "Canada",
+  "United Kingdom",
+  "Australia",
+  "Germany",
+  "France",
+  "India",
+  "Other",
+]
+const authorizationStatuses = ["Active", "Inactive", "Expired"]
 
 const initialClientState = {
-  // Personal Information
+  // Personal
   first_name: "",
   middle_name: "",
   last_name: "",
@@ -28,39 +33,35 @@ const initialClientState = {
   preferred_language: "",
   client_status: "New",
   wait_list_status: "No",
-  
-  // Contact Information
+  // Contact Info
   phone: "",
   email: "",
   appointment_reminder: "",
-  
-  // Address Information
+  // Address
   address_line_1: "",
   address_line_2: "",
   city: "",
   state: "",
   zipcode: "",
-  
-  // Parent/Guardian Information
+  country: "", // dropdown selected
+  countryOther: "", // if other selected
+  // Guardian
   parent_first_name: "",
   parent_last_name: "",
   relationship_to_insured: "",
   relation_other: "",
-  
   // Emergency Contact
   emergency_contact_name: "",
   emg_relationship: "",
   emg_phone: "",
   emg_email: "",
-  
   // Notes
   client_notes: "",
   other_information: "",
-  
-  // Arrays for dynamic sections
+  // Arrays
   insurances: [],
-  authorizations: []
-};
+  authorizations: [],
+}
 
 const initialInsurance = {
   insurance_type: "Primary",
@@ -71,159 +72,236 @@ const initialInsurance = {
   coinsurance: "",
   deductible: "",
   start_date: "",
-  end_date: ""
-};
+  end_date: "",
+}
 
 const initialAuthorization = {
   authorization_number: "",
   billing_codes: "",
   units_approved_per_15_min: "",
   start_date: "",
-  end_date: ""
-};
+  end_date: "",
+  insurance_id: "", // will store insurance index linked
+  status: "Active",
+}
 
 export default function AddClientModal({ isOpen, onClose, onSave, editingClient }) {
-  const [formData, setFormData] = useState(initialClientState);
-  const [errors, setErrors] = useState({});
-  const [activeTab, setActiveTab] = useState("personal");
+  const [formData, setFormData] = useState(initialClientState)
+  const [errors, setErrors] = useState({})
+  const [activeTab, setActiveTab] = useState("personal")
+  const [saving, setSaving] = useState(false)
 
+  const tabOrder = ["personal", "contact", "guardian", "insurance", "notes"]
+
+  // Initialize form with editingClient or defaults
   useEffect(() => {
     if (editingClient) {
       setFormData({
         ...initialClientState,
         ...editingClient,
-        insurances: Array.isArray(editingClient.insurances) && editingClient.insurances.length > 0 
-          ? editingClient.insurances 
-          : [initialInsurance],
-        authorizations: Array.isArray(editingClient.authorizations) && editingClient.authorizations.length > 0 
-          ? editingClient.authorizations 
-          : [initialAuthorization],
+        insurances:
+          Array.isArray(editingClient.insurances) && editingClient.insurances.length > 0
+            ? editingClient.insurances
+            : [initialInsurance],
+        authorizations:
+          Array.isArray(editingClient.authorizations) && editingClient.authorizations.length > 0
+            ? editingClient.authorizations.map((auth) => ({
+                ...initialAuthorization,
+                ...auth,
+                status: auth.status || "Active",
+                insurance_id: auth.insurance_id || "", // ensure present and is index
+              }))
+            : [initialAuthorization],
         date_of_birth: editingClient.date_of_birth?.slice(0, 10) || "",
-      });
+        country: editingClient.country || "",
+        countryOther: editingClient.countryOther || "",
+      })
     } else {
       setFormData({
         ...initialClientState,
         insurances: [initialInsurance],
-        authorizations: [initialAuthorization]
-      });
+        authorizations: [initialAuthorization],
+      })
     }
-    setErrors({});
-    setActiveTab("personal");
-  }, [editingClient, isOpen]);
+    setErrors({})
+    setActiveTab("personal")
+  }, [editingClient, isOpen])
 
-  const handleInputChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
-    
-    if (errors[field]) {
-      setErrors(prev => ({
-        ...prev,
-        [field]: null
-      }));
-    }
-  };
-
-  const handleInsuranceChange = (index, field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      insurances: prev.insurances.map((insurance, i) =>
-        i === index ? { ...insurance, [field]: value } : insurance
-      )
-    }));
-  };
-
-  const handleAuthorizationChange = (index, field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      authorizations: prev.authorizations.map((auth, i) =>
-        i === index ? { ...auth, [field]: value } : auth
-      )
-    }));
-  };
-
-  const addInsurance = () => {
-    setFormData(prev => ({
-      ...prev,
-      insurances: [...prev.insurances, { ...initialInsurance, insurance_type: "Secondary" }]
-    }));
-  };
-
-  const removeInsurance = (index) => {
-    if (formData.insurances.length > 1) {
-      setFormData(prev => ({
-        ...prev,
-        insurances: prev.insurances.filter((_, i) => i !== index)
-      }));
-    }
-  };
-
-  const addAuthorization = () => {
-    setFormData(prev => ({
-      ...prev,
-      authorizations: [...prev.authorizations, initialAuthorization]
-    }));
-  };
-
-  const removeAuthorization = (index) => {
-    if (formData.authorizations.length > 1) {
-      setFormData(prev => ({
-        ...prev,
-        authorizations: prev.authorizations.filter((_, i) => i !== index)
-      }));
-    }
-  };
-
-  const validateForm = () => {
-    const newErrors = {};
-    
-    if (!formData.first_name.trim()) {
-      newErrors.first_name = "First name is required";
-    }
-    if (!formData.last_name.trim()) {
-      newErrors.last_name = "Last name is required";
-    }
-    if (!formData.date_of_birth) {
-      newErrors.date_of_birth = "Date of birth is required";
-    }
-    
-    setErrors(newErrors);
-    
-    // If there are errors in personal tab, switch to it
-    if (newErrors.first_name || newErrors.last_name || newErrors.date_of_birth) {
-      setActiveTab("personal");
-    }
-    
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    
-    if (!validateForm()) {
-      return;
-    }
-
+  // Helper function to prepare data for saving
+  const prepareDataForSave = () => {
     const cleanedData = {
       ...formData,
-      insurances: formData.insurances.filter(insurance => 
-        insurance.insurance_provider || insurance.insurance_id_number
+      country: formData.country === "Other" ? formData.countryOther.trim() : formData.country,
+      // Filter out empty insurances (e.g., if user added a new one but left it blank)
+      insurances: formData.insurances.filter(
+        (ins) => ins.insurance_provider || ins.insurance_id_number || ins.treatment_type,
       ),
-      authorizations: formData.authorizations.filter(auth => 
-        auth.authorization_number || auth.billing_codes
-      )
-    };
+      // Filter out empty authorizations.
+      // The insurance_id for authorizations should remain the UI index (string)
+      // as the backend expects it to map to the newly created insurance IDs.
+      authorizations: formData.authorizations
+        .filter((auth) => auth.authorization_number || auth.billing_codes || auth.units_approved_per_15_min)
+        .map((auth) => ({
+          ...auth,
+          // Keep insurance_id as the string index for the backend to process
+          insurance_id: auth.insurance_id || "", // Ensure it's a string index or empty string
+          status: auth.status || "Active",
+        })),
+    }
+    delete cleanedData.countryOther // Remove temporary field
+    return cleanedData
+  }
 
-    onSave(cleanedData);
-  };
+  // Debounced autosave effect (1 second after last change)
+  useEffect(() => {
+    if (!isOpen) return // only save when modal open
+    if (!formData.id && !formData.client_id) return // ignore if no client id
+
+    const timer = setTimeout(() => {
+      autoSaveClient()
+    }, 1000)
+    return () => clearTimeout(timer)
+  }, [formData]) // run on any form data change
+
+  const autoSaveClient = async () => {
+    setSaving(true)
+    try {
+      const dataToSave = prepareDataForSave() // Use the helper
+      // Ensure client_id is present for update
+      const clientId = dataToSave.id || dataToSave.client_id
+      if (!clientId) {
+        setSaving(false)
+        return // cannot save without id
+      }
+
+      const res = await fetch("https://www.mahabehavioralhealth.com/update-clients.php", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dataToSave),
+      })
+      const result = await res.json()
+      if (!result.success) {
+        console.error("Autosave failed:", result.message)
+      }
+    } catch (err) {
+      console.error("Autosave error:", err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleInputChange = (field, value) => {
+    setFormData((prev) => ({ ...prev, [field]: value }))
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: null }))
+    }
+  }
+
+  const handleInsuranceChange = (index, field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      insurances: prev.insurances.map((ins, i) => (i === index ? { ...ins, [field]: value } : ins)),
+    }))
+  }
+
+  const handleAuthorizationChange = (index, field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      authorizations: prev.authorizations.map((auth, i) => (i === index ? { ...auth, [field]: value } : auth)),
+    }))
+  }
+
+  const addInsurance = () => {
+    setFormData((prev) => ({
+      ...prev,
+      insurances: [...prev.insurances, { ...initialInsurance, insurance_type: "Secondary" }],
+    }))
+  }
+
+  const removeInsurance = (index) => {
+    if (formData.insurances.length > 0) {
+      // Allow removing even if it's the last one
+      setFormData((prev) => {
+        const updatedInsurances = prev.insurances.filter((_, i) => i !== index)
+        // If all insurances are removed, add an initial one
+        const finalInsurances = updatedInsurances.length === 0 ? [initialInsurance] : updatedInsurances
+
+        // Also update authorizations that might have been linked to the removed insurance
+        const updatedAuthorizations = prev.authorizations.filter((auth) => auth.insurance_id !== String(index))
+        // If all authorizations are removed, add an initial one
+        const finalAuthorizations = updatedAuthorizations.length === 0 ? [initialAuthorization] : updatedAuthorizations
+
+        return {
+          ...prev,
+          insurances: finalInsurances,
+          authorizations: finalAuthorizations,
+        }
+      })
+    }
+  }
+
+  const addAuthorization = () => {
+    setFormData((prev) => ({
+      ...prev,
+      authorizations: [...prev.authorizations, { ...initialAuthorization }],
+    }))
+  }
+
+  const removeAuthorization = (index) => {
+    if (formData.authorizations.length > 0) {
+      // Allow removing even if it's the last one
+      setFormData((prev) => {
+        const updatedAuthorizations = prev.authorizations.filter((_, i) => i !== index)
+        // If all authorizations are removed, add an initial one
+        return {
+          ...prev,
+          authorizations: updatedAuthorizations.length === 0 ? [initialAuthorization] : updatedAuthorizations,
+        }
+      })
+    }
+  }
+
+  const validateForm = () => {
+    const newErrors = {}
+    if (!formData.first_name.trim()) newErrors.first_name = "First name is required"
+    if (!formData.last_name.trim()) newErrors.last_name = "Last name is required"
+    if (!formData.date_of_birth) newErrors.date_of_birth = "Date of birth is required"
+    // For "Other" country, require countryOther
+    if (formData.country === "Other" && !formData.countryOther.trim())
+      newErrors.countryOther = "Please specify the country"
+
+    setErrors(newErrors)
+
+    if (newErrors.first_name || newErrors.last_name || newErrors.date_of_birth || newErrors.countryOther)
+      setActiveTab("personal")
+
+    return Object.keys(newErrors).length === 0
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    if (!validateForm()) {
+      return
+    }
+    const dataToSave = prepareDataForSave() // Use the helper
+    onSave(dataToSave)
+  }
 
   const handleClose = () => {
-    setFormData(initialClientState);
-    setErrors({});
-    setActiveTab("personal");
-    onClose();
-  };
+    setFormData(initialClientState)
+    setErrors({})
+    setActiveTab("personal")
+    onClose()
+  }
+
+  const handleNextTab = () => {
+    const currentIndex = tabOrder.indexOf(activeTab)
+    if (currentIndex < tabOrder.length - 1) {
+      setActiveTab(tabOrder[currentIndex + 1])
+    }
+  }
+
+  const isLastTab = activeTab === tabOrder[tabOrder.length - 1]
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -231,9 +309,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold text-slate-800">
             {editingClient ? "Edit Client" : "Add New Client"}
+            {saving && <span className="ml-2 text-sm text-gray-500 italic">Saving...</span>}
           </DialogTitle>
         </DialogHeader>
-
         <form onSubmit={handleSubmit} className="space-y-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-5">
@@ -259,7 +337,7 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
               </TabsTrigger>
             </TabsList>
 
-            {/* Personal Information Tab */}
+            {/* Personal */}
             <TabsContent value="personal" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -279,11 +357,8 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         className={errors.first_name ? "border-red-300" : ""}
                         placeholder="Enter first name"
                       />
-                      {errors.first_name && (
-                        <p className="text-red-500 text-sm mt-1">{errors.first_name}</p>
-                      )}
+                      {errors.first_name && <p className="text-red-500 text-sm mt-1">{errors.first_name}</p>}
                     </div>
-                    
                     <div>
                       <Label htmlFor="middle_name">Middle Name</Label>
                       <Input
@@ -293,7 +368,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         placeholder="Enter middle name"
                       />
                     </div>
-                    
                     <div>
                       <Label htmlFor="last_name">Last Name *</Label>
                       <Input
@@ -303,12 +377,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         className={errors.last_name ? "border-red-300" : ""}
                         placeholder="Enter last name"
                       />
-                      {errors.last_name && (
-                        <p className="text-red-500 text-sm mt-1">{errors.last_name}</p>
-                      )}
+                      {errors.last_name && <p className="text-red-500 text-sm mt-1">{errors.last_name}</p>}
                     </div>
                   </div>
-
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <Label htmlFor="date_of_birth">Date of Birth *</Label>
@@ -319,11 +390,8 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         onChange={(e) => handleInputChange("date_of_birth", e.target.value)}
                         className={errors.date_of_birth ? "border-red-300" : ""}
                       />
-                      {errors.date_of_birth && (
-                        <p className="text-red-500 text-sm mt-1">{errors.date_of_birth}</p>
-                      )}
+                      {errors.date_of_birth && <p className="text-red-500 text-sm mt-1">{errors.date_of_birth}</p>}
                     </div>
-                    
                     <div>
                       <Label htmlFor="gender">Gender</Label>
                       <Select value={formData.gender} onValueChange={(value) => handleInputChange("gender", value)}>
@@ -338,7 +406,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         </SelectContent>
                       </Select>
                     </div>
-                    
                     <div>
                       <Label htmlFor="preferred_language">Preferred Language</Label>
                       <Input
@@ -349,11 +416,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       />
                     </div>
                   </div>
-
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="client_status">Client Status</Label>
-                      <Select value={formData.client_status} onValueChange={(value) => handleInputChange("client_status", value)}>
+                      <Select
+                        value={formData.client_status}
+                        onValueChange={(value) => handleInputChange("client_status", value)}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Select status" />
                         </SelectTrigger>
@@ -368,10 +437,12 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         </SelectContent>
                       </Select>
                     </div>
-                    
                     <div>
                       <Label htmlFor="wait_list_status">Wait List Status</Label>
-                      <Select value={formData.wait_list_status} onValueChange={(value) => handleInputChange("wait_list_status", value)}>
+                      <Select
+                        value={formData.wait_list_status}
+                        onValueChange={(value) => handleInputChange("wait_list_status", value)}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Select wait list status" />
                         </SelectTrigger>
@@ -386,7 +457,7 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
               </Card>
             </TabsContent>
 
-            {/* Contact Information Tab */}
+            {/* Contact */}
             <TabsContent value="contact" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -406,7 +477,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         placeholder="Enter phone number"
                       />
                     </div>
-                    
                     <div>
                       <Label htmlFor="email">Email Address</Label>
                       <Input
@@ -418,10 +488,12 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       />
                     </div>
                   </div>
-
                   <div>
                     <Label htmlFor="appointment_reminder">Appointment Reminder Preference</Label>
-                    <Select value={formData.appointment_reminder} onValueChange={(value) => handleInputChange("appointment_reminder", value)}>
+                    <Select
+                      value={formData.appointment_reminder}
+                      onValueChange={(value) => handleInputChange("appointment_reminder", value)}
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Select reminder preference" />
                       </SelectTrigger>
@@ -436,7 +508,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                 </CardContent>
               </Card>
 
-              {/* Address Information */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -454,7 +525,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       placeholder="Enter street address"
                     />
                   </div>
-                  
                   <div>
                     <Label htmlFor="address_line_2">Address Line 2</Label>
                     <Input
@@ -464,7 +534,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       placeholder="Apartment, suite, etc. (optional)"
                     />
                   </div>
-                  
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <Label htmlFor="city">City</Label>
@@ -475,7 +544,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         placeholder="Enter city"
                       />
                     </div>
-                    
                     <div>
                       <Label htmlFor="state">State</Label>
                       <Input
@@ -485,7 +553,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         placeholder="Enter state"
                       />
                     </div>
-                    
                     <div>
                       <Label htmlFor="zipcode">ZIP Code</Label>
                       <Input
@@ -496,11 +563,52 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       />
                     </div>
                   </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="country">Country</Label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                      <Select
+                        value={formData.country}
+                        onValueChange={(value) => {
+                          handleInputChange("country", value)
+                          if (value !== "Other") {
+                            handleInputChange("countryOther", "")
+                          }
+                        }}
+                        className="w-full"
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select country" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {popularCountries.map((country) => (
+                            <SelectItem key={country} value={country}>
+                              {country}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {formData.country === "Other" ? (
+                        <div>
+                          <Input
+                            id="countryOther"
+                            value={formData.countryOther || ""}
+                            onChange={(e) => handleInputChange("countryOther", e.target.value)}
+                            placeholder="Enter country name"
+                            required
+                            className="w-full"
+                          />
+                          {errors.countryOther && <p className="text-red-500 text-sm mt-1">{errors.countryOther}</p>}
+                        </div>
+                      ) : (
+                        <div />
+                      )}
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* Guardian & Emergency Contact Tab */}
+            {/* Guardian */}
             <TabsContent value="guardian" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -520,7 +628,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         placeholder="Enter parent/guardian first name"
                       />
                     </div>
-                    
                     <div>
                       <Label htmlFor="parent_last_name">Parent/Guardian Last Name</Label>
                       <Input
@@ -531,11 +638,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       />
                     </div>
                   </div>
-                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="relationship_to_insured">Relationship to Client</Label>
-                      <Select value={formData.relationship_to_insured} onValueChange={(value) => handleInputChange("relationship_to_insured", value)}>
+                      <Select
+                        value={formData.relationship_to_insured}
+                        onValueChange={(value) => handleInputChange("relationship_to_insured", value)}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Select relationship" />
                         </SelectTrigger>
@@ -548,7 +657,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         </SelectContent>
                       </Select>
                     </div>
-                    
                     {formData.relationship_to_insured === "Other" && (
                       <div>
                         <Label htmlFor="relation_other">Specify Other Relationship</Label>
@@ -583,7 +691,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         placeholder="Enter emergency contact name"
                       />
                     </div>
-                    
                     <div>
                       <Label htmlFor="emg_relationship">Relationship</Label>
                       <Input
@@ -594,7 +701,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       />
                     </div>
                   </div>
-                  
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label htmlFor="emg_phone">Emergency Contact Phone</Label>
@@ -605,7 +711,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         placeholder="Enter emergency contact phone"
                       />
                     </div>
-                    
                     <div>
                       <Label htmlFor="emg_email">Emergency Contact Email</Label>
                       <Input
@@ -621,9 +726,8 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
               </Card>
             </TabsContent>
 
-            {/* Insurance Tab */}
+            {/* Insurance */}
             <TabsContent value="insurance" className="space-y-6">
-              {/* Insurance Information */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -637,16 +741,18 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
                           <h4 className="font-medium">Insurance #{index + 1}</h4>
-                          <Badge variant="outline" className={
-                            insurance.insurance_type === "Primary" 
-                              ? "border-blue-300 text-blue-700" 
-                              : "border-green-300 text-green-700"
-                          }>
+                          <Badge
+                            variant="outline"
+                            className={
+                              insurance.insurance_type === "Primary"
+                                ? "border-blue-300 text-blue-700"
+                                : "border-green-300 text-green-700"
+                            }
+                          >
                             {insurance.insurance_type}
                           </Badge>
                         </div>
-                        
-                        {formData.insurances.length > 1 && (
+                        {formData.insurances.length > 0 && (
                           <Button
                             type="button"
                             variant="outline"
@@ -658,12 +764,12 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                           </Button>
                         )}
                       </div>
-
+                      {/* Inputs for insurance fields */}
                       <div className="space-y-4">
                         <div>
                           <Label>Insurance Type</Label>
-                          <Select 
-                            value={insurance.insurance_type} 
+                          <Select
+                            value={insurance.insurance_type}
                             onValueChange={(value) => handleInsuranceChange(index, "insurance_type", value)}
                           >
                             <SelectTrigger>
@@ -675,7 +781,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             </SelectContent>
                           </Select>
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <Label>Insurance Provider</Label>
@@ -685,7 +790,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                               placeholder="Enter insurance provider"
                             />
                           </div>
-                          
                           <div>
                             <Label>Treatment Type</Label>
                             <Input
@@ -695,7 +799,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             />
                           </div>
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <Label>Insurance ID</Label>
@@ -705,7 +808,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                               placeholder="Enter insurance ID"
                             />
                           </div>
-                          
                           <div>
                             <Label>Group Number</Label>
                             <Input
@@ -715,7 +817,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             />
                           </div>
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <Label>Coinsurance</Label>
@@ -725,7 +826,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                               placeholder="Enter coinsurance"
                             />
                           </div>
-                          
                           <div>
                             <Label>Deductible</Label>
                             <Input
@@ -735,7 +835,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             />
                           </div>
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <Label>Start Date</Label>
@@ -745,7 +844,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                               onChange={(e) => handleInsuranceChange(index, "start_date", e.target.value)}
                             />
                           </div>
-                          
                           <div>
                             <Label>End Date</Label>
                             <Input
@@ -755,15 +853,14 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             />
                           </div>
                         </div>
-                      </div>
+                      </div>{" "}
                     </div>
                   ))}
-                  
                   <Button
                     type="button"
                     variant="outline"
                     onClick={addInsurance}
-                    className="w-full border-dashed border-slate-300"
+                    className="w-full border-dashed border-slate-300 bg-transparent"
                   >
                     <Plus className="h-4 w-4 mr-2" />
                     Add Another Insurance
@@ -784,8 +881,7 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                     <div key={index} className="border rounded-lg p-4 bg-slate-50 relative">
                       <div className="flex items-center justify-between mb-4">
                         <h4 className="font-medium">Authorization #{index + 1}</h4>
-                        
-                        {formData.authorizations.length > 1 && (
+                        {formData.authorizations.length > 0 && (
                           <Button
                             type="button"
                             variant="outline"
@@ -797,7 +893,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                           </Button>
                         )}
                       </div>
-
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
@@ -808,7 +903,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                               placeholder="Enter authorization number"
                             />
                           </div>
-                          
                           <div>
                             <Label>Billing Codes</Label>
                             <Input
@@ -818,44 +912,80 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             />
                           </div>
                         </div>
-
                         <div>
                           <Label>Units Approved (per 15 min)</Label>
                           <Input
                             value={auth.units_approved_per_15_min}
-                            onChange={(e) => handleAuthorizationChange(index, "units_approved_per_15_min", e.target.value)}
+                            onChange={(e) =>
+                              handleAuthorizationChange(index, "units_approved_per_15_min", e.target.value)
+                            }
                             placeholder="Enter approved units"
                           />
                         </div>
-
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
                             <Label>Start Date</Label>
                             <Input
                               type="date"
-                              value={auth.start_date}
+                              value={auth.start_date || ""}
                               onChange={(e) => handleAuthorizationChange(index, "start_date", e.target.value)}
                             />
                           </div>
-                          
                           <div>
                             <Label>End Date</Label>
                             <Input
                               type="date"
-                              value={auth.end_date}
+                              value={auth.end_date || ""}
                               onChange={(e) => handleAuthorizationChange(index, "end_date", e.target.value)}
                             />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <Label>Linked Insurance</Label>
+                            <Select
+                              value={auth.insurance_id || ""}
+                              onValueChange={(value) => handleAuthorizationChange(index, "insurance_id", value)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select insurance" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {formData.insurances.map((insurance, i) => (
+                                  <SelectItem key={i} value={String(i)}>
+                                    {insurance.insurance_provider || `Insurance #${i + 1}`}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label>Status</Label>
+                            <Select
+                              value={auth.status || "Active"}
+                              onValueChange={(value) => handleAuthorizationChange(index, "status", value)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select status" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {authorizationStatuses.map((status) => (
+                                  <SelectItem key={status} value={status}>
+                                    {status}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                         </div>
                       </div>
                     </div>
                   ))}
-                  
                   <Button
                     type="button"
                     variant="outline"
                     onClick={addAuthorization}
-                    className="w-full border-dashed border-slate-300"
+                    className="w-full border-dashed border-slate-300 bg-transparent"
                   >
                     <Plus className="h-4 w-4 mr-2" />
                     Add Another Authorization
@@ -864,7 +994,7 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
               </Card>
             </TabsContent>
 
-            {/* Notes Tab */}
+            {/* Notes */}
             <TabsContent value="notes" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -884,7 +1014,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       rows={4}
                     />
                   </div>
-                  
                   <div>
                     <Label htmlFor="other_information">Other Information</Label>
                     <Textarea
@@ -900,17 +1029,22 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
             </TabsContent>
           </Tabs>
 
-          {/* Form Actions */}
           <div className="flex justify-end gap-3 pt-6 border-t">
             <Button type="button" variant="outline" onClick={handleClose}>
               Cancel
             </Button>
-            <Button type="submit" className="bg-teal-600 hover:bg-teal-700">
-              {editingClient ? "Update Client" : "Add Client"}
-            </Button>
+            {isLastTab ? (
+              <Button type="submit" className="bg-teal-600 hover:bg-teal-700">
+                {editingClient ? "Update Client" : "Add Client"}
+              </Button>
+            ) : (
+              <Button type="button" onClick={handleNextTab} className="bg-teal-600 hover:bg-teal-700">
+                Next
+              </Button>
+            )}
           </div>
         </form>
       </DialogContent>
     </Dialog>
-  );
+  )
 }
