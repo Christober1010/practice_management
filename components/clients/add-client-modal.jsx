@@ -1,15 +1,37 @@
-"use client"
-import { useState, useEffect } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Plus, Trash2, Users, Shield, FileText, Phone, MapPin, Heart, User, File } from "lucide-react" // Added File icon
+"use client";
+import { useState, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Plus,
+  Trash2,
+  Users,
+  Shield,
+  FileText,
+  Phone,
+  MapPin,
+  Heart,
+  User,
+  File,
+} from "lucide-react"; // Added File icon
 
 const popularCountries = [
   "United States",
@@ -20,9 +42,15 @@ const popularCountries = [
   "France",
   "India",
   "Other",
-]
-const authorizationStatuses = ["Active", "Inactive", "Expired"]
-const documentTypes = ["Insurance", "Intake Doc", "Clinical Doc", "Service Doc", "Misc"] // Defined document types
+];
+const authorizationStatuses = ["Active", "Inactive", "Expired"];
+const documentTypes = [
+  "Insurance",
+  "Intake Doc",
+  "Clinical Doc",
+  "Service Doc",
+  "Misc",
+]; // Defined document types
 
 const initialClientState = {
   // Personal
@@ -63,7 +91,7 @@ const initialClientState = {
   insurances: [],
   authorizations: [],
   documents: [], // Added documents array
-}
+};
 
 const initialInsurance = {
   insurance_type: "Primary",
@@ -75,40 +103,52 @@ const initialInsurance = {
   deductible: "",
   start_date: "",
   end_date: "",
-}
+};
 
 const initialAuthorization = {
   authorization_number: "",
   billing_codes: "",
   units_approved_per_15_min: "",
+  units_serviced: "", // New field
+  balance_units: "", // New field (calculated)
   start_date: "",
   end_date: "",
   insurance_id: "", // will store insurance index linked
   status: "Active",
-}
+};
 
 const emptyDocument = {
-  // Renamed to emptyDocument as it won't have a UUID by default
   document_type: "",
   file_url: "",
-}
+};
 
 // Helper to generate a UUID for documents
 function generateDocUUID() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0,
-      v = c === "x" ? r : (r & 0x3) | 0x8
-    return v.toString(16)
-  })
+      v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
-export default function AddClientModal({ isOpen, onClose, onSave, editingClient }) {
-  const [formData, setFormData] = useState(initialClientState)
-  const [errors, setErrors] = useState({})
-  const [activeTab, setActiveTab] = useState("personal")
-  const [saving, setSaving] = useState(false)
-
-  const tabOrder = ["personal", "contact", "guardian", "insurance", "notes"]
+export default function AddClientModal({
+  isOpen,
+  onClose,
+  onSave,
+  editingClient,
+}) {
+  const [formData, setFormData] = useState(initialClientState);
+  const [errors, setErrors] = useState({});
+  const [activeTab, setActiveTab] = useState("personal");
+  const [saving, setSaving] = useState(false);
+  const tabOrder = [
+    "personal",
+    "contact",
+    "guardian",
+    "insurance",
+    "documents",
+    "notes",
+  ]; // Updated tab order
 
   // Initialize form with editingClient or defaults
   useEffect(() => {
@@ -117,243 +157,315 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
         ...initialClientState,
         ...editingClient,
         insurances:
-          Array.isArray(editingClient.insurances) && editingClient.insurances.length > 0
+          Array.isArray(editingClient.insurances) &&
+          editingClient.insurances.length > 0
             ? editingClient.insurances
             : [initialInsurance],
         authorizations:
-          Array.isArray(editingClient.authorizations) && editingClient.authorizations.length > 0
+          Array.isArray(editingClient.authorizations) &&
+          editingClient.authorizations.length > 0
             ? editingClient.authorizations.map((auth) => ({
                 ...initialAuthorization,
                 ...auth,
                 status: auth.status || "Active",
                 insurance_id: auth.insurance_id || "", // ensure present and is index
+                units_serviced: auth.units_serviced || "", // Initialize new field
+                balance_units: auth.balance_units || "", // Initialize new field
               }))
             : [initialAuthorization],
         documents:
-          Array.isArray(editingClient.documents) && editingClient.documents.length > 0
+          Array.isArray(editingClient.documents) &&
+          editingClient.documents.length > 0
             ? editingClient.documents
             : [{ ...emptyDocument, doc_uuid: generateDocUUID() }], // Generate UUID for initial empty doc if none exist
         date_of_birth: editingClient.date_of_birth?.slice(0, 10) || "",
         country: editingClient.country || "",
         countryOther: editingClient.countryOther || "",
-      })
+      });
     } else {
       setFormData({
         ...initialClientState,
         insurances: [initialInsurance],
         authorizations: [initialAuthorization],
         documents: [{ ...emptyDocument, doc_uuid: generateDocUUID() }], // Start with one empty document form with a UUID
-      })
+      });
     }
-    setErrors({})
-    setActiveTab("personal")
-  }, [editingClient, isOpen])
+    setErrors({});
+    setActiveTab("personal");
+  }, [editingClient, isOpen]);
 
   // Helper function to prepare data for saving
   const prepareDataForSave = () => {
     const cleanedData = {
       ...formData,
-      country: formData.country === "Other" ? formData.countryOther.trim() : formData.country,
+      country:
+        formData.country === "Other"
+          ? formData.countryOther.trim()
+          : formData.country,
       // Filter out empty insurances (e.g., if user added a new one but left it blank)
       insurances: formData.insurances.filter(
-        (ins) => ins.insurance_provider || ins.insurance_id_number || ins.treatment_type,
+        (ins) =>
+          ins.insurance_provider ||
+          ins.insurance_id_number ||
+          ins.treatment_type
       ),
       // Filter out empty authorizations.
-      // The insurance_id for authorizations should remain the UI index (string)
-      // as the backend expects it to map to the newly created insurance IDs.
       authorizations: formData.authorizations
-        .filter((auth) => auth.authorization_number || auth.billing_codes || auth.units_approved_per_15_min)
-        .map((auth) => ({
-          ...auth,
-          // Keep insurance_id as the string index for the backend to process
-          insurance_id: auth.insurance_id || "", // Ensure it's a string index or empty string
-          status: auth.status || "Active",
-        })),
+        .filter(
+          (auth) =>
+            auth.authorization_number ||
+            auth.billing_codes ||
+            auth.units_approved_per_15_min
+        )
+        .map((auth) => {
+          const approved =
+            Number.parseFloat(auth.units_approved_per_15_min) || 0;
+          const serviced = Number.parseFloat(auth.units_serviced) || 0;
+          return {
+            ...auth,
+            insurance_id: auth.insurance_id || "", // Ensure it's a string index or empty string
+            status: auth.status || "Active",
+            units_serviced: serviced.toString(), // Ensure it's a string
+            balance_units: (approved - serviced).toString(), // Calculate and ensure it's a string
+          };
+        }),
       // Filter out empty documents. Ensure doc_uuid is always present for valid documents.
-      documents: formData.documents.filter((doc) => doc.document_type || doc.file_url),
-    }
-    delete cleanedData.countryOther // Remove temporary field
-    return cleanedData
-  }
-
-  // Debounced autosave effect (1 second after last change)
-  useEffect(() => {
-    if (!isOpen) return // only save when modal open
-    if (!formData.id && !formData.client_id) return // ignore if no client id
-
-    const timer = setTimeout(() => {
-      autoSaveClient()
-    }, 1000)
-    return () => clearTimeout(timer)
-  }, [formData]) // run on any form data change
-
-  const autoSaveClient = async () => {
-    setSaving(true)
-    try {
-      const dataToSave = prepareDataForSave() // Use the helper
-      // Ensure client_id is present for update
-      const clientId = dataToSave.id || dataToSave.client_id
-      if (!clientId) {
-        setSaving(false)
-        return // cannot save without id
-      }
-
-      const res = await fetch("https://www.mahabehavioralhealth.com/update-clients.php", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(dataToSave),
-      })
-      const result = await res.json()
-      if (!result.success) {
-        console.error("Autosave failed:", result.message)
-      }
-    } catch (err) {
-      console.error("Autosave error:", err)
-    } finally {
-      setSaving(false)
-    }
-  }
+      documents: formData.documents.filter(
+        (doc) => doc.document_type || doc.file_url
+      ),
+    };
+    delete cleanedData.countryOther; // Remove temporary field
+    return cleanedData;
+  };
 
   const handleInputChange = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }))
+    setFormData((prev) => ({ ...prev, [field]: value }));
     if (errors[field]) {
-      setErrors((prev) => ({ ...prev, [field]: null }))
+      setErrors((prev) => ({ ...prev, [field]: null }));
     }
-  }
+  };
 
   const handleInsuranceChange = (index, field, value) => {
     setFormData((prev) => ({
       ...prev,
-      insurances: prev.insurances.map((ins, i) => (i === index ? { ...ins, [field]: value } : ins)),
-    }))
-  }
+      insurances: prev.insurances.map((ins, i) =>
+        i === index ? { ...ins, [field]: value } : ins
+      ),
+    }));
+  };
 
   const handleAuthorizationChange = (index, field, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      authorizations: prev.authorizations.map((auth, i) => (i === index ? { ...auth, [field]: value } : auth)),
-    }))
-  }
+    setFormData((prev) => {
+      const updatedAuthorizations = prev.authorizations.map((auth, i) => {
+        if (i === index) {
+          const updatedAuth = { ...auth, [field]: value };
+          const approved =
+            Number.parseFloat(
+              field === "units_approved_per_15_min"
+                ? value
+                : updatedAuth.units_approved_per_15_min
+            ) || 0;
+          const serviced =
+            Number.parseFloat(
+              field === "units_serviced" ? value : updatedAuth.units_serviced
+            ) || 0;
+          updatedAuth.balance_units = (approved - serviced).toString();
+          return updatedAuth;
+        }
+        return auth;
+      });
+      return { ...prev, authorizations: updatedAuthorizations };
+    });
+
+    setErrors((prev) => {
+      const updated = { ...prev };
+      const approved =
+        Number.parseFloat(
+          field === "units_approved_per_15_min"
+            ? value
+            : formData.authorizations[index]?.units_approved_per_15_min
+        ) || 0;
+      const serviced =
+        Number.parseFloat(
+          field === "units_serviced"
+            ? value
+            : formData.authorizations[index]?.units_serviced
+        ) || 0;
+      const errorKey = `auth_units_serviced_${index}`;
+      if (serviced > approved) {
+        updated[errorKey] = "Units Serviced cannot exceed Units Approved";
+      } else {
+        delete updated[errorKey];
+      }
+      return updated;
+    });
+  };
 
   const handleDocumentChange = (index, field, value) => {
     setFormData((prev) => ({
       ...prev,
-      documents: prev.documents.map((doc, i) => (i === index ? { ...doc, [field]: value } : doc)),
-    }))
-  }
+      documents: prev.documents.map((doc, i) =>
+        i === index ? { ...doc, [field]: value } : doc
+      ),
+    }));
+  };
 
   const addInsurance = () => {
     setFormData((prev) => ({
       ...prev,
-      insurances: [...prev.insurances, { ...initialInsurance, insurance_type: "Secondary" }],
-    }))
-  }
+      insurances: [
+        ...prev.insurances,
+        { ...initialInsurance, insurance_type: "Secondary" },
+      ],
+    }));
+  };
 
   const removeInsurance = (index) => {
     if (formData.insurances.length > 0) {
-      // Allow removing even if it's the last one
       setFormData((prev) => {
-        const updatedInsurances = prev.insurances.filter((_, i) => i !== index)
-        // If all insurances are removed, add an initial one
-        const finalInsurances = updatedInsurances.length === 0 ? [initialInsurance] : updatedInsurances
+        const updatedInsurances = prev.insurances.filter((_, i) => i !== index);
+        const finalInsurances =
+          updatedInsurances.length === 0
+            ? [initialInsurance]
+            : updatedInsurances;
 
-        // Also update authorizations that might have been linked to the removed insurance
-        const updatedAuthorizations = prev.authorizations.filter((auth) => auth.insurance_id !== String(index))
-        // If all authorizations are removed, add an initial one
-        const finalAuthorizations = updatedAuthorizations.length === 0 ? [initialAuthorization] : updatedAuthorizations
+        const updatedAuthorizations = prev.authorizations.filter(
+          (auth) => auth.insurance_id !== String(index)
+        );
+        const finalAuthorizations =
+          updatedAuthorizations.length === 0
+            ? [initialAuthorization]
+            : updatedAuthorizations;
 
         return {
           ...prev,
           insurances: finalInsurances,
           authorizations: finalAuthorizations,
-        }
-      })
+        };
+      });
     }
-  }
+  };
 
   const addAuthorization = () => {
     setFormData((prev) => ({
       ...prev,
       authorizations: [...prev.authorizations, { ...initialAuthorization }],
-    }))
-  }
+    }));
+  };
 
   const removeAuthorization = (index) => {
     if (formData.authorizations.length > 0) {
-      // Allow removing even if it's the last one
       setFormData((prev) => {
-        const updatedAuthorizations = prev.authorizations.filter((_, i) => i !== index)
-        // If all authorizations are removed, add an initial one
+        const updatedAuthorizations = prev.authorizations.filter(
+          (_, i) => i !== index
+        );
         return {
           ...prev,
-          authorizations: updatedAuthorizations.length === 0 ? [initialAuthorization] : updatedAuthorizations,
-        }
-      })
+          authorizations:
+            updatedAuthorizations.length === 0
+              ? [initialAuthorization]
+              : updatedAuthorizations,
+        };
+      });
+      // Clean up any errors for this authorization's fields
+      setErrors((prev) => {
+        const updated = { ...prev };
+        // Remove all error keys for this index (example: auth_units_serviced_1)
+        Object.keys(updated).forEach((key) => {
+          if (key.startsWith(`auth_units_serviced_${index}`)) {
+            delete updated[key];
+          }
+        });
+        // Renumber errors for indices after the removed one, if needed
+        const renumbered = {};
+        Object.keys(updated).forEach((key) => {
+          const match = key.match(/^auth_units_serviced_(\d+)$/);
+          if (match) {
+            const keyIndex = parseInt(match[1], 10);
+            renumbered[
+              keyIndex > index ? `auth_units_serviced_${keyIndex - 1}` : key
+            ] = updated[key];
+          } else {
+            renumbered[key] = updated[key];
+          }
+        });
+        return renumbered;
+      });
     }
-  }
+  };
 
   const addDocument = () => {
     setFormData((prev) => ({
       ...prev,
-      documents: [...prev.documents, { ...emptyDocument, doc_uuid: generateDocUUID() }], // Generate UUID here
-    }))
-  }
+      documents: [
+        ...prev.documents,
+        { ...emptyDocument, doc_uuid: generateDocUUID() },
+      ], // Generate UUID here
+    }));
+  };
 
   const removeDocument = (index) => {
     if (formData.documents.length > 0) {
       setFormData((prev) => {
-        const updatedDocuments = prev.documents.filter((_, i) => i !== index)
-        // If all documents are removed, add an initial one with a new UUID
+        const updatedDocuments = prev.documents.filter((_, i) => i !== index);
         return {
           ...prev,
           documents:
-            updatedDocuments.length === 0 ? [{ ...emptyDocument, doc_uuid: generateDocUUID() }] : updatedDocuments,
-        }
-      })
+            updatedDocuments.length === 0
+              ? [{ ...emptyDocument, doc_uuid: generateDocUUID() }]
+              : updatedDocuments,
+        };
+      });
     }
-  }
+  };
 
   const validateForm = () => {
-    const newErrors = {}
-    if (!formData.first_name.trim()) newErrors.first_name = "First name is required"
-    if (!formData.last_name.trim()) newErrors.last_name = "Last name is required"
-    if (!formData.date_of_birth) newErrors.date_of_birth = "Date of birth is required"
+    const newErrors = {};
+    if (!formData.first_name.trim())
+      newErrors.first_name = "First name is required";
+    if (!formData.last_name.trim())
+      newErrors.last_name = "Last name is required";
+    if (!formData.date_of_birth)
+      newErrors.date_of_birth = "Date of birth is required";
     // For "Other" country, require countryOther
     if (formData.country === "Other" && !formData.countryOther.trim())
-      newErrors.countryOther = "Please specify the country"
-
-    setErrors(newErrors)
-
-    if (newErrors.first_name || newErrors.last_name || newErrors.date_of_birth || newErrors.countryOther)
-      setActiveTab("personal")
-
-    return Object.keys(newErrors).length === 0
-  }
+      newErrors.countryOther = "Please specify the country";
+    setErrors(newErrors);
+    if (
+      newErrors.first_name ||
+      newErrors.last_name ||
+      newErrors.date_of_birth ||
+      newErrors.countryOther
+    )
+      setActiveTab("personal");
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleSubmit = (e) => {
-    e.preventDefault()
+    e.preventDefault();
     if (!validateForm()) {
-      return
+      return;
     }
-    const dataToSave = prepareDataForSave() // Use the helper
-    onSave(dataToSave)
-  }
+    const dataToSave = prepareDataForSave(); // Use the helper
+    onSave(dataToSave);
+  };
 
   const handleClose = () => {
-    setFormData(initialClientState)
-    setErrors({})
-    setActiveTab("personal")
-    onClose()
-  }
+    setFormData(initialClientState);
+    setErrors({});
+    setActiveTab("personal");
+    onClose();
+  };
 
-  const handleNextTab = () => {
-    const currentIndex = tabOrder.indexOf(activeTab)
+  const handleNextTab = (e) => {
+    e.preventDefault(); // Prevent form submission when clicking "Next"
+    const currentIndex = tabOrder.indexOf(activeTab);
     if (currentIndex < tabOrder.length - 1) {
-      setActiveTab(tabOrder[currentIndex + 1])
+      setActiveTab(tabOrder[currentIndex + 1]);
     }
-  }
+  };
 
-  const isLastTab = activeTab === tabOrder[tabOrder.length - 1]
+  const isLastTab = activeTab === tabOrder[tabOrder.length - 1];
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -361,41 +473,56 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold text-slate-800">
             {editingClient ? "Edit Client" : "Add New Client"}
-            {saving && <span className="ml-2 text-sm text-gray-500 italic">Saving...</span>}
+            {saving && (
+              <span className="ml-2 text-sm text-gray-500 italic">
+                Saving...
+              </span>
+            )}
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-6">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="w-full"
+          >
+            <TabsList className="grid w-full grid-cols-5 lg:grid-cols-6">
+              {" "}
+              {/* Adjusted grid-cols */}
               <TabsTrigger value="personal" className="flex items-center gap-2">
-                <Users className="h-4 w-4" />
-                Personal
+                <Users className="h-4 w-4" /> Personal
               </TabsTrigger>
               <TabsTrigger value="contact" className="flex items-center gap-2">
-                <Phone className="h-4 w-4" />
-                Contact
+                <Phone className="h-4 w-4" /> Contact
               </TabsTrigger>
               <TabsTrigger value="guardian" className="flex items-center gap-2">
-                <User className="h-4 w-4" />
-                Guardian
+                <User className="h-4 w-4" /> Guardian
               </TabsTrigger>
-              <TabsTrigger value="insurance" className="flex items-center gap-2">
-                <Shield className="h-4 w-4" />
-                Insurance
+              <TabsTrigger
+                value="insurance"
+                className="flex items-center gap-2"
+              >
+                <Shield className="h-4 w-4" /> Insurance
+              </TabsTrigger>
+              <TabsTrigger
+                value="documents"
+                className="flex items-center gap-2"
+              >
+                {" "}
+                {/* New Tab Trigger */}
+                <File className="h-4 w-4" /> Documents
               </TabsTrigger>
               <TabsTrigger value="notes" className="flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                Notes
+                <FileText className="h-4 w-4" /> Notes
               </TabsTrigger>
             </TabsList>
-
             {/* Personal */}
             <TabsContent value="personal" className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Users className="h-5 w-5 text-teal-600" />
-                    Personal Information
+                    <Users className="h-5 w-5 text-teal-600" /> Personal
+                    Information
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -405,18 +532,26 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       <Input
                         id="first_name"
                         value={formData.first_name}
-                        onChange={(e) => handleInputChange("first_name", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("first_name", e.target.value)
+                        }
                         className={errors.first_name ? "border-red-300" : ""}
                         placeholder="Enter first name"
                       />
-                      {errors.first_name && <p className="text-red-500 text-sm mt-1">{errors.first_name}</p>}
+                      {errors.first_name && (
+                        <p className="text-red-500 text-sm mt-1">
+                          {errors.first_name}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label htmlFor="middle_name">Middle Name</Label>
                       <Input
                         id="middle_name"
                         value={formData.middle_name}
-                        onChange={(e) => handleInputChange("middle_name", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("middle_name", e.target.value)
+                        }
                         placeholder="Enter middle name"
                       />
                     </div>
@@ -425,11 +560,17 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       <Input
                         id="last_name"
                         value={formData.last_name}
-                        onChange={(e) => handleInputChange("last_name", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("last_name", e.target.value)
+                        }
                         className={errors.last_name ? "border-red-300" : ""}
                         placeholder="Enter last name"
                       />
-                      {errors.last_name && <p className="text-red-500 text-sm mt-1">{errors.last_name}</p>}
+                      {errors.last_name && (
+                        <p className="text-red-500 text-sm mt-1">
+                          {errors.last_name}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -439,14 +580,25 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         id="date_of_birth"
                         type="date"
                         value={formData.date_of_birth}
-                        onChange={(e) => handleInputChange("date_of_birth", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("date_of_birth", e.target.value)
+                        }
                         className={errors.date_of_birth ? "border-red-300" : ""}
                       />
-                      {errors.date_of_birth && <p className="text-red-500 text-sm mt-1">{errors.date_of_birth}</p>}
+                      {errors.date_of_birth && (
+                        <p className="text-red-500 text-sm mt-1">
+                          {errors.date_of_birth}
+                        </p>
+                      )}
                     </div>
                     <div>
                       <Label htmlFor="gender">Gender</Label>
-                      <Select value={formData.gender} onValueChange={(value) => handleInputChange("gender", value)}>
+                      <Select
+                        value={formData.gender}
+                        onValueChange={(value) =>
+                          handleInputChange("gender", value)
+                        }
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder="Select gender" />
                         </SelectTrigger>
@@ -454,16 +606,25 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                           <SelectItem value="Male">Male</SelectItem>
                           <SelectItem value="Female">Female</SelectItem>
                           <SelectItem value="Other">Other</SelectItem>
-                          <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
+                          <SelectItem value="Prefer not to say">
+                            Prefer not to say
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div>
-                      <Label htmlFor="preferred_language">Preferred Language</Label>
+                      <Label htmlFor="preferred_language">
+                        Preferred Language
+                      </Label>
                       <Input
                         id="preferred_language"
                         value={formData.preferred_language}
-                        onChange={(e) => handleInputChange("preferred_language", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange(
+                            "preferred_language",
+                            e.target.value
+                          )
+                        }
                         placeholder="Enter preferred language"
                       />
                     </div>
@@ -473,7 +634,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       <Label htmlFor="client_status">Client Status</Label>
                       <Select
                         value={formData.client_status}
-                        onValueChange={(value) => handleInputChange("client_status", value)}
+                        onValueChange={(value) =>
+                          handleInputChange("client_status", value)
+                        }
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select status" />
@@ -482,10 +645,18 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                           <SelectItem value="New">New</SelectItem>
                           <SelectItem value="Active">Active</SelectItem>
                           <SelectItem value="Inactive">Inactive</SelectItem>
-                          <SelectItem value="Benefits Verification">Benefits Verification</SelectItem>
-                          <SelectItem value="Prior Authorization">Prior Authorization</SelectItem>
-                          <SelectItem value="Client Assessment">Client Assessment</SelectItem>
-                          <SelectItem value="Pending Authorization">Pending Authorization</SelectItem>
+                          <SelectItem value="Benefits Verification">
+                            Benefits Verification
+                          </SelectItem>
+                          <SelectItem value="Prior Authorization">
+                            Prior Authorization
+                          </SelectItem>
+                          <SelectItem value="Client Assessment">
+                            Client Assessment
+                          </SelectItem>
+                          <SelectItem value="Pending Authorization">
+                            Pending Authorization
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -493,7 +664,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       <Label htmlFor="wait_list_status">Wait List Status</Label>
                       <Select
                         value={formData.wait_list_status}
-                        onValueChange={(value) => handleInputChange("wait_list_status", value)}
+                        onValueChange={(value) =>
+                          handleInputChange("wait_list_status", value)
+                        }
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select wait list status" />
@@ -508,14 +681,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                 </CardContent>
               </Card>
             </TabsContent>
-
             {/* Contact */}
             <TabsContent value="contact" className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Phone className="h-5 w-5 text-teal-600" />
-                    Contact Information
+                    <Phone className="h-5 w-5 text-teal-600" /> Contact
+                    Information
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -525,7 +697,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       <Input
                         id="phone"
                         value={formData.phone}
-                        onChange={(e) => handleInputChange("phone", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("phone", e.target.value)
+                        }
                         placeholder="Enter phone number"
                       />
                     </div>
@@ -535,16 +709,22 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         id="email"
                         type="email"
                         value={formData.email}
-                        onChange={(e) => handleInputChange("email", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("email", e.target.value)
+                        }
                         placeholder="Enter email address"
                       />
                     </div>
                   </div>
                   <div>
-                    <Label htmlFor="appointment_reminder">Appointment Reminder Preference</Label>
+                    <Label htmlFor="appointment_reminder">
+                      Appointment Reminder Preference
+                    </Label>
                     <Select
                       value={formData.appointment_reminder}
-                      onValueChange={(value) => handleInputChange("appointment_reminder", value)}
+                      onValueChange={(value) =>
+                        handleInputChange("appointment_reminder", value)
+                      }
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select reminder preference" />
@@ -559,12 +739,11 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                   </div>
                 </CardContent>
               </Card>
-
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <MapPin className="h-5 w-5 text-teal-600" />
-                    Address Information
+                    <MapPin className="h-5 w-5 text-teal-600" /> Address
+                    Information
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -573,7 +752,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                     <Input
                       id="address_line_1"
                       value={formData.address_line_1}
-                      onChange={(e) => handleInputChange("address_line_1", e.target.value)}
+                      onChange={(e) =>
+                        handleInputChange("address_line_1", e.target.value)
+                      }
                       placeholder="Enter street address"
                     />
                   </div>
@@ -582,7 +763,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                     <Input
                       id="address_line_2"
                       value={formData.address_line_2}
-                      onChange={(e) => handleInputChange("address_line_2", e.target.value)}
+                      onChange={(e) =>
+                        handleInputChange("address_line_2", e.target.value)
+                      }
                       placeholder="Apartment, suite, etc. (optional)"
                     />
                   </div>
@@ -592,7 +775,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       <Input
                         id="city"
                         value={formData.city}
-                        onChange={(e) => handleInputChange("city", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("city", e.target.value)
+                        }
                         placeholder="Enter city"
                       />
                     </div>
@@ -601,7 +786,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       <Input
                         id="state"
                         value={formData.state}
-                        onChange={(e) => handleInputChange("state", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("state", e.target.value)
+                        }
                         placeholder="Enter state"
                       />
                     </div>
@@ -610,7 +797,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       <Input
                         id="zipcode"
                         value={formData.zipcode}
-                        onChange={(e) => handleInputChange("zipcode", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("zipcode", e.target.value)
+                        }
                         placeholder="Enter ZIP code"
                       />
                     </div>
@@ -621,9 +810,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       <Select
                         value={formData.country}
                         onValueChange={(value) => {
-                          handleInputChange("country", value)
+                          handleInputChange("country", value);
                           if (value !== "Other") {
-                            handleInputChange("countryOther", "")
+                            handleInputChange("countryOther", "");
                           }
                         }}
                         className="w-full"
@@ -644,12 +833,18 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                           <Input
                             id="countryOther"
                             value={formData.countryOther || ""}
-                            onChange={(e) => handleInputChange("countryOther", e.target.value)}
+                            onChange={(e) =>
+                              handleInputChange("countryOther", e.target.value)
+                            }
                             placeholder="Enter country name"
                             required
                             className="w-full"
                           />
-                          {errors.countryOther && <p className="text-red-500 text-sm mt-1">{errors.countryOther}</p>}
+                          {errors.countryOther && (
+                            <p className="text-red-500 text-sm mt-1">
+                              {errors.countryOther}
+                            </p>
+                          )}
                         </div>
                       ) : (
                         <div />
@@ -659,43 +854,54 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                 </CardContent>
               </Card>
             </TabsContent>
-
             {/* Guardian */}
             <TabsContent value="guardian" className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <User className="h-5 w-5 text-teal-600" />
-                    Parent/Guardian Information
+                    <User className="h-5 w-5 text-teal-600" /> Parent/Guardian
+                    Information
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="parent_first_name">Parent/Guardian First Name</Label>
+                      <Label htmlFor="parent_first_name">
+                        Parent/Guardian First Name
+                      </Label>
                       <Input
                         id="parent_first_name"
                         value={formData.parent_first_name}
-                        onChange={(e) => handleInputChange("parent_first_name", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("parent_first_name", e.target.value)
+                        }
                         placeholder="Enter parent/guardian first name"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="parent_last_name">Parent/Guardian Last Name</Label>
+                      <Label htmlFor="parent_last_name">
+                        Parent/Guardian Last Name
+                      </Label>
                       <Input
                         id="parent_last_name"
                         value={formData.parent_last_name}
-                        onChange={(e) => handleInputChange("parent_last_name", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("parent_last_name", e.target.value)
+                        }
                         placeholder="Enter parent/guardian last name"
                       />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="relationship_to_insured">Relationship to Client</Label>
+                      <Label htmlFor="relationship_to_insured">
+                        Relationship to Client
+                      </Label>
                       <Select
                         value={formData.relationship_to_insured}
-                        onValueChange={(value) => handleInputChange("relationship_to_insured", value)}
+                        onValueChange={(value) =>
+                          handleInputChange("relationship_to_insured", value)
+                        }
                       >
                         <SelectTrigger>
                           <SelectValue placeholder="Select relationship" />
@@ -711,11 +917,15 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                     </div>
                     {formData.relationship_to_insured === "Other" && (
                       <div>
-                        <Label htmlFor="relation_other">Specify Other Relationship</Label>
+                        <Label htmlFor="relation_other">
+                          Specify Other Relationship
+                        </Label>
                         <Input
                           id="relation_other"
                           value={formData.relation_other}
-                          onChange={(e) => handleInputChange("relation_other", e.target.value)}
+                          onChange={(e) =>
+                            handleInputChange("relation_other", e.target.value)
+                          }
                           placeholder="Enter relationship"
                         />
                       </div>
@@ -723,23 +933,29 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                   </div>
                 </CardContent>
               </Card>
-
               {/* Emergency Contact */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Heart className="h-5 w-5 text-teal-600" />
-                    Emergency Contact
+                    <Heart className="h-5 w-5 text-teal-600" /> Emergency
+                    Contact
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor="emergency_contact_name">Emergency Contact Name</Label>
+                      <Label htmlFor="emergency_contact_name">
+                        Emergency Contact Name
+                      </Label>
                       <Input
                         id="emergency_contact_name"
                         value={formData.emergency_contact_name}
-                        onChange={(e) => handleInputChange("emergency_contact_name", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange(
+                            "emergency_contact_name",
+                            e.target.value
+                          )
+                        }
                         placeholder="Enter emergency contact name"
                       />
                     </div>
@@ -748,7 +964,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       <Input
                         id="emg_relationship"
                         value={formData.emg_relationship}
-                        onChange={(e) => handleInputChange("emg_relationship", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("emg_relationship", e.target.value)
+                        }
                         placeholder="Enter relationship"
                       />
                     </div>
@@ -759,7 +977,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                       <Input
                         id="emg_phone"
                         value={formData.emg_phone}
-                        onChange={(e) => handleInputChange("emg_phone", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("emg_phone", e.target.value)
+                        }
                         placeholder="Enter emergency contact phone"
                       />
                     </div>
@@ -769,7 +989,9 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         id="emg_email"
                         type="email"
                         value={formData.emg_email}
-                        onChange={(e) => handleInputChange("emg_email", e.target.value)}
+                        onChange={(e) =>
+                          handleInputChange("emg_email", e.target.value)
+                        }
                         placeholder="Enter emergency contact email"
                       />
                     </div>
@@ -777,22 +999,26 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                 </CardContent>
               </Card>
             </TabsContent>
-
             {/* Insurance */}
             <TabsContent value="insurance" className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Shield className="h-5 w-5 text-teal-600" />
-                    Insurance Information
+                    <Shield className="h-5 w-5 text-teal-600" /> Insurance
+                    Information
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {formData.insurances.map((insurance, index) => (
-                    <div key={index} className="border rounded-lg p-4 bg-slate-50 relative">
+                    <div
+                      key={index}
+                      className="border rounded-lg p-4 bg-slate-50 relative"
+                    >
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
-                          <h4 className="font-medium">Insurance #{index + 1}</h4>
+                          <h4 className="font-medium">
+                            Insurance #{index + 1}
+                          </h4>
                           <Badge
                             variant="outline"
                             className={
@@ -822,14 +1048,22 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                           <Label>Insurance Type</Label>
                           <Select
                             value={insurance.insurance_type}
-                            onValueChange={(value) => handleInsuranceChange(index, "insurance_type", value)}
+                            onValueChange={(value) =>
+                              handleInsuranceChange(
+                                index,
+                                "insurance_type",
+                                value
+                              )
+                            }
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Select insurance type" />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="Primary">Primary</SelectItem>
-                              <SelectItem value="Secondary">Secondary</SelectItem>
+                              <SelectItem value="Secondary">
+                                Secondary
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
@@ -838,7 +1072,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Label>Insurance Provider</Label>
                             <Input
                               value={insurance.insurance_provider}
-                              onChange={(e) => handleInsuranceChange(index, "insurance_provider", e.target.value)}
+                              onChange={(e) =>
+                                handleInsuranceChange(
+                                  index,
+                                  "insurance_provider",
+                                  e.target.value
+                                )
+                              }
                               placeholder="Enter insurance provider"
                             />
                           </div>
@@ -846,7 +1086,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Label>Treatment Type</Label>
                             <Input
                               value={insurance.treatment_type}
-                              onChange={(e) => handleInsuranceChange(index, "treatment_type", e.target.value)}
+                              onChange={(e) =>
+                                handleInsuranceChange(
+                                  index,
+                                  "treatment_type",
+                                  e.target.value
+                                )
+                              }
                               placeholder="Enter treatment type"
                             />
                           </div>
@@ -856,7 +1102,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Label>Insurance ID</Label>
                             <Input
                               value={insurance.insurance_id_number}
-                              onChange={(e) => handleInsuranceChange(index, "insurance_id_number", e.target.value)}
+                              onChange={(e) =>
+                                handleInsuranceChange(
+                                  index,
+                                  "insurance_id_number",
+                                  e.target.value
+                                )
+                              }
                               placeholder="Enter insurance ID"
                             />
                           </div>
@@ -864,7 +1116,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Label>Group Number</Label>
                             <Input
                               value={insurance.group_number}
-                              onChange={(e) => handleInsuranceChange(index, "group_number", e.target.value)}
+                              onChange={(e) =>
+                                handleInsuranceChange(
+                                  index,
+                                  "group_number",
+                                  e.target.value
+                                )
+                              }
                               placeholder="Enter group number"
                             />
                           </div>
@@ -874,7 +1132,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Label>Coinsurance</Label>
                             <Input
                               value={insurance.coinsurance}
-                              onChange={(e) => handleInsuranceChange(index, "coinsurance", e.target.value)}
+                              onChange={(e) =>
+                                handleInsuranceChange(
+                                  index,
+                                  "coinsurance",
+                                  e.target.value
+                                )
+                              }
                               placeholder="Enter coinsurance"
                             />
                           </div>
@@ -882,7 +1146,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Label>Deductible</Label>
                             <Input
                               value={insurance.deductible}
-                              onChange={(e) => handleInsuranceChange(index, "deductible", e.target.value)}
+                              onChange={(e) =>
+                                handleInsuranceChange(
+                                  index,
+                                  "deductible",
+                                  e.target.value
+                                )
+                              }
                               placeholder="Enter deductible"
                             />
                           </div>
@@ -893,7 +1163,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Input
                               type="date"
                               value={insurance.start_date}
-                              onChange={(e) => handleInsuranceChange(index, "start_date", e.target.value)}
+                              onChange={(e) =>
+                                handleInsuranceChange(
+                                  index,
+                                  "start_date",
+                                  e.target.value
+                                )
+                              }
                             />
                           </div>
                           <div>
@@ -901,7 +1177,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Input
                               type="date"
                               value={insurance.end_date}
-                              onChange={(e) => handleInsuranceChange(index, "end_date", e.target.value)}
+                              onChange={(e) =>
+                                handleInsuranceChange(
+                                  index,
+                                  "end_date",
+                                  e.target.value
+                                )
+                              }
                             />
                           </div>
                         </div>
@@ -914,25 +1196,28 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                     onClick={addInsurance}
                     className="w-full border-dashed border-slate-300 bg-transparent"
                   >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Another Insurance
+                    <Plus className="h-4 w-4 mr-2" /> Add Another Insurance
                   </Button>
                 </CardContent>
               </Card>
-
               {/* Authorization Information */}
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-teal-600" />
-                    Authorization Information
+                    <FileText className="h-5 w-5 text-teal-600" /> Authorization
+                    Information
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {formData.authorizations.map((auth, index) => (
-                    <div key={index} className="border rounded-lg p-4 bg-slate-50 relative">
+                    <div
+                      key={index}
+                      className="border rounded-lg p-4 bg-slate-50 relative"
+                    >
                       <div className="flex items-center justify-between mb-4">
-                        <h4 className="font-medium">Authorization #{index + 1}</h4>
+                        <h4 className="font-medium">
+                          Authorization #{index + 1}
+                        </h4>
                         {formData.authorizations.length > 0 && (
                           <Button
                             type="button"
@@ -951,7 +1236,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Label>Authorization Number</Label>
                             <Input
                               value={auth.authorization_number}
-                              onChange={(e) => handleAuthorizationChange(index, "authorization_number", e.target.value)}
+                              onChange={(e) =>
+                                handleAuthorizationChange(
+                                  index,
+                                  "authorization_number",
+                                  e.target.value
+                                )
+                              }
                               placeholder="Enter authorization number"
                             />
                           </div>
@@ -959,20 +1250,62 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Label>Billing Codes</Label>
                             <Input
                               value={auth.billing_codes}
-                              onChange={(e) => handleAuthorizationChange(index, "billing_codes", e.target.value)}
+                              onChange={(e) =>
+                                handleAuthorizationChange(
+                                  index,
+                                  "billing_codes",
+                                  e.target.value
+                                )
+                              }
                               placeholder="Enter billing codes"
                             />
                           </div>
                         </div>
-                        <div>
-                          <Label>Units Approved (per 15 min)</Label>
-                          <Input
-                            value={auth.units_approved_per_15_min}
-                            onChange={(e) =>
-                              handleAuthorizationChange(index, "units_approved_per_15_min", e.target.value)
-                            }
-                            placeholder="Enter approved units"
-                          />
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <Label>Units Approved (per 15 min)</Label>
+                            <Input
+                              type="number"
+                              value={auth.units_approved_per_15_min}
+                              onChange={(e) =>
+                                handleAuthorizationChange(
+                                  index,
+                                  "units_approved_per_15_min",
+                                  e.target.value
+                                )
+                              }
+                              placeholder="Enter approved units"
+                            />
+                          </div>
+                          <div>
+                            <Label>Units Serviced</Label>
+                            <Input
+                              type="number"
+                              value={auth.units_serviced}
+                              onChange={(e) =>
+                                handleAuthorizationChange(
+                                  index,
+                                  "units_serviced",
+                                  e.target.value
+                                )
+                              }
+                              placeholder="Enter serviced units"
+                            />
+                            {errors[`auth_units_serviced_${index}`] && (
+                              <p className="text-red-500 text-sm mt-1">
+                                {errors[`auth_units_serviced_${index}`]}
+                              </p>
+                            )}
+                          </div>
+                          <div>
+                            <Label>Balance Units</Label>
+                            <Input
+                              value={auth.balance_units}
+                              readOnly
+                              placeholder="Calculated balance"
+                              className="bg-gray-100 cursor-not-allowed"
+                            />
+                          </div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
@@ -980,7 +1313,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Input
                               type="date"
                               value={auth.start_date || ""}
-                              onChange={(e) => handleAuthorizationChange(index, "start_date", e.target.value)}
+                              onChange={(e) =>
+                                handleAuthorizationChange(
+                                  index,
+                                  "start_date",
+                                  e.target.value
+                                )
+                              }
                             />
                           </div>
                           <div>
@@ -988,7 +1327,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Input
                               type="date"
                               value={auth.end_date || ""}
-                              onChange={(e) => handleAuthorizationChange(index, "end_date", e.target.value)}
+                              onChange={(e) =>
+                                handleAuthorizationChange(
+                                  index,
+                                  "end_date",
+                                  e.target.value
+                                )
+                              }
                             />
                           </div>
                         </div>
@@ -997,7 +1342,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Label>Linked Insurance</Label>
                             <Select
                               value={auth.insurance_id || ""}
-                              onValueChange={(value) => handleAuthorizationChange(index, "insurance_id", value)}
+                              onValueChange={(value) =>
+                                handleAuthorizationChange(
+                                  index,
+                                  "insurance_id",
+                                  value
+                                )
+                              }
                             >
                               <SelectTrigger>
                                 <SelectValue placeholder="Select insurance" />
@@ -1005,7 +1356,8 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                               <SelectContent>
                                 {formData.insurances.map((insurance, i) => (
                                   <SelectItem key={i} value={String(i)}>
-                                    {insurance.insurance_provider || `Insurance #${i + 1}`}
+                                    {insurance.insurance_provider ||
+                                      `Insurance #${i + 1}`}
                                   </SelectItem>
                                 ))}
                               </SelectContent>
@@ -1015,7 +1367,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                             <Label>Status</Label>
                             <Select
                               value={auth.status || "Active"}
-                              onValueChange={(value) => handleAuthorizationChange(index, "status", value)}
+                              onValueChange={(value) =>
+                                handleAuthorizationChange(
+                                  index,
+                                  "status",
+                                  value
+                                )
+                              }
                             >
                               <SelectTrigger>
                                 <SelectValue placeholder="Select status" />
@@ -1039,57 +1397,25 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                     onClick={addAuthorization}
                     className="w-full border-dashed border-slate-300 bg-transparent"
                   >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Another Authorization
+                    <Plus className="h-4 w-4 mr-2" /> Add Another Authorization
                   </Button>
                 </CardContent>
               </Card>
             </TabsContent>
-
-            {/* Notes */}
-            <TabsContent value="notes" className="space-y-6">
+            {/* Documents Section - New Tab */}
+            <TabsContent value="documents" className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-teal-600" />
-                    Notes & Additional Information
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="client_notes">Client Notes</Label>
-                    <Textarea
-                      id="client_notes"
-                      value={formData.client_notes}
-                      onChange={(e) => handleInputChange("client_notes", e.target.value)}
-                      placeholder="Enter any notes about the client"
-                      rows={4}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="other_information">Other Information</Label>
-                    <Textarea
-                      id="other_information"
-                      value={formData.other_information}
-                      onChange={(e) => handleInputChange("other_information", e.target.value)}
-                      placeholder="Enter any additional information"
-                      rows={4}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Documents Section */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <File className="h-5 w-5 text-teal-600" />
-                    Client Documents
+                    <File className="h-5 w-5 text-teal-600" /> Client Documents
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {formData.documents.map((doc, index) => (
-                    <div key={index} className="border rounded-lg p-4 bg-slate-50 relative">
+                    <div
+                      key={index}
+                      className="border rounded-lg p-4 bg-slate-50 relative"
+                    >
                       <div className="flex items-center justify-between mb-4">
                         <h4 className="font-medium">Document #{index + 1}</h4>
                         {formData.documents.length > 0 && (
@@ -1109,7 +1435,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                           <Label>Document Type</Label>
                           <Select
                             value={doc.document_type}
-                            onValueChange={(value) => handleDocumentChange(index, "document_type", value)}
+                            onValueChange={(value) =>
+                              handleDocumentChange(
+                                index,
+                                "document_type",
+                                value
+                              )
+                            }
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Select document type" />
@@ -1127,7 +1459,13 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                           <Label>Document URL/Path</Label>
                           <Input
                             value={doc.file_url}
-                            onChange={(e) => handleDocumentChange(index, "file_url", e.target.value)}
+                            onChange={(e) =>
+                              handleDocumentChange(
+                                index,
+                                "file_url",
+                                e.target.value
+                              )
+                            }
                             placeholder="Enter URL or path to document"
                           />
                         </div>
@@ -1140,14 +1478,49 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                     onClick={addDocument}
                     className="w-full border-dashed border-slate-300 bg-transparent"
                   >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Another Document
+                    <Plus className="h-4 w-4 mr-2" /> Add Another Document
                   </Button>
                 </CardContent>
               </Card>
             </TabsContent>
+            {/* Notes */}
+            <TabsContent value="notes" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-teal-600" /> Notes &
+                    Additional Information
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label htmlFor="client_notes">Client Notes</Label>
+                    <Textarea
+                      id="client_notes"
+                      value={formData.client_notes}
+                      onChange={(e) =>
+                        handleInputChange("client_notes", e.target.value)
+                      }
+                      placeholder="Enter any notes about the client"
+                      rows={4}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="other_information">Other Information</Label>
+                    <Textarea
+                      id="other_information"
+                      value={formData.other_information}
+                      onChange={(e) =>
+                        handleInputChange("other_information", e.target.value)
+                      }
+                      placeholder="Enter any additional information"
+                      rows={4}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
           </Tabs>
-
           <div className="flex justify-end gap-3 pt-6 border-t">
             <Button type="button" variant="outline" onClick={handleClose}>
               Cancel
@@ -1157,7 +1530,11 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                 {editingClient ? "Update Client" : "Add Client"}
               </Button>
             ) : (
-              <Button type="button" onClick={handleNextTab} className="bg-teal-600 hover:bg-teal-700">
+              <Button
+                type="button"
+                onClick={handleNextTab}
+                className="bg-teal-600 hover:bg-teal-700"
+              >
                 Next
               </Button>
             )}
@@ -1165,5 +1542,5 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
         </form>
       </DialogContent>
     </Dialog>
-  )
+  );
 }
