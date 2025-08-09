@@ -11,6 +11,9 @@ body {
     text-wrap: balance;
   }
 }
+:root {
+  --ring: 123 46% 42%; /* Use your preferred HSL color or rgb */
+}
 
 @layer base {
   :root {

@@ -26,25 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Users,
-  Plus,
-  Search,
-  Calendar,
-  Edit,
-  Archive,
-  ArchiveRestore,
-  Eye,
-  EyeOff,
-  FileText,
-  Shield,
-  Phone,
-  MapPin,
-  Heart,
-  User,
-  MoreVertical,
-  File,
-} from "lucide-react";
+import { Users, Plus, Search, Calendar, Edit, Archive, ArchiveRestore, Eye, EyeOff, FileText, Shield, Phone, MapPin, Heart, User, MoreVertical, File } from 'lucide-react';
 import AddClientModal from "./add-client-modal";
 import toast, { Toaster } from "react-hot-toast";
 
@@ -101,6 +83,7 @@ export default function ClientsView() {
     };
     // Set client_id equal to id for backend consistency
     newClient.client_id = newClient.id;
+
     try {
       const res = await fetch(
         "https://www.mahabehavioralhealth.com/update-clients.php",
@@ -173,10 +156,12 @@ export default function ClientsView() {
   const handleArchiveClient = async (clientId) => {
     const clientToUpdate = clients.find((c) => c.id === clientId);
     if (!clientToUpdate) return;
+
     const updatedClient = {
       ...clientToUpdate,
       archived: !clientToUpdate.archived,
     };
+
     try {
       const res = await fetch(
         "https://www.mahabehavioralhealth.com/update-clients.php",
@@ -212,6 +197,8 @@ export default function ClientsView() {
     switch (status) {
       case "Active":
         return "bg-green-100 text-green-800";
+      case "New":
+        return "bg-yellow-100 text-yellow-800";
       case "Inactive":
         return "bg-gray-100 text-gray-800";
       case "Benefits Verification":
@@ -246,20 +233,21 @@ export default function ClientsView() {
         "https://www.mahabehavioralhealth.com/get-clients.php"
       );
       const json = await res.json();
+
       if (json.success && Array.isArray(json.clients)) {
         const formattedClients = json.clients.map((client) => {
           // Ensure insurances is always an array
           const insurances = Array.isArray(client.insurances)
             ? client.insurances
             : [];
+
           // Map authorizations: convert DB insurance_id to insurances[] index for UI <Select>
           const authorizations = Array.isArray(client.authorizations)
             ? client.authorizations.map((auth) => {
                 let index = "";
                 if (insurances.length && auth.insurance_id) {
                   index = insurances.findIndex(
-                    (ins) =>
-                      String(ins.insurance_id) === String(auth.insurance_id)
+                    (ins) => String(ins.insurance_id) === String(auth.insurance_id)
                   );
                   // If not found, fallback to "", else string index
                   index = index === -1 ? "" : String(index);
@@ -276,10 +264,12 @@ export default function ClientsView() {
                 };
               })
             : [];
+
           // Ensure documents is always an array
           const documents = Array.isArray(client.documents)
             ? client.documents
             : [];
+
           return {
             ...client,
             id: client.client_id || client.id, // Use client_id as the primary ID for frontend
@@ -292,6 +282,10 @@ export default function ClientsView() {
             insurances,
             authorizations,
             documents, // Add documents to the client object
+            // Explicitly map relationship_to_insured and appointment_reminder
+            relationship_to_insured: client.relationship_to_insured || "",
+            relation_other: client.relation_other || "",
+            appointment_reminder: client.appointment_reminder || "",
           };
         });
         setClients(formattedClients);
@@ -364,6 +358,7 @@ export default function ClientsView() {
           </Button>
         </div>
       </div>
+
       {/* Search and Filters */}
       <Card className="shadow-lg border-0">
         <CardContent className="p-6">
@@ -403,60 +398,63 @@ export default function ClientsView() {
           </div>
         </CardContent>
       </Card>
+
       {/* Client Table */}
       {loading ? (
         <div className="h-64 w-64 mx-auto">
-          <p className="text-center animate-pulse text-gray-500">Fetching clients</p>
-         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" >
-    <radialGradient
-      id="a8"
-      cx=".66"
-      fx=".66"
-      cy=".3125"
-      fy=".3125"
-      gradientTransform="scale(1.5)"
-    >
-      <stop offset="0" stopColor="#0C30FF" />
-      <stop offset=".3" stopColor="#0C30FF" stopOpacity=".9" />
-      <stop offset=".6" stopColor="#0C30FF" stopOpacity=".6" />
-      <stop offset=".8" stopColor="#0C30FF" stopOpacity=".3" />
-      <stop offset="1" stopColor="#0C30FF" stopOpacity="0" />
-    </radialGradient>
-    <circle
-      transformOrigin="center"
-      fill="none"
-      stroke="url(#a8)"
-      strokeWidth={15}
-      strokeLinecap="round"
-      strokeDasharray="200 1000"
-      strokeDashoffset="0"
-      cx={100}
-      cy={100}
-      r={70}
-    >
-      <animateTransform
-        attributeName="transform"
-        type="rotate"
-        dur="2s"
-        values="360;0"
-        keyTimes="0;1"
-        keySplines="0 0 1 1"
-        calcMode="spline"
-        repeatCount="indefinite"
-      />
-    </circle>
-    <circle
-      transformOrigin="center"
-      fill="none"
-      opacity={0.2}
-      stroke="#0C30FF"
-      strokeWidth={15}
-      strokeLinecap="round"
-      cx={100}
-      cy={100}
-      r={70}
-    />
-  </svg>
+          <p className="text-center animate-pulse text-gray-500">
+            Fetching clients
+          </p>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+            <radialGradient
+              id="a8"
+              cx=".66"
+              fx=".66"
+              cy=".3125"
+              fy=".3125"
+              gradientTransform="scale(1.5)"
+            >
+              <stop offset="0" stopColor="#0C30FF" />
+              <stop offset=".3" stopColor="#0C30FF" stopOpacity=".9" />
+              <stop offset=".6" stopColor="#0C30FF" stopOpacity=".6" />
+              <stop offset=".8" stopColor="#0C30FF" stopOpacity=".3" />
+              <stop offset="1" stopColor="#0C30FF" stopOpacity="0" />
+            </radialGradient>
+            <circle
+              transformOrigin="center"
+              fill="none"
+              stroke="url(#a8)"
+              strokeWidth={15}
+              strokeLinecap="round"
+              strokeDasharray="200 1000"
+              strokeDashoffset="0"
+              cx={100}
+              cy={100}
+              r={70}
+            >
+              <animateTransform
+                attributeName="transform"
+                type="rotate"
+                dur="2s"
+                values="360;0"
+                keyTimes="0;1"
+                keySplines="0 0 1 1"
+                calcMode="spline"
+                repeatCount="indefinite"
+              />
+            </circle>
+            <circle
+              transformOrigin="center"
+              fill="none"
+              opacity={0.2}
+              stroke="#0C30FF"
+              strokeWidth={15}
+              strokeLinecap="round"
+              cx={100}
+              cy={100}
+              r={70}
+            />
+          </svg>
         </div>
       ) : (
         <Card className="shadow-lg border-0">
@@ -542,9 +540,7 @@ export default function ClientsView() {
                           </TableCell>
                           {/* Age, Gender, Language columns REMOVED */}
                           <TableCell className="hidden sm:table-cell py-4">
-                            <Badge
-                              className={getStatusColor(client.client_status)}
-                            >
+                            <Badge className={getStatusColor(client.client_status)}>
                               {client.client_status}
                             </Badge>
                           </TableCell>
@@ -572,18 +568,35 @@ export default function ClientsView() {
                                 className="border-slate-300"
                               >
                                 {isExpanded ? (
-                                  <>
-                                    <EyeOff className="h-3 w-3 mr-1" /> Hide
-                                  </>
+                                  <span title="Hide">
+                                    <EyeOff className="h-3 w-3 mr-1" />
+                                  </span>
                                 ) : (
-                                  <>
-                                    <Eye className="h-3 w-3 mr-1" /> View more
-                                  </>
+                                  <span title="View">
+                                    <Eye className="h-3 w-3 mr-1" />
+                                  </span>
+                                )}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOpenEditModal(client)}
+                                className="border-slate-300"
+                              >
+                                {isExpanded ? (
+                                  <span title="Close">
+                                    <Edit className="h-4 w-4 mr-2" />
+                                  </span>
+                                ) : (
+                                  <span title="Edit">
+                                    <Edit className="h-4 w-4 mr-2" />
+                                  </span>
                                 )}
                               </Button>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button
+                                    title="Options"
                                     variant="outline"
                                     size="sm"
                                     className="border-slate-300 bg-transparent"
@@ -591,16 +604,13 @@ export default function ClientsView() {
                                     <MoreVertical className="h-3 w-3" />
                                   </Button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent
-                                  align="end"
-                                  className="w-48"
-                                >
-                                  <DropdownMenuItem
+                                <DropdownMenuContent align="end" className="w-48">
+                                  {/* <DropdownMenuItem
                                     onClick={() => handleOpenEditModal(client)}
                                   >
                                     <Edit className="h-4 w-4 mr-2" /> Edit
                                     Client
-                                  </DropdownMenuItem>
+                                  </DropdownMenuItem> */}
                                   <DropdownMenuItem>
                                     <Calendar className="h-4 w-4 mr-2" />{" "}
                                     Schedule Appointment
@@ -633,6 +643,7 @@ export default function ClientsView() {
                             </div>
                           </TableCell>
                         </TableRow>
+
                         {/* Expanded Details Row - always full width, always visible */}
                         {isExpanded && (
                           <TableRow className="bg-slate-50">
@@ -710,6 +721,7 @@ export default function ClientsView() {
                                     </div>
                                   </CardContent>
                                 </Card>
+
                                 {/* Contact and Address */}
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                   <Card className="border-slate-200">
@@ -807,6 +819,7 @@ export default function ClientsView() {
                                     </CardContent>
                                   </Card>
                                 </div>
+
                                 {/* Parent/Guardian and Emergency Contact */}
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                   <Card className="border-slate-200">
@@ -890,6 +903,7 @@ export default function ClientsView() {
                                     </CardContent>
                                   </Card>
                                 </div>
+
                                 {/* Insurance Information */}
                                 {client.insurances &&
                                   Array.isArray(client.insurances) &&
@@ -1009,6 +1023,7 @@ export default function ClientsView() {
                                       </CardContent>
                                     </Card>
                                   )}
+
                                 {/* Authorization Information */}
                                 {client.authorizations &&
                                 client.authorizations.length > 0 ? (
@@ -1038,7 +1053,6 @@ export default function ClientsView() {
                                                     )
                                                   ]
                                                 : null;
-
                                             const approvedUnits =
                                               Number.parseFloat(
                                                 auth.units_approved_per_15_min
@@ -1049,7 +1063,6 @@ export default function ClientsView() {
                                               ) || 0;
                                             const balanceUnits =
                                               approvedUnits - servicedUnits;
-
                                             return (
                                               <div
                                                 key={index}
@@ -1079,7 +1092,7 @@ export default function ClientsView() {
                                                   </div>
                                                   <div>
                                                     <p className="text-slate-500 mb-1">
-                                                      Units Approved (per 15
+                                                      Units Approved (per 15{" "}
                                                       min)
                                                     </p>
                                                     <p className="font-medium">
@@ -1160,6 +1173,7 @@ export default function ClientsView() {
                                     </CardHeader>
                                   </Card>
                                 )}
+
                                 {/* Documents Display */}
                                 {client.documents &&
                                   client.documents.length > 0 && (
@@ -1215,6 +1229,7 @@ export default function ClientsView() {
                                       </CardContent>
                                     </Card>
                                   )}
+
                                 {/* Notes */}
                                 {(client.client_notes ||
                                   client.other_information) && (
@@ -1272,6 +1287,7 @@ export default function ClientsView() {
           </CardContent>
         </Card>
       )}
+
       {/* Add/Edit Modal */}
       <AddClientModal
         isOpen={isAddModalOpen}
