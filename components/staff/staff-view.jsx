@@ -7,14 +7,32 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Users, Plus, Search, Calendar, Edit, Archive, ArchiveRestore, Eye, EyeOff, Clock, MapPin, Phone, MoreVertical } from 'lucide-react'
-import AddStaffModal from "./add-staff-modal" // Changed from "@/components/add-staff-modal"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Users,
+  Plus,
+  Search,
+  Calendar,
+  Edit,
+  Archive,
+  ArchiveRestore,
+  Eye,
+  EyeOff,
+  Clock,
+  MapPin,
+  Phone,
+  MoreVertical,
+} from "lucide-react"
+import AddStaffModal from "./add-staff-modal"
 import toast, { Toaster } from "react-hot-toast"
 
-// Define the base URL for your PHP API
-// IMPORTANT: Replace with the actual URL where your staff.php is hosted
-const API_BASE_URL = "https://www.mahabehavioralhealth.com/staff.php" // Example: "http://yourdomain.com/api/staff.php" or "/api/staff.php" if served from public/api
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_BASE_URL}/staff.php`
 
 export default function StaffView() {
   const [searchTerm, setSearchTerm] = useState("")
@@ -25,7 +43,7 @@ export default function StaffView() {
   const [editingStaff, setEditingStaff] = useState(null)
   const [staff, setStaff] = useState([])
   const [isLoading, setIsLoading] = useState(true)
-  const [expandedStaff, setExpandedStaff] = useState(new Set())
+  const [expandedStaff, setExpandedStaff] = useState(null)
 
   const activeStaffCount = staff.filter((member) => !member.archived).length
   const archivedStaffCount = staff.filter((member) => member.archived).length
@@ -77,8 +95,7 @@ export default function StaffView() {
       const result = await response.json()
       if (result.success) {
         toast.success("Staff added successfully!")
-        fetchStaff() // Refresh the list
-        setIsAddModalOpen(false) // Close modal after adding
+        fetchStaff()
       } else {
         toast.error(`Failed to add staff: ${result.message}`)
       }
@@ -100,7 +117,7 @@ export default function StaffView() {
       const result = await response.json()
       if (result.success) {
         toast.success("Staff updated successfully!")
-        fetchStaff() // Refresh the list
+        fetchStaff()
       } else {
         toast.error(`Failed to update staff: ${result.message}`)
       }
@@ -113,7 +130,6 @@ export default function StaffView() {
   }
 
   const handleOpenEditModal = (member) => {
-    // Ensure all nested objects are present to avoid errors in the form
     const staffCopy = {
       ...member,
       firstName: member.firstName || "",
@@ -124,8 +140,8 @@ export default function StaffView() {
       address: member.address || "",
       email: member.email || "",
       phone: member.phone || "",
-      dateOfJoining: member.dateOfJoining?.slice(0, 10) || "", // Format date for input type="date"
-      dateOfLeaving: member.dateOfLeaving?.slice(0, 10) || "", // Format date for input type="date"
+      dateOfJoining: member.dateOfJoining?.slice(0, 10) || "",
+      dateOfLeaving: member.dateOfLeaving?.slice(0, 10) || "",
       status: member.status || "Active",
       availability: member.availability || {},
       locationPreferences: member.locationPreferences || {},
@@ -142,20 +158,25 @@ export default function StaffView() {
     }
 
     const newArchivedStatus = !member.archived
+    const newStatus = newArchivedStatus ? "Inactive" : "Active"
     const action = newArchivedStatus ? "archived" : "restored"
 
     try {
       const response = await fetch(API_BASE_URL, {
-        method: "DELETE", // Using DELETE method for this operation
+        method: "DELETE",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ id: staffId, archived: newArchivedStatus }),
+        body: JSON.stringify({
+          id: staffId,
+          archived: newArchivedStatus,
+          status: newStatus,
+        }),
       })
       const result = await response.json()
       if (result.success) {
         toast.success(`Staff member ${member.fullName} ${action} successfully!`)
-        fetchStaff() // Refresh the list
+        fetchStaff()
       } else {
         toast.error(`Failed to ${action} staff: ${result.message}`)
       }
@@ -195,44 +216,14 @@ export default function StaffView() {
 
   const formatTimeForDisplay = (time24hr) => {
     if (!time24hr) return "N/A"
-    const [hours, minutes] = time24hr.split(':').map(Number)
-    const ampm = hours >= 12 ? 'PM' : 'AM'
+    const [hours, minutes] = time24hr.split(":").map(Number)
+    const ampm = hours >= 12 ? "PM" : "AM"
     const formattedHours = hours % 12 === 0 ? 12 : hours % 12
-    return `${formattedHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${ampm}`
-  }
-
-  const getAvailableDays = (availability) => {
-    if (!availability) return "N/A"
-    const days = []
-    Object.entries(availability).forEach(([day, schedule]) => {
-      if (schedule.available) {
-        days.push(day.charAt(0).toUpperCase() + day.slice(1, 3))
-      }
-    })
-    return days.join(", ") || "None"
-  }
-
-  const getLocationPreferences = (preferences) => {
-    if (!preferences) return "N/A"
-    const locations = []
-    Object.entries(preferences).forEach(([location, available]) => {
-      if (available) {
-        locations.push(location.charAt(0).toUpperCase() + location.slice(1))
-      }
-    })
-    return locations.join(", ") || "None"
+    return `${formattedHours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")} ${ampm}`
   }
 
   const toggleExpanded = (staffId) => {
-    setExpandedStaff((prev) => {
-      const newSet = new Set(prev)
-      if (newSet.has(staffId)) {
-        newSet.delete(staffId)
-      } else {
-        newSet.add(staffId)
-      }
-      return newSet
-    })
+    setExpandedStaff((prev) => (prev === staffId ? null : staffId))
   }
 
   return (
@@ -245,7 +236,12 @@ export default function StaffView() {
           <p className="text-slate-600 mt-1">Manage staff profiles and information</p>
         </div>
         <div className="flex flex-row flex-wrap gap-2 sm:items-center sm:space-x-3 sm:justify-end">
-          <Button variant="outline" size="sm" onClick={() => setShowArchived(!showArchived)} className="border-slate-300">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowArchived(!showArchived)}
+            className="border-slate-300"
+          >
             {showArchived ? (
               <>
                 <ArchiveRestore className="h-4 w-4 mr-2" /> Show Active ({activeStaffCount})
@@ -363,18 +359,16 @@ export default function StaffView() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50 border-b">
-                    <TableHead className="font-semibold text-slate-700">Staff</TableHead>
+                    <TableHead className="font-semibold text-slate-700">Staff Name</TableHead>
                     <TableHead className="hidden sm:table-cell font-semibold text-slate-700">Staff ID</TableHead>
-                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">Certification #</TableHead>
-                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">NPI Number</TableHead>
-                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">Contact</TableHead>
-                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">Date Joined</TableHead>
+                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">Status</TableHead>
+                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">Contact #</TableHead>
                     <TableHead className="font-semibold text-slate-700 lg:text-center text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredStaff.map((member) => {
-                    const isExpanded = expandedStaff.has(member.id || "")
+                    const isExpanded = expandedStaff === member.id
                     return (
                       <>
                         {/* Main Row */}
@@ -404,10 +398,7 @@ export default function StaffView() {
                             <span className="font-mono text-sm">{member.id}</span>
                           </TableCell>
                           <TableCell className="hidden sm:table-cell py-4">
-                            <span className="font-mono text-sm">{member.certificationNumber}</span>
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell py-4">
-                            <span className="font-mono text-sm">{member.npiNumber || "N/A"}</span>
+                            <Badge className={getStatusColor(member.status)}>{member.status}</Badge>
                           </TableCell>
                           <TableCell className="hidden sm:table-cell py-4">
                             <div className="text-sm">
@@ -417,12 +408,6 @@ export default function StaffView() {
                                   {member.phone}
                                 </div>
                               )}
-                              {member.email && <div className="text-slate-600 mt-1">{member.email}</div>}
-                            </div>
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell py-4">
-                            <div className="text-sm">
-                              {new Date(member.dateOfJoining).toLocaleDateString()}
                             </div>
                           </TableCell>
                           <TableCell className="py-4">
@@ -488,11 +473,10 @@ export default function StaffView() {
                             </div>
                           </TableCell>
                         </TableRow>
-
                         {/* Expanded Details Row */}
                         {isExpanded && (
                           <TableRow className="bg-slate-50">
-                            <TableCell colSpan={7} className="px-6 py-6">
+                            <TableCell colSpan={5} className="px-6 py-6">
                               <div className="space-y-6">
                                 {/* Personal Information Section */}
                                 <Card className="border-slate-200">
@@ -524,13 +508,17 @@ export default function StaffView() {
                                       <div>
                                         <p className="text-slate-500 mb-1">Date of Joining</p>
                                         <p className="font-medium">
-                                          {member.dateOfJoining ? new Date(member.dateOfJoining).toLocaleDateString() : "N/A"}
+                                          {member.dateOfJoining
+                                            ? new Date(member.dateOfJoining).toLocaleDateString()
+                                            : "N/A"}
                                         </p>
                                       </div>
                                       <div>
                                         <p className="text-slate-500 mb-1">Date of Leaving</p>
                                         <p className="font-medium">
-                                          {member.dateOfLeaving ? new Date(member.dateOfLeaving).toLocaleDateString() : "N/A"}
+                                          {member.dateOfLeaving
+                                            ? new Date(member.dateOfLeaving).toLocaleDateString()
+                                            : "N/A"}
                                         </p>
                                       </div>
                                     </div>
@@ -606,7 +594,12 @@ export default function StaffView() {
                                       {Object.entries(member.locationPreferences || {}).map(([location, available]) => (
                                         <div key={location} className="flex items-center gap-2">
                                           <span className="text-slate-500 capitalize">{location}:</span>
-                                          <Badge variant="outline" className={available ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
+                                          <Badge
+                                            variant="outline"
+                                            className={
+                                              available ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                                            }
+                                          >
                                             {available ? "Preferred" : "Not Preferred"}
                                           </Badge>
                                         </div>

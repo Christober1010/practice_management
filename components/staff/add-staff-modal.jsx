@@ -11,7 +11,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Users, MapPin, Clock, FileText } from "lucide-react"
-import toast from "react-hot-toast"
 
 const initialStaffState = {
   // Personal Information
@@ -68,6 +67,7 @@ const generateTimeOptions = () => {
   }
   return times
 }
+
 const timeOptions = generateTimeOptions()
 
 // Helper to format 24hr time to 12hr AM/PM for display in dropdown
@@ -79,24 +79,18 @@ const formatTimeForDropdown = (time24hr) => {
   return `${formattedHours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")} ${ampm}`
 }
 
-// Mapping of tabs to their associated form field prefixes for error checking
-const tabFieldMapping = {
-  personal: ["firstName", "lastName", "email", "phone", "address"],
-  professional: ["staffType", "certificationNumber", "npiNumber", "dateOfJoining", "dateOfLeaving", "status"],
-  availability: ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"], // Prefixes for availability fields
-  location: ["homeVisits", "clinic", "school", "community"], // Prefixes for location fields
-}
-
 export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = null }) {
   const [formData, setFormData] = useState(initialStaffState)
+  const [errors, setErrors] = useState({})
   const [activeTab, setActiveTab] = useState("personal")
   const [saving, setSaving] = useState(false)
+
   const tabOrder = ["personal", "professional", "availability", "location"]
 
   useEffect(() => {
     if (editingStaff) {
       setFormData({
-        ...initialStaffState, // Start with a clean slate
+        ...initialStaffState,
         ...editingStaff,
         // Flatten availability for form fields
         mondayAvailable: editingStaff.availability?.monday?.available || false,
@@ -129,11 +123,15 @@ export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = 
     } else {
       setFormData(initialStaffState)
     }
-    setActiveTab("personal") // Always start on the first tab
+    setErrors({})
+    setActiveTab("personal")
   }, [editingStaff, isOpen])
 
   const handleInputChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
+    if (errors[field]) {
+      setErrors((prev) => ({ ...prev, [field]: null }))
+    }
   }
 
   const prepareDataForSave = () => {
@@ -185,7 +183,7 @@ export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = 
 
     const dataToSave = {
       ...formData,
-      id: editingStaff?.id, // Preserve ID for edits, backend generates for new
+      id: editingStaff?.id,
       fullName: `${formData.firstName.trim()} ${formData.lastName.trim()}`,
       availability,
       locationPreferences,
@@ -205,74 +203,109 @@ export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = 
         delete dataToSave[key]
       }
     })
+
     return dataToSave
   }
 
   const validateCurrentTab = (tab) => {
-    const messages = []
+    const currentTabErrors = {}
+    let hasErrors = false
+
     switch (tab) {
       case "personal":
-        if (!formData.firstName.trim()) messages.push("Personal: First Name is required.")
-        if (!formData.lastName.trim()) messages.push("Personal: Last Name is required.")
-        if (!formData.email.trim()) messages.push("Personal: Email is required.")
-        else if (!/\S+@\S+\.\S+/.test(formData.email)) messages.push("Personal: Email is invalid.")
+        if (!formData.firstName.trim()) {
+          currentTabErrors.firstName = "Missing Required Entry"
+          hasErrors = true
+        }
+        if (!formData.lastName.trim()) {
+          currentTabErrors.lastName = "Missing Required Entry"
+          hasErrors = true
+        }
+        if (!formData.email.trim()) {
+          currentTabErrors.email = "Missing Required Entry"
+          hasErrors = true
+        } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+          currentTabErrors.email = "Invalid email format"
+          hasErrors = true
+        }
         break
+
       case "professional":
-        if (!formData.staffType.trim()) messages.push("Professional: Staff Type is required.")
-        if (!formData.certificationNumber.trim()) messages.push("Professional: Certification Number is required.")
-        if (!formData.dateOfJoining.trim()) messages.push("Professional: Date of Joining is required.")
-        if (!formData.status.trim()) messages.push("Professional: Staff Status is required.")
+        if (!formData.staffType.trim()) {
+          currentTabErrors.staffType = "Missing Required Entry"
+          hasErrors = true
+        }
+        if (!formData.certificationNumber.trim()) {
+          currentTabErrors.certificationNumber = "Missing Required Entry"
+          hasErrors = true
+        }
+        if (!formData.dateOfJoining.trim()) {
+          currentTabErrors.dateOfJoining = "Missing Required Entry"
+          hasErrors = true
+        }
+        if (!formData.status.trim()) {
+          currentTabErrors.status = "Missing Required Entry"
+          hasErrors = true
+        }
         break
+
       case "availability":
-        // Validate time ranges if available
         const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
         days.forEach((day) => {
           if (formData[`${day}Available`]) {
-            if (!formData[`${day}Start`].trim())
-              messages.push(`Availability: ${day.charAt(0).toUpperCase() + day.slice(1)} Start Time is required.`)
-            if (!formData[`${day}End`].trim())
-              messages.push(`Availability: ${day.charAt(0).toUpperCase() + day.slice(1)} End Time is required.`)
+            if (!formData[`${day}Start`].trim()) {
+              currentTabErrors[`${day}Start`] = "Missing Required Entry"
+              hasErrors = true
+            }
+            if (!formData[`${day}End`].trim()) {
+              currentTabErrors[`${day}End`] = "Missing Required Entry"
+              hasErrors = true
+            }
             if (formData[`${day}Start`] && formData[`${day}End`] && formData[`${day}Start`] >= formData[`${day}End`]) {
-              messages.push(
-                `Availability: ${day.charAt(0).toUpperCase() + day.slice(1)} End Time must be after Start Time.`,
-              )
+              currentTabErrors[`${day}End`] = "End time must be after start time"
+              hasErrors = true
             }
           }
         })
         break
+
       case "location":
-        // No required fields for location preferences, as they are checkboxes
+        // No required fields for location preferences
         break
+
       default:
         break
     }
-    return messages
+
+    setErrors((prev) => ({ ...prev, ...currentTabErrors }))
+    return hasErrors
   }
 
   const validateAllTabs = () => {
-    const allMessages = []
+    let hasAnyErrors = false
     let firstErrorTab = null
+
     tabOrder.forEach((tab) => {
-      const tabMessages = validateCurrentTab(tab)
-      if (tabMessages.length > 0) {
-        allMessages.push(...tabMessages)
-        if (!firstErrorTab) {
-          firstErrorTab = tab
-        }
+      const hasTabErrors = validateCurrentTab(tab)
+      if (hasTabErrors && !firstErrorTab) {
+        firstErrorTab = tab
+        hasAnyErrors = true
       }
     })
+
     if (firstErrorTab) {
-      setActiveTab(firstErrorTab) // Switch to the first tab with an error
+      setActiveTab(firstErrorTab)
     }
-    return allMessages
+
+    return hasAnyErrors
   }
 
   const handleSave = async (e) => {
     e.preventDefault()
     setSaving(true)
-    const validationMessages = validateAllTabs()
-    if (validationMessages.length > 0) {
-      validationMessages.forEach((msg) => toast.error(msg))
+
+    const hasErrors = validateAllTabs()
+    if (hasErrors) {
       setSaving(false)
       return
     }
@@ -285,16 +318,16 @@ export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = 
 
   const handleNextTab = (e) => {
     e.preventDefault()
-    const validationMessages = validateCurrentTab(activeTab)
-    if (validationMessages.length > 0) {
-      validationMessages.forEach((msg) => toast.error(msg))
-      return
+    const hasErrors = validateCurrentTab(activeTab)
+    if (hasErrors) {
+      return // Stay on current tab if there are errors
     }
+
     const currentIndex = tabOrder.indexOf(activeTab)
     if (currentIndex < tabOrder.length - 1) {
       setActiveTab(tabOrder[currentIndex + 1])
     } else {
-      handleSave(e) // If on the last tab, save the form
+      handleSave(e)
     }
   }
 
@@ -307,11 +340,39 @@ export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = 
 
   const handleClose = () => {
     setFormData(initialStaffState)
+    setErrors({})
     setActiveTab("personal")
     onClose()
   }
 
   const isLastTab = activeTab === tabOrder[tabOrder.length - 1]
+
+  const renderInputWithError = (id, label, value, onChange, props = {}) => (
+    <div>
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        value={value}
+        onChange={onChange}
+        className={errors[id] ? "border-red-500 focus:border-red-500 focus:ring-red-500" : ""}
+        {...props}
+      />
+      {errors[id] && <p className="text-red-500 text-sm mt-1">{errors[id]}</p>}
+    </div>
+  )
+
+  const renderSelectWithError = (id, label, value, onValueChange, children, placeholder = "Select...") => (
+    <div>
+      <Label htmlFor={id}>{label}</Label>
+      <Select value={value} onValueChange={onValueChange}>
+        <SelectTrigger className={errors[id] ? "border-red-500 focus:border-red-500 focus:ring-red-500" : ""}>
+          <SelectValue placeholder={placeholder} />
+        </SelectTrigger>
+        <SelectContent>{children}</SelectContent>
+      </Select>
+      {errors[id] && <p className="text-red-500 text-sm mt-1">{errors[id]}</p>}
+    </div>
+  )
 
   const renderDayAvailability = (day, dayLabel) => (
     <div key={day} className="flex items-center space-x-4 p-3 border border-slate-200 rounded-lg">
@@ -327,35 +388,41 @@ export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = 
       </div>
       {formData[`${day}Available`] && (
         <div className="flex items-center space-x-2">
-          <Select value={formData[`${day}Start`]} onValueChange={(value) => handleInputChange(`${day}Start`, value)}>
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="Start Time">
-                {formatTimeForDropdown(formData[`${day}Start`]) || "Start Time"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {timeOptions.map((time) => (
-                <SelectItem key={time} value={time}>
-                  {formatTimeForDropdown(time)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div>
+            <Select value={formData[`${day}Start`]} onValueChange={(value) => handleInputChange(`${day}Start`, value)}>
+              <SelectTrigger className={`w-32 ${errors[`${day}Start`] ? "border-red-500" : ""}`}>
+                <SelectValue placeholder="Start Time">
+                  {formatTimeForDropdown(formData[`${day}Start`]) || "Start Time"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {timeOptions.map((time) => (
+                  <SelectItem key={time} value={time}>
+                    {formatTimeForDropdown(time)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors[`${day}Start`] && <p className="text-red-500 text-xs mt-1">{errors[`${day}Start`]}</p>}
+          </div>
           <span className="text-slate-500">to</span>
-          <Select value={formData[`${day}End`]} onValueChange={(value) => handleInputChange(`${day}End`, value)}>
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="End Time">
-                {formatTimeForDropdown(formData[`${day}End`]) || "End Time"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {timeOptions.map((time) => (
-                <SelectItem key={time} value={time}>
-                  {formatTimeForDropdown(time)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div>
+            <Select value={formData[`${day}End`]} onValueChange={(value) => handleInputChange(`${day}End`, value)}>
+              <SelectTrigger className={`w-32 ${errors[`${day}End`] ? "border-red-500" : ""}`}>
+                <SelectValue placeholder="End Time">
+                  {formatTimeForDropdown(formData[`${day}End`]) || "End Time"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {timeOptions.map((time) => (
+                  <SelectItem key={time} value={time}>
+                    {formatTimeForDropdown(time)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {errors[`${day}End`] && <p className="text-red-500 text-xs mt-1">{errors[`${day}End`]}</p>}
+          </div>
         </div>
       )}
     </div>
@@ -370,6 +437,7 @@ export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = 
             {saving && <span className="ml-2 text-sm text-gray-500 italic">Saving...</span>}
           </DialogTitle>
         </DialogHeader>
+
         <form onSubmit={handleSave} className="space-y-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-4">
@@ -397,36 +465,29 @@ export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = 
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="firstName">First Name *</Label>
-                      <Input
-                        id="firstName"
-                        value={formData.firstName}
-                        onChange={(e) => handleInputChange("firstName", e.target.value)}
-                        placeholder="Enter first name"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="lastName">Last Name *</Label>
-                      <Input
-                        id="lastName"
-                        value={formData.lastName}
-                        onChange={(e) => handleInputChange("lastName", e.target.value)}
-                        placeholder="Enter last name"
-                      />
-                    </div>
+                    {renderInputWithError(
+                      "firstName",
+                      "First Name *",
+                      formData.firstName,
+                      (e) => handleInputChange("firstName", e.target.value),
+                      { placeholder: "Enter first name" },
+                    )}
+                    {renderInputWithError(
+                      "lastName",
+                      "Last Name *",
+                      formData.lastName,
+                      (e) => handleInputChange("lastName", e.target.value),
+                      { placeholder: "Enter last name" },
+                    )}
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="email">Email *</Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={formData.email}
-                        onChange={(e) => handleInputChange("email", e.target.value)}
-                        placeholder="Enter email address"
-                      />
-                    </div>
+                    {renderInputWithError(
+                      "email",
+                      "Email *",
+                      formData.email,
+                      (e) => handleInputChange("email", e.target.value),
+                      { type: "email", placeholder: "Enter email address" },
+                    )}
                     <div>
                       <Label htmlFor="phone">Phone Number</Label>
                       <Input
@@ -462,47 +523,40 @@ export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = 
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="staffType">Staff Type</Label>
-                      <Select
-                        value={formData.staffType}
-                        onValueChange={(value) => handleInputChange("staffType", value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select staff type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="RBT">RBT (Registered Behavior Technician)</SelectItem>
-                          <SelectItem value="BCBA">BCBA (Board Certified Behavior Analyst)</SelectItem>
-                          <SelectItem value="BCaBA">BCaBA (Board Certified Assistant Behavior Analyst)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="status">Staff Status</Label>
-                      <Select value={formData.status} onValueChange={(value) => handleInputChange("status", value)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Active">Active</SelectItem>
-                          <SelectItem value="Inactive">Inactive</SelectItem>
-                          <SelectItem value="On Leave">On Leave</SelectItem>
-                          <SelectItem value="Terminated">Terminated</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                    {renderSelectWithError(
+                      "staffType",
+                      "Staff Type *",
+                      formData.staffType,
+                      (value) => handleInputChange("staffType", value),
+                      <>
+                        <SelectItem value="RBT">RBT (Registered Behavior Technician)</SelectItem>
+                        <SelectItem value="BCBA">BCBA (Board Certified Behavior Analyst)</SelectItem>
+                        <SelectItem value="BCaBA">BCaBA (Board Certified Assistant Behavior Analyst)</SelectItem>
+                      </>,
+                      "Select staff type",
+                    )}
+                    {renderSelectWithError(
+                      "status",
+                      "Staff Status *",
+                      formData.status,
+                      (value) => handleInputChange("status", value),
+                      <>
+                        <SelectItem value="Active">Active</SelectItem>
+                        <SelectItem value="Inactive">Inactive</SelectItem>
+                        <SelectItem value="On Leave">On Leave</SelectItem>
+                        <SelectItem value="Terminated">Terminated</SelectItem>
+                      </>,
+                      "Select status",
+                    )}
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="certificationNumber">{formData.staffType} Certification Number *</Label>
-                      <Input
-                        id="certificationNumber"
-                        value={formData.certificationNumber}
-                        onChange={(e) => handleInputChange("certificationNumber", e.target.value)}
-                        placeholder="Enter certification number"
-                      />
-                    </div>
+                    {renderInputWithError(
+                      "certificationNumber",
+                      `${formData.staffType} Certification Number *`,
+                      formData.certificationNumber,
+                      (e) => handleInputChange("certificationNumber", e.target.value),
+                      { placeholder: "Enter certification number" },
+                    )}
                     <div>
                       <Label htmlFor="npiNumber">{formData.staffType} NPI Number</Label>
                       <Input
@@ -514,15 +568,13 @@ export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = 
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="dateOfJoining">Date of Joining *</Label>
-                      <Input
-                        id="dateOfJoining"
-                        type="date"
-                        value={formData.dateOfJoining}
-                        onChange={(e) => handleInputChange("dateOfJoining", e.target.value)}
-                      />
-                    </div>
+                    {renderInputWithError(
+                      "dateOfJoining",
+                      "Date of Joining *",
+                      formData.dateOfJoining,
+                      (e) => handleInputChange("dateOfJoining", e.target.value),
+                      { type: "date" },
+                    )}
                     <div>
                       <Label htmlFor="dateOfLeaving">Date of Leaving</Label>
                       <Input
@@ -609,11 +661,9 @@ export default function AddStaffModal({ isOpen, onClose, onSave, editingStaff = 
             <Button type="button" variant="outline" onClick={handleClose}>
               Cancel
             </Button>
-            {/* Always show the main save button */}
             <Button type="submit" className="bg-teal-600 hover:bg-teal-700">
               {editingStaff ? "Update Staff" : "Add Staff"}
             </Button>
-            {/* Show Next button only if not on the last tab */}
             {!isLastTab && (
               <Button type="button" onClick={handleNextTab} className="bg-teal-600 hover:bg-teal-700">
                 Next

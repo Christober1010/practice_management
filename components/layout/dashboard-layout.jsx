@@ -15,7 +15,7 @@ import StaffView from "@/components/staff/staff-view"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import AppSidebar from "@/components/layout/app-sidebar"
 
-export default function DashboardLayout({ userRole }) {
+export default function DashboardLayout({ userRole,onLogout }) {
   const [currentView, setCurrentView] = useState("dashboard")
 
   const renderContent = () => {
@@ -52,7 +52,7 @@ export default function DashboardLayout({ userRole }) {
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <AppSidebar userRole={userRole} currentView={currentView} setCurrentView={setCurrentView} />
+      <AppSidebar userRole={userRole} currentView={currentView} setCurrentView={setCurrentView} onLogout={onLogout} />
       <div className="w-full bg-gray-50 ">
         <Header userRole={userRole} />
         <main className="p-6 bg-white">{renderContent()}</main>

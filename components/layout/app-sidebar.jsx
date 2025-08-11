@@ -28,7 +28,12 @@ import Image from "next/image";
 
 import { useState, useEffect, useRef } from "react";
 
-export default function AppSidebar({ userRole, currentView, setCurrentView }) {
+export default function AppSidebar({
+  userRole,
+  currentView,
+  setCurrentView,
+  onLogout,
+}) {
   const [collapsed, setCollapsed] = useState(false);
   const lastScrollY = useRef(0);
 
@@ -171,7 +176,11 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
 
               return (
                 <SidebarMenuItem key={item.id}>
-                  <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive}
+                    tooltip={item.label}
+                  >
                     <a
                       href="#"
                       onClick={(e) => {
@@ -185,7 +194,9 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
                       }`}
                     >
                       <Icon
-                        className={`h-5 w-5 ${isActive ? "text-teal-600" : item.color}`}
+                        className={`h-5 w-5 ${
+                          isActive ? "text-teal-600" : item.color
+                        }`}
                       />
                       <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">
                         {item.label}
@@ -213,23 +224,26 @@ export default function AppSidebar({ userRole, currentView, setCurrentView }) {
                 className="flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               >
                 <Settings className="h-5 w-5" />
-                <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">Settings</span>
+                <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">
+                  Settings
+                </span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Sign Out">
-              <a
-                href="#"
+              <button
                 onClick={(e) => {
                   e.preventDefault();
-                  setCurrentView("logout");
+                  onLogout();
                 }}
                 className="flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors text-slate-600 hover:bg-slate-50 hover:text-slate-900"
               >
                 <LogOut className="h-5 w-5" />
-                <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">Sign Out</span>
-              </a>
+                <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">
+                  Sign Out
+                </span>
+              </button>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

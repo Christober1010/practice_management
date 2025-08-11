@@ -1,37 +1,138 @@
 "use client"
 
-import { useState } from "react"
-import { Toaster } from "react-hot-toast";
+import { useState, useEffect } from "react"
+import { Toaster, toast } from "react-hot-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Eye, EyeOff, Shield, Users, FileText, Heart } from "lucide-react"
+import { Eye, EyeOff, Shield, Heart } from "lucide-react"
 import DashboardLayout from "@/components/layout/dashboard-layout"
+import img from "../../public/favicon.ico";
 import Image from "next/image"
-import img from "public/favicon.ico"
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_BASE_URL
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
-  const [userRole, setUserRole] = useState("")
+  const [user, setUser] = useState(null) // Removed TypeScript type annotation
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
   const [loginError, setLoginError] = useState("")
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
 
-  const handleLogin = (role) => {
-    setUserRole(role)
-  }
+  // Check for existing session on component mount
+  useEffect(() => {
+    const checkExistingSession = () => {
+      const storedUser = localStorage.getItem("aba_user")
+      const storedToken = localStorage.getItem("aba_token")
+      const storedExpiry = localStorage.getItem("aba_token_expiry")
 
-  const handleSignInSecurely = () => {
-    setLoginError("") // Clear previous errors
-    if (email === "admin@maha.com" && password === "Admin@2025") {
-      setUserRole("admin")
-    } else {
-      setLoginError("Invalid email or password. Please try again.")
+      if (storedUser && storedToken && storedExpiry) {
+        const expiryTime = new Date(storedExpiry)
+        const now = new Date()
+
+        if (now < expiryTime) {
+          setUser(JSON.parse(storedUser))
+        } else {
+          // Token expired, clear storage
+          localStorage.removeItem("aba_user")
+          localStorage.removeItem("aba_token")
+          localStorage.removeItem("aba_token_expiry")
+        }
+      }
+
+      setIsCheckingAuth(false)
+    }
+
+    checkExistingSession()
+  }, [])
+
+  const handleSignIn = async () => {
+    setIsLoading(true)
+    setLoginError("")
+
+    if (!email || !password) {
+      setLoginError("Please enter both email and password")
+      setIsLoading(false)
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/login.php`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          password: password,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        // Store user data and token in localStorage
+        localStorage.setItem("aba_user", JSON.stringify(data.user))
+        localStorage.setItem("aba_token", data.token)
+        localStorage.setItem("aba_token_expiry", data.expires_at)
+
+        // Set user state to trigger dashboard render
+        setUser(data.user)
+
+        toast.success(`Welcome back, ${data.user.first_name}!`)
+      } else {
+        setLoginError(data.error || "Login failed. Please try again.")
+      }
+    } catch (error) {
+      console.error("Login error:", error)
+      setLoginError("Network error. Please check your connection and try again.")
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  if (userRole) {
-    return <DashboardLayout userRole={userRole} />
+  const handleLogout = () => {
+    // Clear all stored data
+    localStorage.removeItem("aba_user")
+    localStorage.removeItem("aba_token")
+    localStorage.removeItem("aba_token_expiry")
+
+    // Reset state
+    setUser(null)
+    setEmail("")
+    setPassword("")
+    setLoginError("")
+
+    toast.success("Logged out successfully")
+  }
+
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-teal-200 via-blue-200 to-indigo-200 flex items-center justify-center p-4">
+        <div className="text-center space-y-4">
+          <div className="flex items-center justify-center space-x-2">
+            <div className="rounded-full bg-white shadow-lg p-4 animate-pulse">
+              {/* <Heart className="h-8 w-8 text-teal-600" /> */}
+              <Image src={img} className="h-10 w-10"/>
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-slate-800">ABA Connect</h1>
+              <p className="text-sm text-teal-600 font-medium">Practice Management</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-center space-x-2 text-slate-600">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-teal-600"></div>
+            <span className="text-sm">Loading...</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (user) {
+    return <DashboardLayout userRole={user.role} onLogout={handleLogout} />
   }
 
   return (
@@ -40,9 +141,9 @@ export default function LoginPage() {
         {/* Logo and Header */}
         <div className="text-center space-y-2">
           <div className="flex items-center justify-center space-x-2">
-            <div className="rounded-full shadow-3xl transition-shadow duration-700 animate-shadowColor">
-              {/* <Heart className="h-8 w-8 text-white" /> */}
-              <Image src={img} className="h-16 w-16 rounded-full" alt="logo"/>
+            {/* Replaced favicon import with Heart icon */}
+            <div className="rounded-full bg-white shadow-lg p-4 transition-shadow duration-700">
+              <Image src={img} className="h-10 w-10"/>
             </div>
             <div className="">
               <h1 className="text-3xl font-bold text-slate-800">ABA Connect</h1>
@@ -69,6 +170,7 @@ export default function LoginPage() {
                 className="h-12 border-slate-200 focus:border-teal-500 focus:ring-teal-500"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                disabled={isLoading}
               />
             </div>
 
@@ -84,6 +186,8 @@ export default function LoginPage() {
                   className="h-12 pr-12 border-slate-200 focus:border-teal-500 focus:ring-teal-500"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  disabled={isLoading}
+                  onKeyPress={(e) => e.key === "Enter" && handleSignIn()}
                 />
                 <Button
                   type="button"
@@ -91,6 +195,7 @@ export default function LoginPage() {
                   size="sm"
                   className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
                   onClick={() => setShowPassword(!showPassword)}
+                  disabled={isLoading}
                 >
                   {showPassword ? (
                     <EyeOff className="h-4 w-4 text-slate-400" />
@@ -101,53 +206,19 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {loginError && <p className="text-red-500 text-sm text-center">{loginError}</p>}
+            {loginError && (
+              <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                <p className="text-red-600 text-sm text-center">{loginError}</p>
+              </div>
+            )}
 
             <Button
-              onClick={handleSignInSecurely}
-              className="w-full h-12 bg-teal-600 hover:bg-teal-700 text-white font-medium shadow-lg"
+              onClick={handleSignIn}
+              disabled={isLoading}
+              className="w-full h-12 bg-teal-600 hover:bg-teal-700 text-white font-medium shadow-lg disabled:opacity-50"
             >
-              Sign In Securely
+              {isLoading ? "Signing In..." : "Sign In Securely"}
             </Button>
-
-            {/* Demo Role Selection */}
-            <div className="space-y-3">
-              <Label className="text-slate-700 font-medium">Or Demo Login As:</Label>
-              <div className="grid grid-cols-2 gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => handleLogin("admin")}
-                  className="h-12 border-slate-200 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-700"
-                >
-                  <Shield className="h-4 w-4 mr-2" />
-                  Admin
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleLogin("bcba")}
-                  className="h-12 border-slate-200 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700"
-                >
-                  <Users className="h-4 w-4 mr-2" />
-                  BCBA
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleLogin("rbt")}
-                  className="h-12 border-slate-200 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-700"
-                >
-                  <FileText className="h-4 w-4 mr-2" />
-                  RBT
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => handleLogin("parent")}
-                  className="h-12 border-slate-200 hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700"
-                >
-                  <Heart className="h-4 w-4 mr-2" />
-                  Parent
-                </Button>
-              </div>
-            </div>
 
             <div className="text-center">
               <Button variant="link" className="text-sm text-teal-600 hover:text-teal-700">
@@ -165,8 +236,14 @@ export default function LoginPage() {
           </div>
           <p>Your data is encrypted and protected with enterprise-grade security</p>
         </div>
+
+        {/* <div className="text-center text-xs text-slate-500 bg-white/40 backdrop-blur rounded-lg p-3">
+          <p className="font-medium mb-1">Demo Credentials:</p>
+          <p>admin@maha.com | bcba@maha.com | parent@maha.com | rbt@maha.com</p>
+          <p>Password: Password@2025</p>
+        </div> */}
       </div>
-      <Toaster position="bottom-right"/>
+      <Toaster  />
     </div>
   )
 }
