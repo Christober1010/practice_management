@@ -3,10 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-  "build": "next build",
     "dev": "next dev",
-    "lint": "next lint",
-    "start": "next start"
+    "dev:test": "dotenv -e .env.test -- next dev",
+    "build": "next build",
+    "build:test": "dotenv -e .env.test -- next build",
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -68,6 +70,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv-cli": "^10.0.0",
     "postcss": "^8.5",
     "tailwindcss": "^3.4.17",
     "typescript": "^5"

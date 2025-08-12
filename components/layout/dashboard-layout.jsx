@@ -1,62 +1,72 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import Header from "./header"
-import AdminDashboard from "@/components/dashboards/admin-dashboard"
-import BCBADashboard from "@/components/dashboards/bcba-dashboard"
-import RBTDashboard from "@/components/dashboards/rbt-dashboard"
-import ParentDashboard from "@/components/dashboards/parent-dashboard"
-import SchedulingView from "@/components/scheduling/scheduling-view"
-import ClientsView from "@/components/clients/clients-view"
-import SessionsView from "@/components/sessions/sessions-view"
-import BillingView from "@/components/billing/billing-view"
-import ParentPortal from "@/components/portal/parent-portal"
-import StaffView from "@/components/staff/staff-view"
-import { SidebarProvider } from "@/components/ui/sidebar"
-import AppSidebar from "@/components/layout/app-sidebar"
+import { useState } from "react";
+import Header from "./header";
+import AdminDashboard from "@/components/dashboards/admin-dashboard";
+import BCBADashboard from "@/components/dashboards/bcba-dashboard";
+import RBTDashboard from "@/components/dashboards/rbt-dashboard";
+import ParentDashboard from "@/components/dashboards/parent-dashboard";
+import SchedulingView from "@/components/scheduling/scheduling-view";
+import ClientsView from "@/components/clients/clients-view";
+import SessionsView from "@/components/sessions/sessions-view";
+import BillingView from "@/components/billing/billing-view";
+import ParentPortal from "@/components/portal/parent-portal";
+import StaffView from "@/components/staff/staff-view";
+import { SidebarProvider } from "@/components/ui/sidebar";
+import AppSidebar from "@/components/layout/app-sidebar";
 
-export default function DashboardLayout({ userRole,onLogout }) {
-  const [currentView, setCurrentView] = useState("dashboard")
+export default function DashboardLayout({ userRole, onLogout }) {
+  const [currentView, setCurrentView] = useState("dashboard");
 
+  console.log(
+    "NODE_ENV:",
+    process.env.NODE_ENV,
+    process.env.NEXT_PUBLIC_BASE_URL
+  );
   const renderContent = () => {
     switch (currentView) {
       case "dashboard":
         switch (userRole) {
           case "admin":
-            return <AdminDashboard />
+            return <AdminDashboard />;
           case "bcba":
-            return <BCBADashboard />
+            return <BCBADashboard />;
           case "rbt":
-            return <RBTDashboard />
+            return <RBTDashboard />;
           case "parent":
-            return <ParentDashboard />
+            return <ParentDashboard />;
           default:
-            return <AdminDashboard />
+            return <AdminDashboard />;
         }
       case "scheduling":
-        return <SchedulingView />
+        return <SchedulingView />;
       case "clients":
-        return <ClientsView />
+        return <ClientsView />;
       case "sessions":
-        return <SessionsView />
+        return <SessionsView />;
       case "staff":
-        return <StaffView />
+        return <StaffView />;
       case "billing":
-        return <BillingView />
+        return <BillingView />;
       case "portal":
-        return <ParentPortal />
+        return <ParentPortal />;
       default:
-        return <AdminDashboard />
+        return <AdminDashboard />;
     }
-  }
+  };
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <AppSidebar userRole={userRole} currentView={currentView} setCurrentView={setCurrentView} onLogout={onLogout} />
+      <AppSidebar
+        userRole={userRole}
+        currentView={currentView}
+        setCurrentView={setCurrentView}
+        onLogout={onLogout}
+      />
       <div className="w-full bg-gray-50 ">
         <Header userRole={userRole} />
         <main className="p-6 bg-white">{renderContent()}</main>
       </div>
     </SidebarProvider>
-  )
+  );
 }

@@ -1,61 +1,67 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Toaster, toast } from "react-hot-toast"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Eye, EyeOff, Shield, Heart } from "lucide-react"
-import DashboardLayout from "@/components/layout/dashboard-layout"
+import { useState, useEffect } from "react";
+import { Toaster, toast } from "react-hot-toast";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Eye, EyeOff, Shield, Heart } from "lucide-react";
+import DashboardLayout from "@/components/layout/dashboard-layout";
 import img from "../../public/favicon.ico";
-import Image from "next/image"
+import Image from "next/image";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_BASE_URL
+const API_BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
 export default function LoginPage() {
-  const [showPassword, setShowPassword] = useState(false)
-  const [user, setUser] = useState(null) // Removed TypeScript type annotation
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [loginError, setLoginError] = useState("")
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
+  const [showPassword, setShowPassword] = useState(false);
+  const [user, setUser] = useState(null); // Removed TypeScript type annotation
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   // Check for existing session on component mount
   useEffect(() => {
     const checkExistingSession = () => {
-      const storedUser = localStorage.getItem("aba_user")
-      const storedToken = localStorage.getItem("aba_token")
-      const storedExpiry = localStorage.getItem("aba_token_expiry")
+      const storedUser = localStorage.getItem("aba_user");
+      const storedToken = localStorage.getItem("aba_token");
+      const storedExpiry = localStorage.getItem("aba_token_expiry");
 
       if (storedUser && storedToken && storedExpiry) {
-        const expiryTime = new Date(storedExpiry)
-        const now = new Date()
+        const expiryTime = new Date(storedExpiry);
+        const now = new Date();
 
         if (now < expiryTime) {
-          setUser(JSON.parse(storedUser))
+          setUser(JSON.parse(storedUser));
         } else {
           // Token expired, clear storage
-          localStorage.removeItem("aba_user")
-          localStorage.removeItem("aba_token")
-          localStorage.removeItem("aba_token_expiry")
+          localStorage.removeItem("aba_user");
+          localStorage.removeItem("aba_token");
+          localStorage.removeItem("aba_token_expiry");
         }
       }
 
-      setIsCheckingAuth(false)
-    }
+      setIsCheckingAuth(false);
+    };
 
-    checkExistingSession()
-  }, [])
+    checkExistingSession();
+  }, []);
 
   const handleSignIn = async () => {
-    setIsLoading(true)
-    setLoginError("")
+    setIsLoading(true);
+    setLoginError("");
 
     if (!email || !password) {
-      setLoginError("Please enter both email and password")
-      setIsLoading(false)
-      return
+      setLoginError("Please enter both email and password");
+      setIsLoading(false);
+      return;
     }
 
     try {
@@ -68,45 +74,47 @@ export default function LoginPage() {
           email: email.trim(),
           password: password,
         }),
-      })
+      });
 
-      const data = await response.json()
+      const data = await response.json();
 
       if (response.ok && data.success) {
         // Store user data and token in localStorage
-        localStorage.setItem("aba_user", JSON.stringify(data.user))
-        localStorage.setItem("aba_token", data.token)
-        localStorage.setItem("aba_token_expiry", data.expires_at)
+        localStorage.setItem("aba_user", JSON.stringify(data.user));
+        localStorage.setItem("aba_token", data.token);
+        localStorage.setItem("aba_token_expiry", data.expires_at);
 
         // Set user state to trigger dashboard render
-        setUser(data.user)
+        setUser(data.user);
 
-        toast.success(`Welcome back, ${data.user.first_name}!`)
+        toast.success(`Welcome back, ${data.user.first_name}!`);
       } else {
-        setLoginError(data.error || "Login failed. Please try again.")
+        setLoginError(data.error || "Login failed. Please try again.");
       }
     } catch (error) {
-      console.error("Login error:", error)
-      setLoginError("Network error. Please check your connection and try again.")
+      console.error("Login error:", error);
+      setLoginError(
+        "Network error. Please check your connection and try again."
+      );
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   const handleLogout = () => {
     // Clear all stored data
-    localStorage.removeItem("aba_user")
-    localStorage.removeItem("aba_token")
-    localStorage.removeItem("aba_token_expiry")
+    localStorage.removeItem("aba_user");
+    localStorage.removeItem("aba_token");
+    localStorage.removeItem("aba_token_expiry");
 
     // Reset state
-    setUser(null)
-    setEmail("")
-    setPassword("")
-    setLoginError("")
+    setUser(null);
+    setEmail("");
+    setPassword("");
+    setLoginError("");
 
-    toast.success("Logged out successfully")
-  }
+    toast.success("Logged out successfully");
+  };
 
   if (isCheckingAuth) {
     return (
@@ -115,11 +123,13 @@ export default function LoginPage() {
           <div className="flex items-center justify-center space-x-2">
             <div className="rounded-full bg-white shadow-lg p-4 animate-pulse">
               {/* <Heart className="h-8 w-8 text-teal-600" /> */}
-              <Image src={img} className="h-10 w-10"/>
+              <Image src={img} className="h-10 w-10" />
             </div>
             <div>
               <h1 className="text-3xl font-bold text-slate-800">ABA Connect</h1>
-              <p className="text-sm text-teal-600 font-medium">Practice Management</p>
+              <p className="text-sm text-teal-600 font-medium">
+                Practice Management
+              </p>
             </div>
           </div>
           <div className="flex items-center justify-center space-x-2 text-slate-600">
@@ -128,12 +138,13 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   if (user) {
-    return <DashboardLayout userRole={user.role} onLogout={handleLogout} />
+    return <DashboardLayout userRole={user.role} onLogout={handleLogout} />;
   }
+  
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-teal-200 via-blue-200 to-indigo-200 flex items-center justify-center p-4">
@@ -143,11 +154,13 @@ export default function LoginPage() {
           <div className="flex items-center justify-center space-x-2">
             {/* Replaced favicon import with Heart icon */}
             <div className="rounded-full bg-white shadow-lg p-4 transition-shadow duration-700">
-              <Image src={img} className="h-10 w-10"/>
+              <Image src={img} className="h-10 w-10" />
             </div>
             <div className="">
               <h1 className="text-3xl font-bold text-slate-800">ABA Connect</h1>
-              <p className="text-sm text-teal-600 font-medium">Practice Management</p>
+              <p className="text-sm text-teal-600 font-medium">
+                Practice Management
+              </p>
             </div>
           </div>
         </div>
@@ -155,8 +168,12 @@ export default function LoginPage() {
         {/* Login Card */}
         <Card className="shadow-xl border-0 bg-white/95 backdrop-blur">
           <CardHeader className="space-y-1 pb-6">
-            <CardTitle className="text-2xl text-center text-slate-800">Welcome Back</CardTitle>
-            <CardDescription className="text-center text-slate-600">Sign in to access your dashboard</CardDescription>
+            <CardTitle className="text-2xl text-center text-slate-800">
+              Welcome Back
+            </CardTitle>
+            <CardDescription className="text-center text-slate-600">
+              Sign in to access your dashboard
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-2">
@@ -221,7 +238,10 @@ export default function LoginPage() {
             </Button>
 
             <div className="text-center">
-              <Button variant="link" className="text-sm text-teal-600 hover:text-teal-700">
+              <Button
+                variant="link"
+                className="text-sm text-teal-600 hover:text-teal-700"
+              >
                 Forgot your password?
               </Button>
             </div>
@@ -234,7 +254,9 @@ export default function LoginPage() {
             <Shield className="h-4 w-4 text-teal-600" />
             <span className="font-medium">HIPAA Compliant & Secure</span>
           </div>
-          <p>Your data is encrypted and protected with enterprise-grade security</p>
+          <p>
+            Your data is encrypted and protected with enterprise-grade security
+          </p>
         </div>
 
         {/* <div className="text-center text-xs text-slate-500 bg-white/40 backdrop-blur rounded-lg p-3">
@@ -243,7 +265,7 @@ export default function LoginPage() {
           <p>Password: Password@2025</p>
         </div> */}
       </div>
-      <Toaster  />
+      <Toaster />
     </div>
-  )
+  );
 }
