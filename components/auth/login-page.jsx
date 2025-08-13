@@ -126,7 +126,8 @@ export default function LoginPage() {
               <Image src={img} className="h-10 w-10" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-slate-800">ABA Connect</h1>
+              <h1 className="text-3xl font-bold text-slate-800">Mahaverse</h1>
+              <p className="text-md font-bold text-slate-600">Shining in Every Shade of the Spectrum</p>
               <p className="text-sm text-teal-600 font-medium">
                 Practice Management
               </p>
@@ -142,7 +143,7 @@ export default function LoginPage() {
   }
 
   if (user) {
-    return <DashboardLayout userRole={user.role} onLogout={handleLogout} />;
+    return <DashboardLayout userRole={user} onLogout={handleLogout} />;
   }
   
 
@@ -156,8 +157,9 @@ export default function LoginPage() {
             <div className="rounded-full bg-white shadow-lg p-4 transition-shadow duration-700">
               <Image src={img} className="h-10 w-10" />
             </div>
-            <div className="">
-              <h1 className="text-3xl font-bold text-slate-800">ABA Connect</h1>
+            <div className="text-left">
+             <h1 className="text-3xl font-bold text-slate-800">Mahaverse</h1>
+              <p className="text-md font-bold text-slate-700">Shining in Every Shade of the Spectrum</p>
               <p className="text-sm text-teal-600 font-medium">
                 Practice Management
               </p>

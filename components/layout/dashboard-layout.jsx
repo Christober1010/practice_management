@@ -18,15 +18,10 @@ import AppSidebar from "@/components/layout/app-sidebar";
 export default function DashboardLayout({ userRole, onLogout }) {
   const [currentView, setCurrentView] = useState("dashboard");
 
-  console.log(
-    "NODE_ENV:",
-    process.env.NODE_ENV,
-    process.env.NEXT_PUBLIC_BASE_URL
-  );
   const renderContent = () => {
     switch (currentView) {
       case "dashboard":
-        switch (userRole) {
+        switch (userRole.role) {
           case "admin":
             return <AdminDashboard />;
           case "bcba":
@@ -54,7 +49,6 @@ export default function DashboardLayout({ userRole, onLogout }) {
         return <AdminDashboard />;
     }
   };
-
   return (
     <SidebarProvider defaultOpen={true}>
       <AppSidebar
@@ -64,7 +58,7 @@ export default function DashboardLayout({ userRole, onLogout }) {
         onLogout={onLogout}
       />
       <div className="w-full bg-gray-50 ">
-        <Header userRole={userRole} />
+        <Header userRole={userRole} onLogout={onLogout}/>
         <main className="p-6 bg-white">{renderContent()}</main>
       </div>
     </SidebarProvider>

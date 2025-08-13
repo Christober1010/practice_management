@@ -94,7 +94,7 @@ export default function AppSidebar({
       },
     ];
 
-    if (userRole === "admin" || userRole === "bcba") {
+    if (userRole.role === "admin" || userRole.role === "bcba") {
       baseItems.push(
         {
           id: "staff",
@@ -111,7 +111,7 @@ export default function AppSidebar({
       );
     }
 
-    if (userRole === "parent") {
+    if (userRole.role === "parent") {
       return [
         {
           id: "dashboard",
@@ -133,7 +133,7 @@ export default function AppSidebar({
   };
 
   const getRoleColor = () => {
-    switch (userRole) {
+    switch (userRole.role) {
       case "admin":
         return "bg-teal-600";
       case "bcba":
@@ -161,7 +161,7 @@ export default function AppSidebar({
             <Image src={img} className="h-16 w-16 rounded-full" alt="logo" />
           </div>
           <span className="text-xl font-bold text-slate-800 group-data-[state=collapsed]/sidebar-wrapper:hidden">
-            ABA Connect
+            Mahaverse 
           </span>
         </div>
       </SidebarHeader>

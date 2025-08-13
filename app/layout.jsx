@@ -5,7 +5,7 @@ import { ThemeProvider } from "../components/theme-provider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata = {
-  title: "ABA Connect - Practice Management",
+  title: "Mahaverse Shining in Every Shade of the Spectrum",
   description: "Comprehensive ABA Practice Management Software",
 };
 

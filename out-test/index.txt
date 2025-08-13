@@ -1,12 +1,12 @@
 1:"$Sreact.fragment"
-3:I[2361,["781","static/chunks/781-6a18440eabfd8040.js","974","static/chunks/app/page-0f202dd0e8a62fd9.js"],"default"]
+3:I[2361,["781","static/chunks/781-6a18440eabfd8040.js","974","static/chunks/app/page-114da12312c49bc1.js"],"default"]
 4:I[9665,[],"OutletBoundary"]
 7:I[9665,[],"ViewportBoundary"]
 9:I[9665,[],"MetadataBoundary"]
 b:I[6614,[],""]
 :HL["/_next/static/media/e4af272ccee01ff0-s.p.woff2","font",{"crossOrigin":"","type":"font/woff2"}]
-:HL["/_next/static/css/1c8272bd59ab7c55.css","style"]
-0:{"P":null,"b":"DnYCPl8FR3F_VE1U1upti","p":"","c":["",""],"i":false,"f":[[["",{"children":["__PAGE__",{}]},"$undefined","$undefined",true],["",["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/1c8272bd59ab7c55.css","precedence":"next","crossOrigin":"$undefined","nonce":"$undefined"}]],"$L2"]}],{"children":["__PAGE__",["$","$1","c",{"children":[["$","$L3",null,{}],"$undefined",null,["$","$L4",null,{"children":["$L5","$L6",null]}]]}],{},null,false]},null,false],["$","$1","h",{"children":[null,["$","$1","FnxlRItHQSVvuzp6TC2AG",{"children":[["$","$L7",null,{"children":"$L8"}],["$","meta",null,{"name":"next-size-adjust","content":""}]]}],["$","$L9",null,{"children":"$La"}]]}],false]],"m":"$undefined","G":["$b","$undefined"],"s":false,"S":true}
+:HL["/_next/static/css/e9e65561d80cbe39.css","style"]
+0:{"P":null,"b":"qCzIBBABQhD40nUFSVFuq","p":"","c":["",""],"i":false,"f":[[["",{"children":["__PAGE__",{}]},"$undefined","$undefined",true],["",["$","$1","c",{"children":[[["$","link","0",{"rel":"stylesheet","href":"/_next/static/css/e9e65561d80cbe39.css","precedence":"next","crossOrigin":"$undefined","nonce":"$undefined"}]],"$L2"]}],{"children":["__PAGE__",["$","$1","c",{"children":[["$","$L3",null,{}],"$undefined",null,["$","$L4",null,{"children":["$L5","$L6",null]}]]}],{},null,false]},null,false],["$","$1","h",{"children":[null,["$","$1","SkQeA7fFUme2cLEzBQCbi",{"children":[["$","$L7",null,{"children":"$L8"}],["$","meta",null,{"name":"next-size-adjust","content":""}]]}],["$","$L9",null,{"children":"$La"}]]}],false]],"m":"$undefined","G":["$b","$undefined"],"s":false,"S":true}
 c:I[9304,["177","static/chunks/app/layout-b8fc58868a4a5818.js"],"ThemeProvider"]
 d:I[7555,[],""]
 e:I[1295,[],""]
@@ -14,4 +14,4 @@ e:I[1295,[],""]
 8:[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]
 5:null
 6:null
-a:[["$","title","0",{"children":"ABA Connect - Practice Management"}],["$","meta","1",{"name":"description","content":"Comprehensive ABA Practice Management Software"}]]
+a:[["$","title","0",{"children":"Mahaverse Shining in Every Shade of the Spectrum"}],["$","meta","1",{"name":"description","content":"Comprehensive ABA Practice Management Software"}]]
