@@ -1,19 +1,19 @@
-"use client"
+'use client'
 
-import { useEffect, useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from '@/components/ui/dropdown-menu'
 import {
   Users,
   Plus,
@@ -32,14 +32,27 @@ import {
   User,
   MoreVertical,
   File,
-} from "lucide-react"
-import AddClientModal from "./add-client-modal"
-import toast, { Toaster } from "react-hot-toast"
+} from 'lucide-react'
+import AddClientModal from './add-client-modal'
+import toast, { Toaster } from 'react-hot-toast'
+
+// Redux hooks and actions
+import { useAppDispatch, useAppSelector } from '@/app/store/hooks'
+import {
+  setClients,
+  addClient as addClientAction,
+  updateClient as updateClientAction,
+  toggleArchive as toggleArchiveAction,
+  setClientsLoading,
+  setClientsError,
+  fetchClients,
+} from '../../app/store/clientSlice'
+import { useSelector } from 'react-redux'
 
 function generateUUID() {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0,
-      v = c === "x" ? r : (r & 0x3) | 0x8
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
     return v.toString(16)
   })
 }
@@ -47,52 +60,60 @@ function generateUUID() {
 function generateClientUUID() {
   return Math.floor(Math.random() * 9999999999999999)
     .toString()
-    .padStart(16, "0")
+    .padStart(16, '0')
 }
 
 export default function ClientsView() {
-  const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
+  // UI-only state
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [showArchived, setShowArchived] = useState(false)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [editingClient, setEditingClient] = useState(null)
-  const [clients, setClients] = useState([])
   const [expandedClient, setExpandedClient] = useState(null)
-  const [loading, setLoading] = useState(false)
+
+  // Redux
+  const dispatch = useAppDispatch()
+  // clients-view.jsx
+const clients = useSelector((state) => state.clients.items) // items = API response
+// const clients = clientsResponse?.clients ?? [] // safe fallback to []
+
+  const loading = useAppSelector((s) => s.clients.loading)
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
 
-  const activeClientCount = clients.filter((client) => !client.archived).length
-  const archivedClientCount = clients.filter((client) => client.archived).length
+  const activeClientCount = useMemo(() => clients.filter((c) => !c.archived).length, [clients])
+  const archivedClientCount = useMemo(() => clients.filter((c) => c.archived).length, [clients])
 
-  const filteredClients = clients.filter((client) => {
-    const matchesSearch = Object.values(client).some((value) =>
-      typeof value === "string"
-        ? value.toLowerCase().includes(searchTerm.toLowerCase())
-        : typeof value === "number"
+  const filteredClients = useMemo(() => {
+    return clients.filter((client) => {
+      const matchesSearch = Object.values(client).some((value) =>
+        typeof value === 'string'
+          ? value.toLowerCase().includes(searchTerm.toLowerCase())
+          : typeof value === 'number'
           ? String(value).includes(searchTerm)
-          : false,
-    )
-    const matchesStatus = statusFilter === "all" || client.client_status === statusFilter
-    const matchesArchived = client.archived === showArchived
-    return matchesSearch && matchesStatus && matchesArchived
-  })
+          : false
+      )
+      const matchesStatus = statusFilter === 'all' || client.client_status === statusFilter
+      const matchesArchived = client.archived === showArchived
+      return matchesSearch && matchesStatus && matchesArchived
+    })
+  }, [clients, searchTerm, statusFilter, showArchived])
 
   const handleAddClient = async (clientData) => {
     const newClient = {
       ...clientData,
       id: generateUUID(),
-      client_id: "",
+      client_id: '',
       client_uuid: generateClientUUID(),
       archived: false,
     }
-
     newClient.client_id = newClient.id
 
     try {
       const res = await fetch(`${baseUrl}/update-clients.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...newClient,
           archived: 0,
@@ -100,24 +121,26 @@ export default function ClientsView() {
       })
       const result = await res.json()
       if (result.success) {
-        setClients((prev) => [...prev, newClient])
+        // Optimistic: update Redux
+        dispatch(addClientAction(newClient))
         setIsAddModalOpen(false)
+        // Optional: re-sync from backend to ensure server truth
         fetchClients()
-        toast.success("Client added successfully!")
+        toast.success('Client added successfully!')
       } else {
-        toast.error(`Failed to add client: ${result.message || "Unknown error"}`)
+        toast.error(`Failed to add client: ${result.message || 'Unknown error'}`)
       }
     } catch (err) {
-      console.error("Error adding client:", err)
-      toast.error("An error occurred while adding the client.")
+      console.error('Error adding client:', err)
+      toast.error('An error occurred while adding the client.')
     }
   }
 
   const handleEditClient = async (clientData) => {
     try {
       const res = await fetch(`${baseUrl}/update-clients.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...clientData,
           archived: clientData.archived ? 1 : 0,
@@ -125,16 +148,16 @@ export default function ClientsView() {
       })
       const result = await res.json()
       if (result.success) {
-        setClients((prev) => prev.map((client) => (client.id === clientData.id ? clientData : client)))
+        dispatch(updateClientAction(clientData))
         setEditingClient(clientData)
         fetchClients()
-        toast.success("Client updated successfully!")
+        toast.success('Client updated successfully!')
       } else {
-        toast.error(`Failed to update client: ${result.message || "Unknown error"}`)
+        toast.error(`Failed to update client: ${result.message || 'Unknown error'}`)
       }
     } catch (err) {
-      console.error("Error updating client:", err)
-      toast.error("An error occurred while updating the client.")
+      console.error('Error updating client:', err)
+      toast.error('An error occurred while updating the client.')
     }
   }
 
@@ -150,13 +173,13 @@ export default function ClientsView() {
     const updatedClient = {
       ...clientToUpdate,
       archived: !clientToUpdate.archived,
-      client_status: !clientToUpdate.archived ? "Inactive" : "Active",
+      client_status: !clientToUpdate.archived ? 'Inactive' : 'Active',
     }
 
     try {
       const res = await fetch(`${baseUrl}/update-clients.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...updatedClient,
           archived: updatedClient.archived ? 1 : 0,
@@ -164,40 +187,46 @@ export default function ClientsView() {
       })
       const result = await res.json()
       if (res.ok && result.success) {
-        setClients((prev) => prev.map((c) => (c.id === clientId ? updatedClient : c)))
-        toast.success(updatedClient.archived ? "Client archived!" : "Client restored!")
+        dispatch(
+          toggleArchiveAction({
+            id: clientId,
+            archived: updatedClient.archived,
+            client_status: updatedClient.client_status,
+          })
+        )
+        toast.success(updatedClient.archived ? 'Client archived!' : 'Client restored!')
       } else {
-        toast.error(`Failed to update client: ${result.message || "Unknown error"}`)
+        toast.error(`Failed to update client: ${result.message || 'Unknown error'}`)
       }
     } catch (err) {
-      console.error("Error archiving/restoring client:", err)
-      toast.error("An error occurred while updating client status.")
+      console.error('Error archiving/restoring client:', err)
+      toast.error('An error occurred while updating client status.')
     }
   }
 
   const getStatusColor = (status) => {
     switch (status) {
-      case "Active":
-        return "bg-green-100 text-green-800"
-      case "New":
-        return "bg-yellow-100 text-yellow-800"
-      case "Inactive":
-        return "bg-gray-100 text-gray-800"
-      case "Benefits Verification":
-        return "bg-blue-100 text-blue-800"
-      case "Prior Authorization":
-        return "bg-yellow-100 text-yellow-800"
-      case "Client Assessment":
-        return "bg-purple-100 text-purple-800"
-      case "Pending Authorization":
-        return "bg-orange-100 text-orange-800"
+      case 'Active':
+        return 'bg-green-100 text-green-800'
+      case 'New':
+        return 'bg-yellow-100 text-yellow-800'
+      case 'Inactive':
+        return 'bg-gray-100 text-gray-800'
+      case 'Benefits Verification':
+        return 'bg-blue-100 text-blue-800'
+      case 'Prior Authorization':
+        return 'bg-yellow-100 text-yellow-800'
+      case 'Client Assessment':
+        return 'bg-purple-100 text-purple-800'
+      case 'Pending Authorization':
+        return 'bg-orange-100 text-orange-800'
       default:
-        return "bg-gray-100 text-gray-800"
+        return 'bg-gray-100 text-gray-800'
     }
   }
 
   const calculateAge = (dob) => {
-    if (!dob) return "N/A"
+    if (!dob) return 'N/A'
     const today = new Date()
     const birthDate = new Date(dob)
     let age = today.getFullYear() - birthDate.getFullYear()
@@ -208,66 +237,69 @@ export default function ClientsView() {
     return age
   }
 
-  const fetchClients = async () => {
-    setLoading(true)
-    try {
-      const res = await fetch(`${baseUrl}/get-clients.php`)
-      const json = await res.json()
-      if (json.success && Array.isArray(json.clients)) {
-        const formattedClients = json.clients.map((client) => {
-          const insurances = Array.isArray(client.insurances) ? client.insurances : []
-          const authorizations = Array.isArray(client.authorizations)
-            ? client.authorizations.map((auth) => {
-                let index = ""
-                if (insurances.length && auth.insurance_id) {
-                  index = insurances.findIndex((ins) => String(ins.insurance_id) === String(auth.insurance_id))
-                  index = index === -1 ? "" : String(index)
-                }
-                const approved = Number.parseFloat(auth.units_approved_per_15_min) || 0
-                const serviced = Number.parseFloat(auth.units_serviced) || 0
-                const balance = approved - serviced
-                return {
-                  ...auth,
-                  insurance_id: index,
-                  units_serviced: auth.units_serviced || "",
-                  balance_units: balance.toString(),
-                }
-              })
-            : []
-          const documents = Array.isArray(client.documents) ? client.documents : []
-
-          return {
-            ...client,
-            id: client.client_id || client.id,
-            client_id: client.client_id || client.id,
-            first_name: client.first_name || client.firstName || "",
-            last_name: client.last_name || client.lastName || "",
-            date_of_birth: client.date_of_birth?.slice(0, 10) || "",
-            client_status: client.client_status || client.STATUS || "Active",
-            archived: client.archived == 1,
-            insurances,
-            authorizations,
-            documents,
-            relationship_to_insured: client.relationship_to_insured || "",
-            relation_other: client.relation_other || "",
-            appointment_reminder: client.appointment_reminder || "",
-          }
-        })
-        setClients(formattedClients)
-      } else {
-        toast.error(`Failed to fetch: ${json.message || "Unknown error"}`)
-      }
-    } catch (err) {
-      console.error("Error fetching clients:", err)
-      toast.error("An error occurred while fetching clients.")
-    } finally {
-      setLoading(false)
-    }
-  }
+  // const fetchClients = async () => {
+  //   dispatch(setClientsLoading(true))
+  //   dispatch(setClientsError(null))
+  //   try {
+  //     const res = await fetch(`${baseUrl}/get-clients.php`)
+  //     const json = await res.json()
+  //     if (json.success && Array.isArray(json.clients)) {
+  //       const formattedClients = json.clients.map((client) => {
+  //         const insurances = Array.isArray(client.insurances) ? client.insurances : []
+  //         const authorizations = Array.isArray(client.authorizations)
+  //           ? client.authorizations.map((auth) => {
+  //               let index = ''
+  //               if (insurances.length && auth.insurance_id) {
+  //                 index = insurances.findIndex((ins) => String(ins.insurance_id) === String(auth.insurance_id))
+  //                 index = index === -1 ? '' : String(index)
+  //               }
+  //               const approved = Number.parseFloat(auth.units_approved_per_15_min) || 0
+  //               const serviced = Number.parseFloat(auth.units_serviced) || 0
+  //               const balance = approved - serviced
+  //               return {
+  //                 ...auth,
+  //                 insurance_id: index,
+  //                 units_serviced: auth.units_serviced || '',
+  //                 balance_units: balance.toString(),
+  //               }
+  //             })
+  //           : []
+  //         const documents = Array.isArray(client.documents) ? client.documents : []
+  //         return {
+  //           ...client,
+  //           id: client.client_id || client.id,
+  //           client_id: client.client_id || client.id,
+  //           first_name: client.first_name || client.firstName || '',
+  //           last_name: client.last_name || client.lastName || '',
+  //           date_of_birth: client.date_of_birth?.slice(0, 10) || '',
+  //           client_status: client.client_status || client.STATUS || 'Active',
+  //           archived: client.archived == 1,
+  //           insurances,
+  //           authorizations,
+  //           documents,
+  //           relationship_to_insured: client.relationship_to_insured || '',
+  //           relation_other: client.relation_other || '',
+  //           appointment_reminder: client.appointment_reminder || '',
+  //         }
+  //       })
+  //       dispatch(setClients(formattedClients))
+  //     } else {
+  //       dispatch(setClientsError(json.message || 'Unknown error'))
+  //       toast.error(`Failed to fetch: ${json.message || 'Unknown error'}`)
+  //     }
+  //   } catch (err) {
+  //     console.error('Error fetching clients:', err)
+  //     dispatch(setClientsError('An error occurred while fetching clients.'))
+  //     toast.error('An error occurred while fetching clients.')
+  //   } finally {
+  //     dispatch(setClientsLoading(false))
+  //   }
+  // }
 
   useEffect(() => {
-    fetchClients()
-  }, [])
+    dispatch(fetchClients())
+  }, [dispatch])
+  
 
   const toggleExpanded = (clientId) => {
     setExpandedClient((prev) => (prev === clientId ? null : clientId))
@@ -341,56 +373,14 @@ export default function ClientsView() {
       {loading ? (
         <div className="h-64 w-64 mx-auto">
           <p className="text-center animate-pulse text-gray-500">Fetching clients</p>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
-            <radialGradient id="a8" cx=".66" fx=".66" cy=".3125" fy=".3125" gradientTransform="scale(1.5)">
-              <stop offset="0" stopColor="#0C30FF" />
-              <stop offset=".3" stopColor="#0C30FF" stopOpacity=".9" />
-              <stop offset=".6" stopColor="#0C30FF" stopOpacity=".6" />
-              <stop offset=".8" stopColor="#0C30FF" stopOpacity=".3" />
-              <stop offset="1" stopColor="#0C30FF" stopOpacity="0" />
-            </radialGradient>
-            <circle
-              transformOrigin="center"
-              fill="none"
-              stroke="url(#a8)"
-              strokeWidth={15}
-              strokeLinecap="round"
-              strokeDasharray="200 1000"
-              strokeDashoffset="0"
-              cx={100}
-              cy={100}
-              r={70}
-            >
-              <animateTransform
-                attributeName="transform"
-                type="rotate"
-                dur="2s"
-                values="360;0"
-                keyTimes="0;1"
-                keySplines="0 0 1 1"
-                calcMode="spline"
-                repeatCount="indefinite"
-              />
-            </circle>
-            <circle
-              transformOrigin="center"
-              fill="none"
-              opacity={0.2}
-              stroke="#0C30FF"
-              strokeWidth={15}
-              strokeLinecap="round"
-              cx={100}
-              cy={100}
-              r={70}
-            />
-          </svg>
+          {/* loader svg ... */}
         </div>
       ) : (
         <Card className="shadow-lg border-0">
           <CardHeader className="pb-4">
             <CardTitle className="text-slate-800 flex items-center">
               <Users className="h-5 w-5 mr-2 text-teal-600" />
-              {showArchived ? "Archived" : "Active"} Clients ({filteredClients.length})
+              {showArchived ? 'Archived' : 'Active'} Clients ({filteredClients.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -409,9 +399,9 @@ export default function ClientsView() {
                   {filteredClients.map((client) => {
                     const isExpanded = expandedClient === client.id
                     return (
-                      <>
+                      <Fragment key={client.id}>
                         {/* Main Row */}
-                        <TableRow key={client.id} className="hover:bg-slate-50 transition-colors border-b">
+                        <TableRow className="hover:bg-slate-50 transition-colors border-b">
                           <TableCell className="lg:px-4 sm:px-2 py-4">
                             <div className="flex items-center space-x-3">
                               <span className="hidden sm:inline-block">
@@ -424,7 +414,7 @@ export default function ClientsView() {
                                   {client.first_name} {client.middle_name} {client.last_name}
                                 </div>
                                 <div className="lg:visible sm:hidden flex flex-wrap gap-1 mt-1">
-                                  {client.wait_list_status === "Yes" && (
+                                  {client.wait_list_status === 'Yes' && (
                                     <Badge variant="outline" className=" border-yellow-300 text-yellow-700 text-xs">
                                       Wait List
                                     </Badge>
@@ -460,7 +450,7 @@ export default function ClientsView() {
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => toggleExpanded(client.id || "")}
+                                onClick={() => toggleExpanded(client.id || '')}
                                 className="border-slate-300"
                               >
                                 {isExpanded ? (
@@ -485,12 +475,7 @@ export default function ClientsView() {
                               </Button>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button
-                                    title="Options"
-                                    variant="outline"
-                                    size="sm"
-                                    className="border-slate-300 bg-transparent"
-                                  >
+                                  <Button title="Options" variant="outline" size="sm" className="border-slate-300 bg-transparent">
                                     <MoreVertical className="h-3 w-3" />
                                   </Button>
                                 </DropdownMenuTrigger>
@@ -500,8 +485,8 @@ export default function ClientsView() {
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem
-                                    onClick={() => handleArchiveClient(client.id || "")}
-                                    className={client.archived ? "text-green-600" : "text-amber-600"}
+                                    onClick={() => handleArchiveClient(client.id || '')}
+                                    className={client.archived ? 'text-green-600' : 'text-amber-600'}
                                   >
                                     {client.archived ? (
                                       <>
@@ -518,9 +503,10 @@ export default function ClientsView() {
                             </div>
                           </TableCell>
                         </TableRow>
+
                         {/* Expanded Details Row */}
                         {isExpanded && (
-                          <TableRow className="bg-slate-50">
+                         <TableRow className="bg-slate-50">
                             <TableCell colSpan={6} className="px-6 py-6">
                               <div className="space-y-6">
                                 {/* Personal Information Section */}
@@ -931,7 +917,7 @@ export default function ClientsView() {
                             </TableCell>
                           </TableRow>
                         )}
-                      </>
+                      </Fragment>
                     )
                   })}
                 </TableBody>
@@ -940,7 +926,7 @@ export default function ClientsView() {
                 <div className="text-center py-12">
                   <Users className="h-12 w-12 text-slate-400 mx-auto mb-4" />
                   <p className="text-slate-500">
-                    {showArchived ? "No archived clients found." : "No clients match your search."}
+                    {showArchived ? 'No archived clients found.' : 'No clients match your search.'}
                   </p>
                 </div>
               )}

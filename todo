@@ -1,0 +1,14 @@
+Changes in client:
+
+keep validation only for first 2 sections -[done]
+Move the auth details (add auth) btn near the insurance details
+Archive bug
+
+
+1. Tab name : Rename "Client Scheduling" to "Scheduling"
+2. Repalce Therapist with Provider
+3. Move "Start datetime and End datetime " to Scheduling tab (we will use only one start and end datetime)
+4. Move Auth code to Scheduling tab
+5. Remove "Tech" and BCBA Details tabs
+6. Include a Dropdown field "Supervising provider"
+7. Allow to schedule for past dates too

@@ -11,7 +11,7 @@ header("Content-Type: application/json");
 
 // Database credentials from environment variables (recommended for production)
 // For local testing, you might hardcode them or use a .env file (not supported by Next.js)
-define('DB_HOST', getenv('DB_HOST') ?: 'db5018266079.hosting-data.io');
+define('DB_HOST', getenv('DB_HOST') ?: 'db5018419668.hosting-data.io');
 define('DB_USER', getenv('DB_USER') ?: 'dbu3321929');
 define('DB_PASS', getenv('DB_PASS') ?: 'M@h@B3h@v1or@lH3@lth4@ut1sm');
 define('DB_NAME', getenv('DB_NAME') ?: 'dbs14484433');

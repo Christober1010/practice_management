@@ -123,7 +123,7 @@ export default function LoginPage() {
           <div className="flex items-center justify-center space-x-2">
             <div className="rounded-full bg-white shadow-lg p-4 animate-pulse">
               {/* <Heart className="h-8 w-8 text-teal-600" /> */}
-              <Image src={img} className="h-10 w-10" />
+              <Image src={img} className="h-10 w-10" alt="Maha Logo"/>
             </div>
             <div>
               <h1 className="text-3xl font-bold text-slate-800">Mahaverse</h1>

@@ -57,7 +57,7 @@ export default function StaffView() {
       }
       const result = await response.json()
       if (result.success) {
-        setStaff(result.data)
+        setStaff(result.staff_records)
       } else {
         toast.error(`Failed to fetch staff: ${result.message}`)
       }
