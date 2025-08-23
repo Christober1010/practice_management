@@ -1,19 +1,19 @@
-'use client'
+"use client"
 
-import { Fragment, useEffect, useMemo, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Fragment, useEffect, useMemo, useState } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+} from "@/components/ui/dropdown-menu"
 import {
   Users,
   Plus,
@@ -32,27 +32,24 @@ import {
   User,
   MoreVertical,
   File,
-} from 'lucide-react'
-import AddClientModal from './add-client-modal'
-import toast, { Toaster } from 'react-hot-toast'
+} from "lucide-react"
+import AddClientModal from "./add-client-modal"
+import toast, { Toaster } from "react-hot-toast"
 
 // Redux hooks and actions
-import { useAppDispatch, useAppSelector } from '@/app/store/hooks'
+import { useAppDispatch, useAppSelector } from "@/app/store/hooks"
 import {
-  setClients,
   addClient as addClientAction,
   updateClient as updateClientAction,
   toggleArchive as toggleArchiveAction,
-  setClientsLoading,
-  setClientsError,
   fetchClients,
-} from '../../app/store/clientSlice'
-import { useSelector } from 'react-redux'
+} from "../../app/store/clientSlice"
+import { useSelector } from "react-redux"
 
 function generateUUID() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0
-    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    const v = c === "x" ? r : (r & 0x3) | 0x8
     return v.toString(16)
   })
 }
@@ -60,13 +57,13 @@ function generateUUID() {
 function generateClientUUID() {
   return Math.floor(Math.random() * 9999999999999999)
     .toString()
-    .padStart(16, '0')
+    .padStart(16, "0")
 }
 
 export default function ClientsView() {
   // UI-only state
-  const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [searchTerm, setSearchTerm] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
   const [showArchived, setShowArchived] = useState(false)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [editingClient, setEditingClient] = useState(null)
@@ -75,8 +72,8 @@ export default function ClientsView() {
   // Redux
   const dispatch = useAppDispatch()
   // clients-view.jsx
-const clients = useSelector((state) => state.clients.items) // items = API response
-// const clients = clientsResponse?.clients ?? [] // safe fallback to []
+  const clients = useSelector((state) => state.clients.items) // items = API response
+  // const clients = clientsResponse?.clients ?? [] // safe fallback to []
 
   const loading = useAppSelector((s) => s.clients.loading)
 
@@ -88,13 +85,13 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
   const filteredClients = useMemo(() => {
     return clients.filter((client) => {
       const matchesSearch = Object.values(client).some((value) =>
-        typeof value === 'string'
+        typeof value === "string"
           ? value.toLowerCase().includes(searchTerm.toLowerCase())
-          : typeof value === 'number'
-          ? String(value).includes(searchTerm)
-          : false
+          : typeof value === "number"
+            ? String(value).includes(searchTerm)
+            : false,
       )
-      const matchesStatus = statusFilter === 'all' || client.client_status === statusFilter
+      const matchesStatus = statusFilter === "all" || client.client_status === statusFilter
       const matchesArchived = client.archived === showArchived
       return matchesSearch && matchesStatus && matchesArchived
     })
@@ -104,7 +101,7 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
     const newClient = {
       ...clientData,
       id: generateUUID(),
-      client_id: '',
+      client_id: "",
       client_uuid: generateClientUUID(),
       archived: false,
     }
@@ -112,8 +109,8 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
 
     try {
       const res = await fetch(`${baseUrl}/update-clients.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...newClient,
           archived: 0,
@@ -126,21 +123,21 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
         setIsAddModalOpen(false)
         // Optional: re-sync from backend to ensure server truth
         fetchClients()
-        toast.success('Client added successfully!')
+        toast.success("Client added successfully!")
       } else {
-        toast.error(`Failed to add client: ${result.message || 'Unknown error'}`)
+        toast.error(`Failed to add client: ${result.message || "Unknown error"}`)
       }
     } catch (err) {
-      console.error('Error adding client:', err)
-      toast.error('An error occurred while adding the client.')
+      console.error("Error adding client:", err)
+      toast.error("An error occurred while adding the client.")
     }
   }
 
   const handleEditClient = async (clientData) => {
     try {
       const res = await fetch(`${baseUrl}/update-clients.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...clientData,
           archived: clientData.archived ? 1 : 0,
@@ -151,13 +148,13 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
         dispatch(updateClientAction(clientData))
         setEditingClient(clientData)
         fetchClients()
-        toast.success('Client updated successfully!')
+        toast.success("Client updated successfully!")
       } else {
-        toast.error(`Failed to update client: ${result.message || 'Unknown error'}`)
+        toast.error(`Failed to update client: ${result.message || "Unknown error"}`)
       }
     } catch (err) {
-      console.error('Error updating client:', err)
-      toast.error('An error occurred while updating the client.')
+      console.error("Error updating client:", err)
+      toast.error("An error occurred while updating the client.")
     }
   }
 
@@ -173,13 +170,13 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
     const updatedClient = {
       ...clientToUpdate,
       archived: !clientToUpdate.archived,
-      client_status: !clientToUpdate.archived ? 'Inactive' : 'Active',
+      client_status: !clientToUpdate.archived ? "Inactive" : "Active",
     }
 
     try {
       const res = await fetch(`${baseUrl}/update-clients.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...updatedClient,
           archived: updatedClient.archived ? 1 : 0,
@@ -192,41 +189,41 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
             id: clientId,
             archived: updatedClient.archived,
             client_status: updatedClient.client_status,
-          })
+          }),
         )
-        toast.success(updatedClient.archived ? 'Client archived!' : 'Client restored!')
+        toast.success(updatedClient.archived ? "Client archived!" : "Client restored!")
       } else {
-        toast.error(`Failed to update client: ${result.message || 'Unknown error'}`)
+        toast.error(`Failed to update client: ${result.message || "Unknown error"}`)
       }
     } catch (err) {
-      console.error('Error archiving/restoring client:', err)
-      toast.error('An error occurred while updating client status.')
+      console.error("Error archiving/restoring client:", err)
+      toast.error("An error occurred while updating client status.")
     }
   }
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'Active':
-        return 'bg-green-100 text-green-800'
-      case 'New':
-        return 'bg-yellow-100 text-yellow-800'
-      case 'Inactive':
-        return 'bg-gray-100 text-gray-800'
-      case 'Benefits Verification':
-        return 'bg-blue-100 text-blue-800'
-      case 'Prior Authorization':
-        return 'bg-yellow-100 text-yellow-800'
-      case 'Client Assessment':
-        return 'bg-purple-100 text-purple-800'
-      case 'Pending Authorization':
-        return 'bg-orange-100 text-orange-800'
+      case "Active":
+        return "bg-green-100 text-green-800"
+      case "New":
+        return "bg-yellow-100 text-yellow-800"
+      case "Inactive":
+        return "bg-gray-100 text-gray-800"
+      case "Benefits Verification":
+        return "bg-blue-100 text-blue-800"
+      case "Prior Authorization":
+        return "bg-yellow-100 text-yellow-800"
+      case "Client Assessment":
+        return "bg-purple-100 text-purple-800"
+      case "Pending Authorization":
+        return "bg-orange-100 text-orange-800"
       default:
-        return 'bg-gray-100 text-gray-800'
+        return "bg-gray-100 text-gray-800"
     }
   }
 
   const calculateAge = (dob) => {
-    if (!dob) return 'N/A'
+    if (!dob) return "N/A"
     const today = new Date()
     const birthDate = new Date(dob)
     let age = today.getFullYear() - birthDate.getFullYear()
@@ -299,7 +296,6 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
   useEffect(() => {
     dispatch(fetchClients())
   }, [dispatch])
-  
 
   const toggleExpanded = (clientId) => {
     setExpandedClient((prev) => (prev === clientId ? null : clientId))
@@ -380,7 +376,7 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
           <CardHeader className="pb-4">
             <CardTitle className="text-slate-800 flex items-center">
               <Users className="h-5 w-5 mr-2 text-teal-600" />
-              {showArchived ? 'Archived' : 'Active'} Clients ({filteredClients.length})
+              {showArchived ? "Archived" : "Active"} Clients ({filteredClients.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -414,7 +410,7 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
                                   {client.first_name} {client.middle_name} {client.last_name}
                                 </div>
                                 <div className="lg:visible sm:hidden flex flex-wrap gap-1 mt-1">
-                                  {client.wait_list_status === 'Yes' && (
+                                  {client.wait_list_status === "Yes" && (
                                     <Badge variant="outline" className=" border-yellow-300 text-yellow-700 text-xs">
                                       Wait List
                                     </Badge>
@@ -450,7 +446,7 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => toggleExpanded(client.id || '')}
+                                onClick={() => toggleExpanded(client.id || "")}
                                 className="border-slate-300"
                               >
                                 {isExpanded ? (
@@ -475,7 +471,12 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
                               </Button>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button title="Options" variant="outline" size="sm" className="border-slate-300 bg-transparent">
+                                  <Button
+                                    title="Options"
+                                    variant="outline"
+                                    size="sm"
+                                    className="border-slate-300 bg-transparent"
+                                  >
                                     <MoreVertical className="h-3 w-3" />
                                   </Button>
                                 </DropdownMenuTrigger>
@@ -485,8 +486,8 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem
-                                    onClick={() => handleArchiveClient(client.id || '')}
-                                    className={client.archived ? 'text-green-600' : 'text-amber-600'}
+                                    onClick={() => handleArchiveClient(client.id || "")}
+                                    className={client.archived ? "text-green-600" : "text-amber-600"}
                                   >
                                     {client.archived ? (
                                       <>
@@ -506,7 +507,7 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
 
                         {/* Expanded Details Row */}
                         {isExpanded && (
-                         <TableRow className="bg-slate-50">
+                          <TableRow className="bg-slate-50">
                             <TableCell colSpan={6} className="px-6 py-6">
                               <div className="space-y-6">
                                 {/* Personal Information Section */}
@@ -561,36 +562,72 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
                                       </CardTitle>
                                     </CardHeader>
                                     <CardContent className="space-y-3 text-sm">
-                                      <div>
-                                        <p className="text-slate-500 mb-1">Street Address</p>
-                                        <p className="font-medium">
-                                          {client.address_line_1 || "Not specified"}
-                                          {client.address_line_2 && (
-                                            <>
-                                              <br />
-                                              {client.address_line_2}
-                                            </>
-                                          )}
-                                        </p>
-                                      </div>
-                                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                      {client.addresses && client.addresses.length > 0 ? (
+                                        client.addresses.map((address, index) => (
+                                          <div key={index} className={`${index > 0 ? "border-t pt-3 mt-3" : ""}`}>
+                                            {client.addresses.length > 1 && (
+                                              <div className="flex items-center gap-2 mb-2">
+                                                <Badge variant="outline" className="text-xs">
+                                                  Address #{index + 1}
+                                                </Badge>
+                                                <Badge variant="secondary" className="text-xs">
+                                                  {address.service_location || "Home"}
+                                                </Badge>
+                                              </div>
+                                            )}
+                                            {client.addresses.length === 1 && address.service_location && (
+                                              <div className="mb-2">
+                                                <Badge variant="secondary" className="text-xs">
+                                                  {address.service_location}
+                                                </Badge>
+                                              </div>
+                                            )}
+                                            <div>
+                                              <p className="text-slate-500 mb-1">Street Address</p>
+                                              <p className="font-medium">
+                                                {address.address_line_1 || "Not specified"}
+                                                {address.address_line_2 && (
+                                                  <>
+                                                    <br />
+                                                    {address.address_line_2}
+                                                  </>
+                                                )}
+                                              </p>
+                                            </div>
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                              <div>
+                                                <p className="text-slate-500 mb-1">City</p>
+                                                <p className="font-medium">{address.city || "Not specified"}</p>
+                                              </div>
+                                              <div>
+                                                <p className="text-slate-500 mb-1">State</p>
+                                                <p className="font-medium">{address.state || "Not specified"}</p>
+                                              </div>
+                                              <div>
+                                                <p className="text-slate-500 mb-1">Country</p>
+                                                <p className="font-medium">{address.country || "Not specified"}</p>
+                                              </div>
+                                              <div>
+                                                <p className="text-slate-500 mb-1">ZIP</p>
+                                                <p className="font-medium">{address.zipcode || "Not specified"}</p>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))
+                                      ) : (
                                         <div>
-                                          <p className="text-slate-500 mb-1">City</p>
-                                          <p className="font-medium">{client.city || "Not specified"}</p>
+                                          <p className="text-slate-500 mb-1">Street Address</p>
+                                          <p className="font-medium">
+                                            {client.address_line_1 || "Not specified"}
+                                            {client.address_line_2 && (
+                                              <>
+                                                <br />
+                                                {client.address_line_2}
+                                              </>
+                                            )}
+                                          </p>
                                         </div>
-                                        <div>
-                                          <p className="text-slate-500 mb-1">State</p>
-                                          <p className="font-medium">{client.state || "Not specified"}</p>
-                                        </div>
-                                        <div>
-                                          <p className="text-slate-500 mb-1">Country</p>
-                                          <p className="font-medium">{client.country || "Not specified"}</p>
-                                        </div>
-                                        <div>
-                                          <p className="text-slate-500 mb-1">ZIP</p>
-                                          <p className="font-medium">{client.zipcode || "Not specified"}</p>
-                                        </div>
-                                      </div>
+                                      )}
                                     </CardContent>
                                   </Card>
                                   <Card className="border-slate-200">
@@ -926,7 +963,7 @@ const clients = useSelector((state) => state.clients.items) // items = API respo
                 <div className="text-center py-12">
                   <Users className="h-12 w-12 text-slate-400 mx-auto mb-4" />
                   <p className="text-slate-500">
-                    {showArchived ? 'No archived clients found.' : 'No clients match your search.'}
+                    {showArchived ? "No archived clients found." : "No clients match your search."}
                   </p>
                 </div>
               )}

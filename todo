@@ -1,14 +1,20 @@
-Changes in client:
 
-keep validation only for first 2 sections -[done]
-Move the auth details (add auth) btn near the insurance details
+
+Scheduling:
+	1. Add another field to select "Service Location"= " Home, Clinic, School, Other"
+	2. If provider selected is RBT or BT then "Supervising Provider" is Required
+	3. Location address should flow from Client as Dropdown
+
+Client form:
 Archive bug
+	1. Personal ,Contact and Insurance defaulted and rest all tabs can be buried under More options (coz mobile version looks misaligned)
 
+Contacts tab:
+	1. Address Information : New field to capture "Service Location" - "Home, Clinic, School, Other"
+	2. Allow to add more than one address per client
 
-1. Tab name : Rename "Client Scheduling" to "Scheduling"
-2. Repalce Therapist with Provider
-3. Move "Start datetime and End datetime " to Scheduling tab (we will use only one start and end datetime)
-4. Move Auth code to Scheduling tab
-5. Remove "Tech" and BCBA Details tabs
-6. Include a Dropdown field "Supervising provider"
-7. Allow to schedule for past dates too
+Add client:
+
+Error msg is not shown:
+Add client is giving error:
+an application error occured for sessin

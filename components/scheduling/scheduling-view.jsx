@@ -276,9 +276,6 @@ export default function SchedulingView() {
   const handleEditSession = (session) => {
     const clientDetails = clients.find((c) => c.client_id === session.clientId);
 
-    console.log("[v0] Editing session:", session);
-    console.log("[v0] Found client details:", clientDetails);
-
     const convertISOToDatetimeLocal = (isoString) => {
       if (!isoString) return "";
       return isoString.replace("Z", "").slice(0, 16);
@@ -296,8 +293,8 @@ export default function SchedulingView() {
             .filter(Boolean)
             .join(" ")
         : session.clientName || "",
-      providerId: session.providerId, // Keep as providerId to match API response
-      supervisingProviderId: session.supervisingProviderId, // Keep as supervisingProviderId
+      providerId: session.providerId,
+      supervisingProviderId: session.supervisingProviderId,
       startDateTime: convertISOToDatetimeLocal(session.startDateTime),
       endDateTime: convertISOToDatetimeLocal(session.endDateTime),
       startTZ: session.startTZ,
@@ -328,10 +325,6 @@ export default function SchedulingView() {
         : session.clientName || "Unknown Client",
     };
 
-    console.log(
-      "[v0] Viewing session with client details:",
-      sessionWithClientName
-    ); // Debug log
     setViewingSession(sessionWithClientName);
   };
 
@@ -378,7 +371,7 @@ export default function SchedulingView() {
 
   const handleAddNewSession = async () => {
     setIsNewSessionModalOpen(false);
-    setEditingSession(null); // Clear editing session
+    setEditingSession(null);
     await refreshMonth();
   };
 
@@ -399,12 +392,12 @@ export default function SchedulingView() {
         {/* Calendar Card (2 columns) */}
         <Card className="shadow-lg border-0 xl:col-span-2">
           <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between lg:flex-row flex-col gap-4">
               <CardTitle className="text-slate-800 flex items-center">
                 <CalendarIcon className="h-5 w-5 mr-2 text-teal-600" />
                 Calendar View
               </CardTitle>
-              <div className="flex items-center space-x-4">
+              <div className="flex items-center lg:space-x-4 space-x-2">
                 <div className="flex items-center space-x-2">
                   <Button
                     variant="outline"
@@ -428,20 +421,21 @@ export default function SchedulingView() {
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="lg:p-4 p-2">
             {/* Weekday headers */}
-            <div className="grid grid-cols-7 gap-2 mb-2">
+            <div className="grid grid-cols-7 gap-1 md:gap-2 mb-2">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
                 <div
                   key={day}
-                  className="text-center font-semibold text-slate-600 py-2 bg-slate-50 rounded-lg"
+                  className="text-center font-semibold text-slate-600 text-xs md:text-base py-2 bg-slate-50 rounded-lg"
                 >
-                  {day}
+                  {day.substring(0, 1)}
+                  <span className="hidden md:inline">{day.substring(1)}</span>
                 </div>
               ))}
             </div>
             {/* Calendar grid */}
-            <div className="grid grid-cols-7 gap-2">
+            <div className="grid grid-cols-7 gap-1 md:gap-2">
               {gridDays.map((dateObj, idx) => {
                 const isToday = dateObj && sameDay(dateObj, new Date());
                 const isSelected =
@@ -456,7 +450,7 @@ export default function SchedulingView() {
                       if (!dateObj) return;
                       handleDayClick(dateObj);
                     }}
-                    className={`group relative aspect-square border rounded-lg p-2 transition-colors
+                    className={`group relative border rounded-lg p-2 transition-colors min-h-[80px] md:min-h-[120px] lg:aspect-square
                       ${
                         dateObj
                           ? "border-slate-200"
@@ -468,12 +462,11 @@ export default function SchedulingView() {
                           : "border-transparent bg-transparent cursor-default"
                       }
                       ${isPast ? "bg-slate-50/40" : ""}
-
                       ${isSelected ? "ring-2 ring-teal-500" : ""}
                       ${isToday ? "bg-teal-50" : ""}`}
                   >
                     <div
-                      className={`text-sm font-medium ${
+                      className={`text-base md:text-sm font-medium ${
                         isPast ? "text-slate-400" : "text-slate-600"
                       }`}
                     >
@@ -485,26 +478,27 @@ export default function SchedulingView() {
                       {badges.map((b, i) => (
                         <div
                           key={i}
-                          className={`${b.color} text-xs p-1 rounded truncate`}
+                          className={`${b.color} text-[10px] p-1 md:text-xs md:p-1 rounded truncate`}
                         >
                           {b.label}
                         </div>
                       ))}
                     </div>
 
-                    {/* Hover-only Add button; now allowed for past dates too */}
+                    {/* Hover-only Add button */}
                     {dateObj && (
-                      <div className="absolute bottom-2 left-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute bottom-1 right-1 md:bottom-2 md:left-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button
                           variant="ghost"
-                          size="xs"
-                          className="text-teal-700 p-1 h-6"
+                          size="icon"
+                          className="text-teal-700 p-1 h-8 w-8 md:h-6 md:w-auto md:px-2"
                           onClick={(e) => {
                             e.stopPropagation();
                             handleOpenAddSessionForDate(dateObj);
                           }}
                         >
-                          <Plus className="h-3 w-3 mr-1" /> Add
+                          <Plus className="h-5 w-5 md:h-3 md:w-3 md:mr-1" /> 
+                          <span className="hidden md:inline">Add</span>
                         </Button>
                       </div>
                     )}
@@ -725,7 +719,7 @@ export default function SchedulingView() {
                                     size="sm"
                                     onClick={() => handleViewSession(s.session)}
                                   >
-                                    <Eye className="h-3 w-3 mr-1" />
+                                    <Eye className="h-4 w-4 md:h-3 md:w-3" />
                                   </Button>
                                   <Button
                                     title="Edit"
@@ -733,7 +727,7 @@ export default function SchedulingView() {
                                     size="sm"
                                     onClick={() => handleEditSession(s.session)}
                                   >
-                                    <Edit className="h-3 w-3 mr-1" />
+                                    <Edit className="h-4 w-4 md:h-3 md:w-3" />
                                   </Button>
                                 </div>
                               </div>
@@ -750,98 +744,16 @@ export default function SchedulingView() {
         </Card>
       </div>
 
-      {/* Today's Schedule */}
-      <Card className="shadow-lg border-0">
-        <CardHeader className="pb-4">
-          <CardTitle className="text-slate-800">Today's Schedule</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading && (
-            <div className="text-slate-500 text-sm">Loading sessions…</div>
-          )}
-          {error && !loading && (
-            <div className="text-red-600 text-sm">Error: {error}</div>
-          )}
-          {!loading && !error && (
-            <>
-              {todayCards.length === 0 ? (
-                <div className="text-slate-500 text-sm">No sessions today.</div>
-              ) : (
-                <div className="space-y-4">
-                  {todayCards.map((session, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between p-4 border border-slate-200 rounded-xl hover:shadow-md transition-shadow"
-                    >
-                      <div className="flex items-center space-x-4">
-                        <div className="bg-teal-100 p-3 rounded-xl">
-                          <CalendarIcon className="h-5 w-5 text-teal-600" />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-slate-800">
-                            {session.client}
-                          </p>
-                          <p className="text-sm text-slate-600">
-                            {session.time} • {session.type}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            Provider: {session.providerId}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            session.status === "confirmed"
-                              ? "bg-green-100 text-green-800"
-                              : session.status === "in-progress"
-                              ? "bg-blue-100 text-blue-800"
-                              : "bg-slate-100 text-slate-800"
-                          }`}
-                        >
-                          {session.status === "confirmed"
-                            ? "Confirmed"
-                            : session.status === "in-progress"
-                            ? "In Progress"
-                            : "Upcoming"}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleViewSession(session.session)}
-                        >
-                          <Eye className="h-3 w-3 mr-1" />
-                          View
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEditSession(session.session)}
-                        >
-                          <Edit className="h-3 w-3 mr-1" />
-                          Edit
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* New/Edit Session Modal */}
       <NewSessionFormModal
         isOpen={isNewSessionModalOpen}
         onClose={() => {
           setIsNewSessionModalOpen(false);
-          setEditingSession(null); // Clear editing session on close
+          setEditingSession(null);
         }}
         onSave={handleAddNewSession}
         selectedDate={selectedDate}
-        editingSession={editingSession} // Pass editing session
-        clients={clients} // Pass clients as prop instead of using Redux
+        editingSession={editingSession}
+        clients={clients}
       />
     </div>
   );

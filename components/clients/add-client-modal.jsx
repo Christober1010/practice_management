@@ -2,24 +2,27 @@
 
 import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Plus, Trash2, Users, Shield, FileText, Phone, MapPin, Heart, User, File } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Users, Phone, User, Shield, File, FileText, MapPin, Plus, Trash2, Heart, ChevronDown } from "lucide-react"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 
 const popularCountries = [
-  "United States",
+  "USA",
   "Canada",
   "United Kingdom",
   "Australia",
   "Germany",
   "France",
-  "India",
+  "Italy",
+  "Spain",
+  "Netherlands",
   "Other",
 ]
 
@@ -48,72 +51,48 @@ const initialClientState = {
   preferred_language: "",
   client_status: "New",
   wait_list_status: "No",
-  // Contact Info
+
+  // Contact
   phone: "",
   email: "",
   appointment_reminder: "",
-  // Address
-  address_line_1: "",
-  address_line_2: "",
-  city: "",
-  state: "",
-  zipcode: "",
-  country: "",
-  countryOther: "",
-  // Guardian
+
+  addresses: [
+    {
+      id: Date.now(),
+      service_location: "Home",
+      address_line_1: "",
+      address_line_2: "",
+      city: "",
+      state: "",
+      zipcode: "",
+      country: "USA",
+      countryOther: "",
+    },
+  ],
+
+  // Guardian/Parent
   parent_first_name: "",
   parent_last_name: "",
   relationship_to_insured: "",
   relation_other: "",
+
   // Emergency Contact
   emergency_contact_name: "",
   emg_relationship: "",
   emg_phone: "",
   emg_email: "",
+
+  // Insurance
+  insurances: [],
+  authorizations: [],
+
+  // Documents
+  documents: [],
+
   // Notes
   client_notes: "",
   other_information: "",
-  // Arrays
-  insurances: [],
-  authorizations: [],
-  documents: [],
-}
-
-const initialInsurance = {
-  insurance_type: "Primary",
-  insurance_provider: "",
-  treatment_type: "",
-  insurance_id_number: "",
-  group_number: "",
-  coinsurance: "",
-  deductible: "",
-  start_date: "",
-  end_date: "",
-}
-
-const initialAuthorization = {
-  authorization_number: "",
-  billing_codes: "",
-  units_approved_per_15_min: "",
-  units_serviced: "",
-  balance_units: "",
-  start_date: "",
-  end_date: "",
-  insurance_id: "",
-  status: "Active",
-}
-
-const emptyDocument = {
-  document_type: "",
-  file_url: "",
-}
-
-function generateDocUUID() {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0,
-      v = c === "x" ? r : (r & 0x3) | 0x8
-    return v.toString(16)
-  })
 }
 
 export default function AddClientModal({ isOpen, onClose, onSave, editingClient }) {
@@ -122,46 +101,38 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
   const [activeTab, setActiveTab] = useState("personal")
   const [saving, setSaving] = useState(false)
 
+  const primaryTabs = ["personal", "contact", "insurance"]
+  const moreTabs = ["guardian", "documents", "notes"]
+  const allTabs = [...primaryTabs, ...moreTabs]
   const tabOrder = ["personal", "contact", "guardian", "insurance", "documents", "notes"]
 
   useEffect(() => {
     if (editingClient) {
+      const addresses = editingClient.addresses?.length ? editingClient.addresses : [
+        {
+          id: Date.now(),
+          service_location: "Home",
+          address_line_1: editingClient.address_line_1 || "",
+          address_line_2: editingClient.address_line_2 || "",
+          city: editingClient.city || "",
+          state: editingClient.state || "",
+          zipcode: editingClient.zipcode || "",
+          country: editingClient.country || "USA",
+          countryOther: editingClient.countryOther || "",
+        },
+      ]
+
       setFormData({
         ...initialClientState,
         ...editingClient,
-        insurances:
-          Array.isArray(editingClient.insurances) && editingClient.insurances.length > 0
-            ? editingClient.insurances
-            : [],
-        authorizations:
-          Array.isArray(editingClient.authorizations) && editingClient.authorizations.length > 0
-            ? editingClient.authorizations.map((auth) => ({
-                ...initialAuthorization,
-                ...auth,
-                status: auth.status || "Active",
-                insurance_id: auth.insurance_id || "",
-                units_serviced: auth.units_serviced || "",
-                balance_units: auth.balance_units || "",
-              }))
-            : [],
-        documents:
-          Array.isArray(editingClient.documents) && editingClient.documents.length > 0
-            ? editingClient.documents
-            : [],
+        addresses,
+        insurances: editingClient.insurances || [],
+        authorizations: editingClient.authorizations || [],
+        documents: editingClient.documents || [],
         date_of_birth: editingClient.date_of_birth?.slice(0, 10) || "",
-        country: editingClient.country || "",
-        countryOther: editingClient.countryOther || "",
-        relationship_to_insured: editingClient.relationship_to_insured || "",
-        relation_other: editingClient.relation_other || "",
-        appointment_reminder: editingClient.appointment_reminder || "",
       })
     } else {
-      setFormData({
-        ...initialClientState,
-        insurances: [],
-        authorizations: [],
-        documents: [],
-      })
+      setFormData(initialClientState)
     }
     setErrors({})
     setActiveTab("personal")
@@ -170,11 +141,10 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
   const prepareDataForSave = () => {
     const cleanedData = {
       ...formData,
-      country: formData.country === "Other" ? formData.countryOther.trim() : formData.country,
       insurances: formData.insurances.filter(
         (ins) => ins.insurance_provider || ins.insurance_id_number || ins.treatment_type,
       ),
-      authorizations: formData.authorizations
+      authorizations: (formData.authorizations || [])
         .filter((auth) => auth.authorization_number || auth.billing_codes || auth.units_approved_per_15_min)
         .map((auth) => {
           const approved = Number.parseFloat(auth.units_approved_per_15_min) || 0
@@ -189,7 +159,6 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
         }),
       documents: formData.documents.filter((doc) => doc.document_type || doc.file_url),
     }
-    delete cleanedData.countryOther
     return cleanedData
   }
 
@@ -200,326 +169,288 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
     }
   }
 
-  const handleInsuranceChange = (index, field, value) => {
+  const handleAddressChange = (addressId, field, value) => {
     setFormData((prev) => ({
       ...prev,
-      insurances: prev.insurances.map((ins, i) => (i === index ? { ...ins, [field]: value } : ins)),
+      addresses: prev.addresses.map((addr) => (addr.id === addressId ? { ...addr, [field]: value } : addr)),
     }))
+  }
+
+  const addAddress = () => {
+    const newAddress = {
+      id: Date.now(),
+      service_location: "Home",
+      address_line_1: "",
+      address_line_2: "",
+      city: "",
+      state: "",
+      zipcode: "",
+      country: "USA",
+      countryOther: "",
+    }
+    setFormData((prev) => ({
+      ...prev,
+      addresses: [...prev.addresses, newAddress],
+    }))
+  }
+
+  const removeAddress = (addressId) => {
+    if (formData.addresses.length > 1) {
+      setFormData((prev) => ({
+        ...prev,
+        addresses: prev.addresses.filter((addr) => addr.id !== addressId),
+      }))
+    }
+  }
+
+  const handleInsuranceChange = (insuranceId, field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      insurances: prev.insurances.map((ins) => (ins.insurance_id === insuranceId ? { ...ins, [field]: value } : ins)),
+    }))
+    // Also clear errors
+    const index = prev.insurances.findIndex(ins => ins.insurance_id === insuranceId)
     const errorKey = `insurance_${field}_${index}`
     if (errors[errorKey]) {
       setErrors((prev) => ({ ...prev, [errorKey]: null }))
     }
   }
+  
+  const addInsurance = () => {
+    const newInsurance = {
+      insurance_id: Date.now(),
+      insurance_type: "Primary",
+      insurance_provider: "",
+      treatment_type: "",
+      rendering_provider: "",
+      start_date: "",
+      end_date: "",
+      insurance_id_number: "",
+      group_number: "",
+      coinsurance: "",
+      deductible: "",
+      copay_rate: "",
+    }
+    setFormData((prev) => ({
+      ...prev,
+      insurances: [...prev.insurances, newInsurance],
+    }))
+  }
 
-  const handleAuthorizationChange = (index, field, value) => {
-    setFormData((prev) => {
-      const updatedAuthorizations = prev.authorizations.map((auth, i) => {
-        if (i === index) {
+  const removeInsurance = (insuranceId) => {
+    setFormData((prev) => ({
+      ...prev,
+      insurances: prev.insurances.filter((ins) => ins.insurance_id !== insuranceId),
+      authorizations: prev.authorizations?.filter((auth) => auth.insurance_id !== insuranceId.toString()) || [],
+    }))
+  }
+
+  const handleAuthorizationChange = (authUuid, field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      authorizations: (prev.authorizations || []).map((auth) => {
+        if (auth.auth_uuid === authUuid) {
           const updatedAuth = { ...auth, [field]: value }
-          const approved =
-            Number.parseFloat(field === "units_approved_per_15_min" ? value : updatedAuth.units_approved_per_15_min) ||
-            0
-          const serviced = Number.parseFloat(field === "units_serviced" ? value : updatedAuth.units_serviced) || 0
-          updatedAuth.balance_units = (approved - serviced).toString()
-          return updatedAuth
+           if (field === "units_approved_per_15_min" || field === "units_serviced") {
+              const approved = Number.parseFloat(updatedAuth.units_approved_per_15_min) || 0;
+              const serviced = Number.parseFloat(updatedAuth.units_serviced) || 0;
+              updatedAuth.balance_units = (approved - serviced).toString();
+           }
+           return updatedAuth;
         }
         return auth
-      })
-      return { ...prev, authorizations: updatedAuthorizations }
-    })
+      }),
+    }))
+     // Also clear errors
+    const index = prev.authorizations.findIndex(auth => auth.auth_uuid === authUuid)
     const errorKey = `auth_${field}_${index}`
     if (errors[errorKey]) {
       setErrors((prev) => ({ ...prev, [errorKey]: null }))
     }
   }
 
-  const handleDocumentChange = (index, field, value) => {
+  const addAuthorization = () => {
+    const newAuth = {
+      auth_uuid: `auth_${Date.now()}`,
+      insurance_id: "",
+      authorization_number: "",
+      billing_codes: "",
+      units_approved_per_15_min: "",
+      units_serviced: "",
+      balance_units: "",
+      start_date: "",
+      end_date: "",
+      status: "Active",
+    }
     setFormData((prev) => ({
       ...prev,
-      documents: prev.documents.map((doc, i) => (i === index ? { ...doc, [field]: value } : doc)),
+      authorizations: [...(prev.authorizations || []), newAuth],
     }))
+  }
+
+  const removeAuthorization = (authUuid) => {
+    setFormData((prev) => ({
+      ...prev,
+      authorizations: prev.authorizations?.filter((auth) => auth.auth_uuid !== authUuid) || [],
+    }))
+  }
+
+  const handleDocumentChange = (docUuid, field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      documents: prev.documents.map((doc) => (doc.doc_uuid === docUuid ? { ...doc, [field]: value } : doc)),
+    }))
+     // Also clear errors
+    const index = prev.documents.findIndex(doc => doc.doc_uuid === docUuid)
     const errorKey = `document_${field}_${index}`
     if (errors[errorKey]) {
       setErrors((prev) => ({ ...prev, [errorKey]: null }))
     }
   }
-
-  const addInsurance = () => {
-    setFormData((prev) => ({
-      ...prev,
-      insurances: [...prev.insurances, { ...initialInsurance, insurance_type: "Secondary" }],
-    }))
-  }
-
-  const removeInsurance = (index) => {
-    setFormData((prev) => {
-      const updatedInsurances = prev.insurances.filter((_, i) => i !== index)
-      const updatedAuthorizations = prev.authorizations.filter((auth) => auth.insurance_id !== String(index))
-      return {
-        ...prev,
-        insurances: updatedInsurances,
-        authorizations: updatedAuthorizations,
-      }
-    })
-  }
-
-  const addAuthorization = () => {
-    setFormData((prev) => ({
-      ...prev,
-      authorizations: [...prev.authorizations, { ...initialAuthorization }],
-    }))
-  }
-
-  const removeAuthorization = (index) => {
-    setFormData((prev) => ({
-      ...prev,
-      authorizations: prev.authorizations.filter((_, i) => i !== index),
-    }))
-  }
-
+  
   const addDocument = () => {
+    const newDoc = {
+      doc_uuid: `doc_${Date.now()}`,
+      document_type: "",
+      file_url: "",
+    }
     setFormData((prev) => ({
       ...prev,
-      documents: [...prev.documents, { ...emptyDocument, doc_uuid: generateDocUUID() }],
+      documents: [...prev.documents, newDoc],
     }))
   }
 
-  const removeDocument = (index) => {
+  const removeDocument = (docUuid) => {
     setFormData((prev) => ({
       ...prev,
-      documents: prev.documents.filter((_, i) => i !== index),
+      documents: prev.documents.filter((doc) => doc.doc_uuid !== docUuid),
     }))
   }
 
-  const validateCurrentTab = (tab) => {
+   const validateCurrentTab = (tab) => {
     const currentTabErrors = {}
     let hasErrors = false
 
+    const requiredEntry = (field) => {
+      if (!field || !field.trim()) {
+        hasErrors = true
+        return "Missing Required Entry"
+      }
+      return null
+    }
+
     switch (tab) {
       case "personal":
-        if (!formData.first_name.trim()) {
-          currentTabErrors.first_name = "Missing Required Entry"
-          hasErrors = true
-        }
-        if (!formData.last_name.trim()) {
-          currentTabErrors.last_name = "Missing Required Entry"
-          hasErrors = true
-        }
-        if (!formData.date_of_birth) {
-          currentTabErrors.date_of_birth = "Missing Required Entry"
-          hasErrors = true
-        }
-        if (!formData.client_status.trim()) {
-          currentTabErrors.client_status = "Missing Required Entry"
-          hasErrors = true
-        }
+        currentTabErrors.first_name = requiredEntry(formData.first_name)
+        currentTabErrors.last_name = requiredEntry(formData.last_name)
+        currentTabErrors.date_of_birth = requiredEntry(formData.date_of_birth)
+        currentTabErrors.client_status = requiredEntry(formData.client_status)
         break
 
       case "contact":
-        if (!formData.phone.trim()) {
-          currentTabErrors.phone = "Missing Required Entry"
-          hasErrors = true
-        }
-        if (!formData.email.trim()) {
-          currentTabErrors.email = "Missing Required Entry"
-          hasErrors = true
+        currentTabErrors.phone = requiredEntry(formData.phone)
+        const emailError = requiredEntry(formData.email)
+        if (emailError) {
+          currentTabErrors.email = emailError
         } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
           currentTabErrors.email = "Invalid email format"
           hasErrors = true
         }
-        // All address fields are now optional for initial client creation
         break
 
       case "guardian":
-        // All guardian fields are now optional
-        // Only validate if user starts filling them out
-        if (formData.parent_first_name.trim() || formData.parent_last_name.trim()) {
-          if (!formData.parent_first_name.trim()) {
-            currentTabErrors.parent_first_name = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!formData.parent_last_name.trim()) {
-            currentTabErrors.parent_last_name = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!formData.relationship_to_insured.trim()) {
-            currentTabErrors.relationship_to_insured = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (formData.relationship_to_insured === "Other" && !formData.relation_other.trim()) {
-            currentTabErrors.relation_other = "Missing Required Entry"
-            hasErrors = true
+        if (formData.parent_first_name?.trim() || formData.parent_last_name?.trim()) {
+          currentTabErrors.parent_first_name = requiredEntry(formData.parent_first_name)
+          currentTabErrors.parent_last_name = requiredEntry(formData.parent_last_name)
+          currentTabErrors.relationship_to_insured = requiredEntry(formData.relationship_to_insured)
+          if (formData.relationship_to_insured === "Other") {
+            currentTabErrors.relation_other = requiredEntry(formData.relation_other)
           }
         }
-        // Emergency contact validation only if started
-        if (formData.emergency_contact_name.trim() || formData.emg_relationship.trim() || formData.emg_phone.trim()) {
-          if (!formData.emergency_contact_name.trim()) {
-            currentTabErrors.emergency_contact_name = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!formData.emg_relationship.trim()) {
-            currentTabErrors.emg_relationship = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!formData.emg_phone.trim()) {
-            currentTabErrors.emg_phone = "Missing Required Entry"
-            hasErrors = true
-          }
+        if (formData.emergency_contact_name?.trim() || formData.emg_relationship?.trim() || formData.emg_phone?.trim()) {
+          currentTabErrors.emergency_contact_name = requiredEntry(formData.emergency_contact_name)
+          currentTabErrors.emg_relationship = requiredEntry(formData.emg_relationship)
+          currentTabErrors.emg_phone = requiredEntry(formData.emg_phone)
         }
         break
 
       case "insurance":
-        // Only validate insurances if they exist
         formData.insurances.forEach((insurance, idx) => {
-          if (!insurance.insurance_type.trim()) {
-            currentTabErrors[`insurance_insurance_type_${idx}`] = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!insurance.insurance_provider.trim()) {
-            currentTabErrors[`insurance_insurance_provider_${idx}`] = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!insurance.treatment_type.trim()) {
-            currentTabErrors[`insurance_treatment_type_${idx}`] = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!insurance.insurance_id_number.trim()) {
-            currentTabErrors[`insurance_insurance_id_number_${idx}`] = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!insurance.group_number.trim()) {
-            currentTabErrors[`insurance_group_number_${idx}`] = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!insurance.start_date.trim()) {
-            currentTabErrors[`insurance_start_date_${idx}`] = "Missing Required Entry"
-            hasErrors = true
+          if (Object.values(insurance).some(val => typeof val === 'string' && val.trim())) {
+              currentTabErrors[`insurance_insurance_type_${idx}`] = requiredEntry(insurance.insurance_type)
+              currentTabErrors[`insurance_insurance_provider_${idx}`] = requiredEntry(insurance.insurance_provider)
+              currentTabErrors[`insurance_treatment_type_${idx}`] = requiredEntry(insurance.treatment_type)
+              currentTabErrors[`insurance_insurance_id_number_${idx}`] = requiredEntry(insurance.insurance_id_number)
+              currentTabErrors[`insurance_group_number_${idx}`] = requiredEntry(insurance.group_number)
+              currentTabErrors[`insurance_start_date_${idx}`] = requiredEntry(insurance.start_date)
           }
         })
 
-        // Only validate authorizations if they exist
-        formData.authorizations.forEach((auth, idx) => {
-          if (!auth.authorization_number.trim()) {
-            currentTabErrors[`auth_authorization_number_${idx}`] = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!auth.billing_codes.trim()) {
-            currentTabErrors[`auth_billing_codes_${idx}`] = "Missing Required Entry"
-            hasErrors = true
-          }
-          const unitsApproved = Number(auth.units_approved_per_15_min)
-          if (auth.units_approved_per_15_min === "" || isNaN(unitsApproved) || unitsApproved < 0) {
-            currentTabErrors[`auth_units_approved_per_15_min_${idx}`] = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!auth.start_date.trim()) {
-            currentTabErrors[`auth_start_date_${idx}`] = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!auth.end_date.trim()) {
-            currentTabErrors[`auth_end_date_${idx}`] = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!auth.insurance_id.trim()) {
-            currentTabErrors[`auth_insurance_id_${idx}`] = "Missing Required Entry"
-            hasErrors = true
-          }
-          if (!auth.status.trim()) {
-            currentTabErrors[`auth_status_${idx}`] = "Missing Required Entry"
-            hasErrors = true
-          }
-          const approved = Number.parseFloat(auth.units_approved_per_15_min) || 0
-          const serviced = Number.parseFloat(auth.units_serviced) || 0
-          if (serviced > approved) {
-            currentTabErrors[`auth_units_serviced_${idx}`] = "Units Serviced cannot exceed Units Approved"
-            hasErrors = true
-          }
+        formData.authorizations?.forEach((auth, idx) => {
+            if (Object.values(auth).some(val => typeof val === 'string' && val.trim())) {
+                currentTabErrors[`auth_authorization_number_${idx}`] = requiredEntry(auth.authorization_number)
+                currentTabErrors[`auth_billing_codes_${idx}`] = requiredEntry(auth.billing_codes)
+                currentTabErrors[`auth_units_approved_per_15_min_${idx}`] = requiredEntry(auth.units_approved_per_15_min)
+                currentTabErrors[`auth_start_date_${idx}`] = requiredEntry(auth.start_date)
+                currentTabErrors[`auth_end_date_${idx}`] = requiredEntry(auth.end_date)
+                currentTabErrors[`auth_insurance_id_${idx}`] = requiredEntry(auth.insurance_id)
+                currentTabErrors[`auth_status_${idx}`] = requiredEntry(auth.status)
+                
+                const approved = Number.parseFloat(auth.units_approved_per_15_min) || 0
+                const serviced = Number.parseFloat(auth.units_serviced) || 0
+                if (serviced > approved) {
+                  currentTabErrors[`auth_units_serviced_${idx}`] = "Cannot exceed approved units"
+                  hasErrors = true
+                }
+            }
         })
         break
 
       case "documents":
-        // Only validate documents if they exist
         formData.documents.forEach((doc, idx) => {
-          if (doc.document_type.trim() || doc.file_url.trim()) {
-            if (!doc.document_type.trim()) {
-              currentTabErrors[`document_document_type_${idx}`] = "Missing Required Entry"
-              hasErrors = true
-            }
-            if (!doc.file_url.trim()) {
-              currentTabErrors[`document_file_url_${idx}`] = "Missing Required Entry"
-              hasErrors = true
-            }
+          if (doc.document_type?.trim() || doc.file_url?.trim()) {
+            currentTabErrors[`document_document_type_${idx}`] = requiredEntry(doc.document_type)
+            currentTabErrors[`document_file_url_${idx}`] = requiredEntry(doc.file_url)
           }
         })
         break
-
-      case "notes":
-        // No required fields for notes tab
-        break
-
+        
       default:
         break
     }
-
-    setErrors((prev) => ({ ...prev, ...currentTabErrors }))
+    
+    const finalErrors = Object.fromEntries(Object.entries(currentTabErrors).filter(([_, v]) => v != null));
+    setErrors((prev) => ({ ...prev, ...finalErrors }))
+    
     return hasErrors
   }
+  
+  const validateAllTabs = () => {
+      let hasAnyErrors = false;
+      let firstErrorTab = null;
 
-  const validateRequiredTabs = () => {
-    const allErrors = {}
-    let hasAnyErrors = false
-    let firstErrorTab = null
-
-    // Only validate personal and contact tabs as required
-    const requiredTabs = ["personal", "contact"]
-    
-    requiredTabs.forEach((tab) => {
-      const hasTabErrors = validateCurrentTab(tab)
-      if (hasTabErrors && !firstErrorTab) {
-        firstErrorTab = tab
-        hasAnyErrors = true
+      for (const tab of tabOrder) {
+          const hasTabErrors = validateCurrentTab(tab);
+          if (hasTabErrors && !firstErrorTab) {
+              firstErrorTab = tab;
+              hasAnyErrors = true;
+          }
       }
-    })
-
-    // Also validate any tabs that have data entered
-    const optionalTabsWithData = []
-    
-    // Check if guardian tab has data
-    if (formData.parent_first_name.trim() || formData.parent_last_name.trim() || 
-        formData.emergency_contact_name.trim() || formData.emg_relationship.trim() || formData.emg_phone.trim()) {
-      optionalTabsWithData.push("guardian")
-    }
-    
-    // Check if insurance tab has data
-    if (formData.insurances.length > 0 || formData.authorizations.length > 0) {
-      optionalTabsWithData.push("insurance")
-    }
-    
-    // Check if documents tab has data
-    if (formData.documents.some(doc => doc.document_type.trim() || doc.file_url.trim())) {
-      optionalTabsWithData.push("documents")
-    }
-
-    optionalTabsWithData.forEach((tab) => {
-      const hasTabErrors = validateCurrentTab(tab)
-      if (hasTabErrors && !firstErrorTab) {
-        firstErrorTab = tab
-        hasAnyErrors = true
+      
+      if (firstErrorTab) {
+          setActiveTab(firstErrorTab);
       }
-    })
+      
+      return hasAnyErrors;
+  };
 
-    if (firstErrorTab) {
-      setActiveTab(firstErrorTab)
-    }
-
-    return hasAnyErrors
-  }
 
   const handleSave = async (e) => {
     e.preventDefault()
     setSaving(true)
+    setErrors({}) // Clear previous errors
 
-    const hasErrors = validateRequiredTabs()
+    const hasErrors = validateAllTabs()
     if (hasErrors) {
       setSaving(false)
       return
@@ -533,16 +464,17 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
 
   const handleNextTab = (e) => {
     e.preventDefault()
+    setErrors({})
     const hasErrors = validateCurrentTab(activeTab)
     if (hasErrors) {
-      return // Stay on current tab if there are errors
+      return
     }
 
     const currentIndex = tabOrder.indexOf(activeTab)
     if (currentIndex < tabOrder.length - 1) {
       setActiveTab(tabOrder[currentIndex + 1])
     } else {
-      handleSave(e) // If on the last tab, save the form
+      handleSave(e)
     }
   }
 
@@ -552,7 +484,7 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
       setActiveTab(tabOrder[currentIndex - 1])
     }
   }
-
+  
   const handleClose = () => {
     setFormData(initialClientState)
     setErrors({})
@@ -567,7 +499,7 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
       <Label htmlFor={id}>{label}</Label>
       <Input
         id={id}
-        value={value}
+        value={value || ""}
         onChange={onChange}
         className={errors[id] ? "border-red-500 focus:border-red-500 focus:ring-red-500" : ""}
         {...props}
@@ -579,8 +511,8 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
   const renderSelectWithError = (id, label, value, onValueChange, children, placeholder = "Select...") => (
     <div>
       <Label htmlFor={id}>{label}</Label>
-      <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger className={errors[id] ? "border-red-500 focus:border-red-500 focus:ring-red-500" : ""}>
+      <Select value={value || ""} onValueChange={onValueChange}>
+        <SelectTrigger id={id} className={errors[id] ? "border-red-500 focus:border-red-500 focus:ring-red-500" : ""}>
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>{children}</SelectContent>
@@ -589,118 +521,78 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
     </div>
   )
 
+  if (!isOpen) return null
+
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-xl font-semibold text-slate-800">
+          <DialogTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-teal-600" />
             {editingClient ? "Edit Client" : "Add New Client"}
-            {saving && <span className="ml-2 text-sm text-gray-500 italic">Saving...</span>}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-          <p className="text-sm text-blue-700">
-            <strong>Quick Start:</strong> You can add a client with just Personal and Contact information. 
-            All other sections (Guardian, Insurance, Documents, Notes) are optional and can be filled out later.
-          </p>
-        </div>
-
         <form onSubmit={handleSave} className="space-y-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-5 lg:grid-cols-6">
-              <TabsTrigger value="personal" className="flex items-center gap-2">
-                <Users className="h-4 w-4" /> Personal *
-              </TabsTrigger>
-              <TabsTrigger value="contact" className="flex items-center gap-2">
-                <Phone className="h-4 w-4" /> Contact *
-              </TabsTrigger>
-              <TabsTrigger value="guardian" className="flex items-center gap-2">
-                <User className="h-4 w-4" /> Guardian
-              </TabsTrigger>
-              <TabsTrigger value="insurance" className="flex items-center gap-2">
-                <Shield className="h-4 w-4" /> Insurance
-              </TabsTrigger>
-              <TabsTrigger value="documents" className="flex items-center gap-2">
-                <File className="h-4 w-4" /> Documents
-              </TabsTrigger>
-              <TabsTrigger value="notes" className="flex items-center gap-2">
-                <FileText className="h-4 w-4" /> Notes
-              </TabsTrigger>
-            </TabsList>
+            <div className="space-y-2">
+              <TabsList className="grid w-full grid-cols-3">
+                {primaryTabs.map((tab) => (
+                  <TabsTrigger key={tab} value={tab} className="flex items-center gap-2">
+                    {tab === "personal" && <><Users className="h-4 w-4" /> Personal *</>}
+                    {tab === "contact" && <><Phone className="h-4 w-4" /> Contact *</>}
+                    {tab === "insurance" && <><Shield className="h-4 w-4" /> Insurance</>}
+                  </TabsTrigger>
+                ))}
+                
+              </TabsList>
 
-            {/* Personal */}
+              <div className="flex justify-center">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="flex items-center gap-2 bg-transparent">
+                      More Options
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-48">
+                    {moreTabs.map((tab) => (
+                      <DropdownMenuItem key={tab} onClick={() => setActiveTab(tab)}>
+                        {tab === "guardian" && <><User className="h-4 w-4 mr-2" /> Guardian</>}
+                        {tab === "documents" && <><File className="h-4 w-4 mr-2" /> Documents</>}
+                        {tab === "notes" && <><FileText className="h-4 w-4 mr-2" /> Notes</>}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+            
             <TabsContent value="personal" className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Users className="h-5 w-5 text-teal-600" /> Personal Information
+                    <Badge variant="destructive" className="ml-2">Required</Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {renderInputWithError(
-                      "first_name",
-                      "First Name *",
-                      formData.first_name,
-                      (e) => handleInputChange("first_name", e.target.value),
-                      { placeholder: "Enter first name" },
-                    )}
-                    <div>
-                      <Label htmlFor="middle_name">Middle Name</Label>
-                      <Input
-                        id="middle_name"
-                        value={formData.middle_name}
-                        onChange={(e) => handleInputChange("middle_name", e.target.value)}
-                        placeholder="Enter middle name"
-                      />
-                    </div>
-                    {renderInputWithError(
-                      "last_name",
-                      "Last Name *",
-                      formData.last_name,
-                      (e) => handleInputChange("last_name", e.target.value),
-                      { placeholder: "Enter last name" },
-                    )}
+                    {renderInputWithError("first_name", "First Name *", formData.first_name, (e) => handleInputChange("first_name", e.target.value), { placeholder: "Enter first name" })}
+                    {renderInputWithError("middle_name", "Middle Name", formData.middle_name, (e) => handleInputChange("middle_name", e.target.value), { placeholder: "Enter middle name" })}
+                    {renderInputWithError("last_name", "Last Name *", formData.last_name, (e) => handleInputChange("last_name", e.target.value), { placeholder: "Enter last name" })}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {renderInputWithError(
-                      "date_of_birth",
-                      "Date of Birth *",
-                      formData.date_of_birth,
-                      (e) => handleInputChange("date_of_birth", e.target.value),
-                      { type: "date" },
-                    )}
-                    <div>
-                      <Label htmlFor="gender">Gender</Label>
-                      <Select value={formData.gender} onValueChange={(value) => handleInputChange("gender", value)}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select gender" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Male">Male</SelectItem>
-                          <SelectItem value="Female">Female</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
-                          <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="preferred_language">Preferred Language</Label>
-                      <Input
-                        id="preferred_language"
-                        value={formData.preferred_language}
-                        onChange={(e) => handleInputChange("preferred_language", e.target.value)}
-                        placeholder="Enter preferred language"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {renderSelectWithError(
-                      "client_status",
-                      "Client Status *",
-                      formData.client_status,
-                      (value) => handleInputChange("client_status", value),
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    {renderInputWithError("date_of_birth", "Date of Birth *", formData.date_of_birth, (e) => handleInputChange("date_of_birth", e.target.value), { type: "date" })}
+                    {renderSelectWithError("gender", "Gender", formData.gender, (value) => handleInputChange("gender", value),
+                      <>
+                        <SelectItem value="Male">Male</SelectItem>
+                        <SelectItem value="Female">Female</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                        <SelectItem value="Prefer not to say">Prefer not to say</SelectItem>
+                      </>, "Select gender")}
+                    {renderInputWithError("preferred_language", "Preferred Language", formData.preferred_language, (e) => handleInputChange("preferred_language", e.target.value), { placeholder: "e.g., English, Spanish" })}
+                    {renderSelectWithError("client_status", "Client Status *", formData.client_status, (value) => handleInputChange("client_status", value),
                       <>
                         <SelectItem value="New">New</SelectItem>
                         <SelectItem value="Active">Active</SelectItem>
@@ -709,686 +601,310 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
                         <SelectItem value="Prior Authorization">Prior Authorization</SelectItem>
                         <SelectItem value="Client Assessment">Client Assessment</SelectItem>
                         <SelectItem value="Pending Authorization">Pending Authorization</SelectItem>
-                      </>,
-                      "Select status",
-                    )}
-                    <div>
-                      <Label htmlFor="wait_list_status">Wait List Status</Label>
-                      <Select
-                        value={formData.wait_list_status}
-                        onValueChange={(value) => handleInputChange("wait_list_status", value)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select wait list status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Yes">Yes</SelectItem>
-                          <SelectItem value="No">No</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                      </>, "Select status")}
+                  </div>
+                  <div>
+                    {renderSelectWithError("wait_list_status", "Wait List Status", formData.wait_list_status, (value) => handleInputChange("wait_list_status", value),
+                      <>
+                        <SelectItem value="Yes">Yes</SelectItem>
+                        <SelectItem value="No">No</SelectItem>
+                      </>, "Select wait list status")}
                   </div>
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* Contact */}
             <TabsContent value="contact" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
+                   <CardTitle className="flex items-center gap-2">
                     <Phone className="h-5 w-5 text-teal-600" /> Contact Information
+                    <Badge variant="destructive" className="ml-2">Required</Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {renderInputWithError(
-                      "phone",
-                      "Phone Number *",
-                      formData.phone,
-                      (e) => handleInputChange("phone", e.target.value),
-                      { placeholder: "Enter phone number" },
-                    )}
-                    {renderInputWithError(
-                      "email",
-                      "Email Address *",
-                      formData.email,
-                      (e) => handleInputChange("email", e.target.value),
-                      { type: "email", placeholder: "Enter email address" },
-                    )}
+                     {renderInputWithError("phone", "Phone Number *", formData.phone, (e) => handleInputChange("phone", e.target.value), { placeholder: "Enter phone number" })}
+                     {renderInputWithError("email", "Email Address *", formData.email, (e) => handleInputChange("email", e.target.value), { type: "email", placeholder: "Enter email address" })}
                   </div>
                   <div>
-                    <Label htmlFor="appointment_reminder">Appointment Reminder Preference</Label>
-                    <Select
-                      value={formData.appointment_reminder}
-                      onValueChange={(value) => handleInputChange("appointment_reminder", value)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select reminder preference" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="text">Text Message</SelectItem>
-                        <SelectItem value="email">Email</SelectItem>
-                        <SelectItem value="phone">Phone Call</SelectItem>
-                        <SelectItem value="none">No Reminder</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    {renderSelectWithError("appointment_reminder", "Appointment Reminder Preference", formData.appointment_reminder, (value) => handleInputChange("appointment_reminder", value),
+                        <>
+                          <SelectItem value="email">Email</SelectItem>
+                          <SelectItem value="sms">SMS</SelectItem>
+                          <SelectItem value="phone">Phone Call</SelectItem>
+                          <SelectItem value="none">No Reminders</SelectItem>
+                        </>, "Select reminder preference")}
                   </div>
                 </CardContent>
               </Card>
-
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MapPin className="h-5 w-5 text-teal-600" /> Address Information
-                    <Badge variant="secondary" className="ml-2">Optional</Badge>
+                  <CardTitle className="flex items-center gap-2 justify-between">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-5 w-5 text-teal-600" /> Address Information
+                      <Badge variant="secondary" className="ml-2">Optional</Badge>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={addAddress} className="flex items-center gap-2 bg-transparent">
+                      <Plus className="h-4 w-4" /> Add Address
+                    </Button>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="address_line_1">Address Line 1</Label>
-                    <Input
-                      id="address_line_1"
-                      value={formData.address_line_1}
-                      onChange={(e) => handleInputChange("address_line_1", e.target.value)}
-                      placeholder="Enter street address"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="address_line_2">Address Line 2</Label>
-                    <Input
-                      id="address_line_2"
-                      value={formData.address_line_2}
-                      onChange={(e) => handleInputChange("address_line_2", e.target.value)}
-                      placeholder="Apartment, suite, etc."
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="city">City</Label>
-                      <Input
-                        id="city"
-                        value={formData.city}
-                        onChange={(e) => handleInputChange("city", e.target.value)}
-                        placeholder="Enter city"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="state">State</Label>
-                      <Input
-                        id="state"
-                        value={formData.state}
-                        onChange={(e) => handleInputChange("state", e.target.value)}
-                        placeholder="Enter state"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="zipcode">ZIP Code</Label>
-                      <Input
-                        id="zipcode"
-                        value={formData.zipcode}
-                        onChange={(e) => handleInputChange("zipcode", e.target.value)}
-                        placeholder="Enter ZIP code"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                      <div>
-                        <Label htmlFor="country">Country</Label>
-                        <Select
-                          value={formData.country}
-                          onValueChange={(value) => {
-                            handleInputChange("country", value)
-                            if (value !== "Other") {
-                              handleInputChange("countryOther", "")
-                            }
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select country" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {popularCountries.map((country) => (
-                              <SelectItem key={country} value={country}>
-                                {country}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                <CardContent className="space-y-6">
+                  {formData.addresses.map((address, index) => (
+                    <div key={address.id} className="border rounded-lg p-4 space-y-4">
+                       <div className="flex items-center justify-between">
+                        <h4 className="font-semibold">Address #{index + 1}</h4>
+                        {formData.addresses.length > 1 && (
+                          <Button type="button" variant="outline" size="sm" onClick={() => removeAddress(address.id)} className="text-red-600 hover:text-red-700">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
-                      {formData.country === "Other" && (
-                        <div>
-                          <Label htmlFor="countryOther">Specify Country</Label>
-                          <Input
-                            id="countryOther"
-                            value={formData.countryOther || ""}
-                            onChange={(e) => handleInputChange("countryOther", e.target.value)}
-                            placeholder="Enter country name"
-                          />
+                      {renderSelectWithError(`service_location_${address.id}`, "Service Location", address.service_location, (value) => handleAddressChange(address.id, "service_location", value),
+                        <>
+                            <SelectItem value="Home">Home</SelectItem>
+                            <SelectItem value="Clinic">Clinic</SelectItem>
+                            <SelectItem value="School">School</SelectItem>
+                            <SelectItem value="Other">Other</SelectItem>
+                        </>, "Select service location")}
+                      {renderInputWithError(`address_line_1_${address.id}`, "Address Line 1", address.address_line_1, (e) => handleAddressChange(address.id, "address_line_1", e.target.value), { placeholder: "Enter street address" })}
+                      {renderInputWithError(`address_line_2_${address.id}`, "Address Line 2", address.address_line_2, (e) => handleAddressChange(address.id, "address_line_2", e.target.value), { placeholder: "Apartment, suite, etc." })}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {renderInputWithError(`city_${address.id}`, "City", address.city, (e) => handleAddressChange(address.id, "city", e.target.value), { placeholder: "Enter city" })}
+                        {renderInputWithError(`state_${address.id}`, "State", address.state, (e) => handleAddressChange(address.id, "state", e.target.value), { placeholder: "Enter state" })}
+                        {renderInputWithError(`zipcode_${address.id}`, "ZIP Code", address.zipcode, (e) => handleAddressChange(address.id, "zipcode", e.target.value), { placeholder: "Enter ZIP code" })}
+                      </div>
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                            {renderSelectWithError(`country_${address.id}`, "Country", address.country, (value) => { handleAddressChange(address.id, "country", value); if (value !== "Other") { handleAddressChange(address.id, "countryOther", "")}},
+                            <>
+                                {popularCountries.map((country) => ( <SelectItem key={country} value={country}>{country}</SelectItem> ))}
+                            </>, "Select country")}
+                          {address.country === "Other" && (
+                            renderInputWithError(`countryOther_${address.id}`, "Specify Country", address.countryOther, (e) => handleAddressChange(address.id, "countryOther", e.target.value), { placeholder: "Enter country name" })
+                          )}
                         </div>
-                      )}
                     </div>
-                  </div>
+                  ))}
                 </CardContent>
               </Card>
             </TabsContent>
-
-            {/* Guardian */}
+            
             <TabsContent value="guardian" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <User className="h-5 w-5 text-teal-600" /> Parent/Guardian Information
-                    <Badge variant="secondary" className="ml-2">Optional</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                    <p className="text-sm text-yellow-700">
-                      <strong>Note:</strong> If you start filling out parent/guardian information, all marked fields will become required.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {renderInputWithError(
-                      "parent_first_name",
-                      "Parent/Guardian First Name",
-                      formData.parent_first_name,
-                      (e) => handleInputChange("parent_first_name", e.target.value),
-                      { placeholder: "Enter parent/guardian first name" },
-                    )}
-                    {renderInputWithError(
-                      "parent_last_name",
-                      "Parent/Guardian Last Name",
-                      formData.parent_last_name,
-                      (e) => handleInputChange("parent_last_name", e.target.value),
-                      { placeholder: "Enter parent/guardian last name" },
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {renderSelectWithError(
-                      "relationship_to_insured",
-                      "Relationship to Client",
-                      formData.relationship_to_insured,
-                      (value) => handleInputChange("relationship_to_insured", value),
-                      <>
-                        <SelectItem value="Parent">Parent</SelectItem>
-                        <SelectItem value="Guardian">Guardian</SelectItem>
-                        <SelectItem value="Spouse">Spouse</SelectItem>
-                        <SelectItem value="Self">Self</SelectItem>
-                        <SelectItem value="Other">Other</SelectItem>
-                      </>,
-                      "Select relationship",
-                    )}
-                    {formData.relationship_to_insured === "Other" &&
-                      renderInputWithError(
-                        "relation_other",
-                        "Specify Other Relationship",
-                        formData.relation_other,
-                        (e) => handleInputChange("relation_other", e.target.value),
-                        { placeholder: "Enter relationship" },
-                      )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Heart className="h-5 w-5 text-teal-600" /> Emergency Contact
-                    <Badge variant="secondary" className="ml-2">Optional</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                    <p className="text-sm text-yellow-700">
-                      <strong>Note:</strong> If you start filling out emergency contact information, all marked fields will become required.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {renderInputWithError(
-                      "emergency_contact_name",
-                      "Emergency Contact Name",
-                      formData.emergency_contact_name,
-                      (e) => handleInputChange("emergency_contact_name", e.target.value),
-                      { placeholder: "Enter emergency contact name" },
-                    )}
-                    {renderInputWithError(
-                      "emg_relationship",
-                      "Relationship",
-                      formData.emg_relationship,
-                      (e) => handleInputChange("emg_relationship", e.target.value),
-                      { placeholder: "Enter relationship" },
-                    )}
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {renderInputWithError(
-                      "emg_phone",
-                      "Emergency Contact Phone",
-                      formData.emg_phone,
-                      (e) => handleInputChange("emg_phone", e.target.value),
-                      { placeholder: "Enter emergency contact phone" },
-                    )}
-                    <div>
-                      <Label htmlFor="emg_email">Emergency Contact Email</Label>
-                      <Input
-                        id="emg_email"
-                        type="email"
-                        value={formData.emg_email}
-                        onChange={(e) => handleInputChange("emg_email", e.target.value)}
-                        placeholder="Enter emergency contact email"
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <User className="h-5 w-5 text-teal-600" /> Parent/Guardian Information
+                             <Badge variant="secondary" className="ml-2">Optional</Badge>
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {renderInputWithError("parent_first_name", "Parent/Guardian First Name", formData.parent_first_name, (e) => handleInputChange("parent_first_name", e.target.value), { placeholder: "Enter first name" })}
+                            {renderInputWithError("parent_last_name", "Parent/Guardian Last Name", formData.parent_last_name, (e) => handleInputChange("parent_last_name", e.target.value), { placeholder: "Enter last name" })}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             {renderSelectWithError("relationship_to_insured", "Relationship to Client", formData.relationship_to_insured, (value) => handleInputChange("relationship_to_insured", value),
+                                <>
+                                    <SelectItem value="Parent">Parent</SelectItem>
+                                    <SelectItem value="Guardian">Guardian</SelectItem>
+                                    <SelectItem value="Spouse">Spouse</SelectItem>
+                                    <SelectItem value="Sibling">Sibling</SelectItem>
+                                    <SelectItem value="Other">Other</SelectItem>
+                                </>, "Select relationship")}
+                            {formData.relationship_to_insured === "Other" && (
+                                renderInputWithError("relation_other", "Specify Relationship", formData.relation_other, (e) => handleInputChange("relation_other", e.target.value), { placeholder: "Enter relationship" })
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
+                 <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Heart className="h-5 w-5 text-teal-600" /> Emergency Contact
+                            <Badge variant="secondary" className="ml-2">Optional</Badge>
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                             {renderInputWithError("emergency_contact_name", "Emergency Contact Name", formData.emergency_contact_name, (e) => handleInputChange("emergency_contact_name", e.target.value), { placeholder: "Enter contact name" })}
+                             {renderInputWithError("emg_relationship", "Relationship", formData.emg_relationship, (e) => handleInputChange("emg_relationship", e.target.value), { placeholder: "Enter relationship" })}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {renderInputWithError("emg_phone", "Emergency Contact Phone", formData.emg_phone, (e) => handleInputChange("emg_phone", e.target.value), { placeholder: "Enter phone number" })}
+                            {renderInputWithError("emg_email", "Emergency Contact Email", formData.emg_email, (e) => handleInputChange("emg_email", e.target.value), { type: "email", placeholder: "Enter email address" })}
+                        </div>
+                    </CardContent>
+                </Card>
             </TabsContent>
-
-            {/* Insurance */}
+            
             <TabsContent value="insurance" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Shield className="h-5 w-5 text-teal-600" /> Insurance Information
-                    <Badge variant="secondary" className="ml-2">Optional</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {formData.insurances.length === 0 ? (
-                    <div className="text-center py-8">
-                      <Shield className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                      <p className="text-gray-500 mb-4">No insurance information added yet</p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addInsurance}
-                        className="border-dashed border-slate-300 bg-transparent"
-                      >
-                        <Plus className="h-4 w-4 mr-2" /> Add Insurance Information
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      {formData.insurances.map((insurance, index) => (
-                        <div key={index} className="border rounded-lg p-4 bg-slate-50 relative">
-                          <div className="flex items-center justify-between mb-4">
+                <Card>
+                    <CardHeader>
+                         <CardTitle className="flex items-center gap-2 justify-between">
                             <div className="flex items-center gap-2">
-                              <h4 className="font-medium">Insurance #{index + 1}</h4>
-                              <Badge
-                                variant="outline"
-                                className={
-                                  insurance.insurance_type === "Primary"
-                                    ? "border-blue-300 text-blue-700"
-                                    : "border-green-300 text-green-700"
-                                }
-                              >
-                                {insurance.insurance_type}
-                              </Badge>
+                                <Shield className="h-5 w-5 text-teal-600" /> Insurance Information
+                                <Badge variant="secondary" className="ml-2">Optional</Badge>
                             </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => removeInsurance(index)}
-                              className="text-red-600 border-red-300 hover:bg-red-50"
-                            >
-                              <Trash2 className="h-4 w-4" />
+                            <Button type="button" variant="outline" size="sm" onClick={addInsurance} className="flex items-center gap-2 bg-transparent">
+                                <Plus className="h-4 w-4" /> Add Insurance
                             </Button>
-                          </div>
-                          <div className="space-y-4">
-                            {renderSelectWithError(
-                              `insurance_insurance_type_${index}`,
-                              "Insurance Type *",
-                              insurance.insurance_type,
-                              (value) => handleInsuranceChange(index, "insurance_type", value),
-                              <>
-                                <SelectItem value="Primary">Primary</SelectItem>
-                                <SelectItem value="Secondary">Secondary</SelectItem>
-                              </>,
-                              "Select insurance type",
-                            )}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {renderInputWithError(
-                                `insurance_insurance_provider_${index}`,
-                                "Insurance Provider *",
-                                insurance.insurance_provider,
-                                (e) => handleInsuranceChange(index, "insurance_provider", e.target.value),
-                                { placeholder: "Enter insurance provider" },
-                              )}
-                              {renderInputWithError(
-                                `insurance_treatment_type_${index}`,
-                                "Treatment Type *",
-                                insurance.treatment_type,
-                                (e) => handleInsuranceChange(index, "treatment_type", e.target.value),
-                                { placeholder: "Enter treatment type" },
-                              )}
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {formData.insurances.length === 0 ? (
+                            <p className="text-gray-500 text-center py-8">No insurance information added yet.</p>
+                        ) : (
+                            <div className="space-y-6">
+                                {formData.insurances.map((insurance, index) => (
+                                <div key={insurance.insurance_id} className="border rounded-lg p-4 space-y-4">
+                                     <div className="flex items-center justify-between">
+                                        <h4 className="font-semibold">Insurance #{index + 1}</h4>
+                                        <Button type="button" variant="outline" size="sm" onClick={() => removeInsurance(insurance.insurance_id)} className="text-red-600 hover:text-red-700">
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {renderSelectWithError(`insurance_insurance_type_${index}`, "Insurance Type", insurance.insurance_type, (value) => handleInsuranceChange(insurance.insurance_id, "insurance_type", value),
+                                            <> <SelectItem value="Primary">Primary</SelectItem> <SelectItem value="Secondary">Secondary</SelectItem> </>, "Select type")}
+                                        {renderInputWithError(`insurance_insurance_provider_${index}`, "Insurance Provider", insurance.insurance_provider, (e) => handleInsuranceChange(insurance.insurance_id, "insurance_provider", e.target.value), { placeholder: "Enter provider name" })}
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {renderInputWithError(`insurance_treatment_type_${index}`, "Treatment Type", insurance.treatment_type, (e) => handleInsuranceChange(insurance.insurance_id, "treatment_type", e.target.value), { placeholder: "Enter treatment type" })}
+                                        {renderInputWithError(`insurance_rendering_provider_${index}`, "Rendering Provider", insurance.rendering_provider, (e) => handleInsuranceChange(insurance.insurance_id, "rendering_provider", e.target.value), { placeholder: "Enter rendering provider" })}
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {renderInputWithError(`insurance_insurance_id_number_${index}`, "Insurance ID Number", insurance.insurance_id_number, (e) => handleInsuranceChange(insurance.insurance_id, "insurance_id_number", e.target.value), { placeholder: "Enter ID number" })}
+                                        {renderInputWithError(`insurance_group_number_${index}`, "Group Number", insurance.group_number, (e) => handleInsuranceChange(insurance.insurance_id, "group_number", e.target.value), { placeholder: "Enter group number" })}
+                                    </div>
+                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        {renderInputWithError(`insurance_coinsurance_${index}`, "Coinsurance", insurance.coinsurance, (e) => handleInsuranceChange(insurance.insurance_id, "coinsurance", e.target.value), { placeholder: "e.g., 20%" })}
+                                        {renderInputWithError(`insurance_deductible_${index}`, "Deductible", insurance.deductible, (e) => handleInsuranceChange(insurance.insurance_id, "deductible", e.target.value), { placeholder: "e.g., $500" })}
+                                        {renderInputWithError(`insurance_copay_rate_${index}`, "Copay Rate", insurance.copay_rate, (e) => handleInsuranceChange(insurance.insurance_id, "copay_rate", e.target.value), { placeholder: "e.g., $25" })}
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {renderInputWithError(`insurance_start_date_${index}`, "Start Date", insurance.start_date, (e) => handleInsuranceChange(insurance.insurance_id, "start_date", e.target.value), { type: "date" })}
+                                        {renderInputWithError(`insurance_end_date_${index}`, "End Date", insurance.end_date, (e) => handleInsuranceChange(insurance.insurance_id, "end_date", e.target.value), { type: "date" })}
+                                    </div>
+                                </div>
+                                ))}
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {renderInputWithError(
-                                `insurance_insurance_id_number_${index}`,
-                                "Insurance ID *",
-                                insurance.insurance_id_number,
-                                (e) => handleInsuranceChange(index, "insurance_id_number", e.target.value),
-                                { placeholder: "Enter insurance ID" },
-                              )}
-                              {renderInputWithError(
-                                `insurance_group_number_${index}`,
-                                "Group Number *",
-                                insurance.group_number,
-                                (e) => handleInsuranceChange(index, "group_number", e.target.value),
-                                { placeholder: "Enter group number" },
-                              )}
+                        )}
+                    </CardContent>
+                </Card>
+                {formData.insurances.length > 0 && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2 justify-between">
+                            <div className="flex items-center gap-2">
+                                <FileText className="h-5 w-5 text-teal-600" /> Authorizations
+                                <Badge variant="secondary" className="ml-2">Optional</Badge>
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <Label>Coinsurance</Label>
-                                <Input
-                                  value={insurance.coinsurance}
-                                  onChange={(e) => handleInsuranceChange(index, "coinsurance", e.target.value)}
-                                  placeholder="Enter coinsurance"
-                                />
-                              </div>
-                              <div>
-                                <Label>Deductible</Label>
-                                <Input
-                                  value={insurance.deductible}
-                                  onChange={(e) => handleInsuranceChange(index, "deductible", e.target.value)}
-                                  placeholder="Enter deductible"
-                                />
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {renderInputWithError(
-                                `insurance_start_date_${index}`,
-                                "Start Date *",
-                                insurance.start_date,
-                                (e) => handleInsuranceChange(index, "start_date", e.target.value),
-                                { type: "date" },
-                              )}
-                              <div>
-                                <Label>End Date</Label>
-                                <Input
-                                  type="date"
-                                  value={insurance.end_date}
-                                  onChange={(e) => handleInsuranceChange(index, "end_date", e.target.value)}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addInsurance}
-                        className="w-full border-dashed border-slate-300 bg-transparent"
-                      >
-                        <Plus className="h-4 w-4 mr-2" /> Add Another Insurance
-                      </Button>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Authorization Information */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-teal-600" /> Authorization Information
-                    <Badge variant="secondary" className="ml-2">Optional</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {formData.authorizations.length === 0 ? (
-                    <div className="text-center py-8">
-                      <FileText className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                      <p className="text-gray-500 mb-4">No authorization information added yet</p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addAuthorization}
-                        className="border-dashed border-slate-300 bg-transparent"
-                        disabled={formData.insurances.length === 0}
-                      >
-                        <Plus className="h-4 w-4 mr-2" /> Add Authorization Information
-                      </Button>
-                      {formData.insurances.length === 0 && (
-                        <p className="text-xs text-gray-400 mt-2">Add insurance information first</p>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      {formData.authorizations.map((auth, index) => (
-                        <div key={index} className="border rounded-lg p-4 bg-slate-50 relative">
-                          <div className="flex items-center justify-between mb-4">
-                            <h4 className="font-medium">Authorization #{index + 1}</h4>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => removeAuthorization(index)}
-                              className="text-red-600 border-red-300 hover:bg-red-50"
-                            >
-                              <Trash2 className="h-4 w-4" />
+                            <Button type="button" variant="outline" size="sm" onClick={addAuthorization} className="flex items-center gap-2 bg-transparent">
+                                <Plus className="h-4 w-4" /> Add Authorization
                             </Button>
-                          </div>
-                          <div className="space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {renderInputWithError(
-                                `auth_authorization_number_${index}`,
-                                "Authorization Number *",
-                                auth.authorization_number,
-                                (e) => handleAuthorizationChange(index, "authorization_number", e.target.value),
-                                { placeholder: "Enter authorization number" },
-                              )}
-                              {renderSelectWithError(
-                                `auth_billing_codes_${index}`,
-                                "Billing Codes *",
-                                auth.billing_codes,
-                                (value) => handleAuthorizationChange(index, "billing_codes", value),
-                                billingCodeOptions.map((option) => (
-                                  <SelectItem key={option.code} value={option.code}>
-                                    {`${option.code} ${option.name}`}
-                                  </SelectItem>
-                                )),
-                                "Select billing code",
-                              )}
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                         {(!formData.authorizations || formData.authorizations.length === 0) ? (
+                            <p className="text-gray-500 text-center py-8">No authorizations added yet.</p>
+                         ) : (
+                            <div className="space-y-6">
+                            {formData.authorizations.map((auth, index) => (
+                                <div key={auth.auth_uuid} className="border rounded-lg p-4 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="font-semibold">Authorization #{index + 1}</h4>
+                                        <Button type="button" variant="outline" size="sm" onClick={() => removeAuthorization(auth.auth_uuid)} className="text-red-600 hover:text-red-700">
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {renderSelectWithError(`auth_insurance_id_${index}`, "Linked Insurance", auth.insurance_id, (value) => handleAuthorizationChange(auth.auth_uuid, "insurance_id", value), 
+                                            formData.insurances.map((ins, idx) => (<SelectItem key={ins.insurance_id} value={ins.insurance_id.toString()}>{ins.insurance_provider || `Insurance #${idx + 1}`}</SelectItem>)), "Select insurance")}
+                                        {renderInputWithError(`auth_authorization_number_${index}`, "Authorization Number", auth.authorization_number, (e) => handleAuthorizationChange(auth.auth_uuid, "authorization_number", e.target.value), { placeholder: "Enter authorization number" })}
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {renderInputWithError(`auth_billing_codes_${index}`, "Billing Codes", auth.billing_codes, (e) => handleAuthorizationChange(auth.auth_uuid, "billing_codes", e.target.value), { placeholder: "Enter billing codes" })}
+                                        {renderSelectWithError(`auth_status_${index}`, "Status", auth.status, (value) => handleAuthorizationChange(auth.auth_uuid, "status", value),
+                                            <> <SelectItem value="Active">Active</SelectItem> <SelectItem value="Pending">Pending</SelectItem> <SelectItem value="Expired">Expired</SelectItem> <SelectItem value="Denied">Denied</SelectItem> </>, "Select status")}
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        {renderInputWithError(`auth_units_approved_per_15_min_${index}`, "Units Approved (per 15 min)", auth.units_approved_per_15_min, (e) => handleAuthorizationChange(auth.auth_uuid, "units_approved_per_15_min", e.target.value), { type: "number", placeholder: "Enter units" })}
+                                        {renderInputWithError(`auth_units_serviced_${index}`, "Units Serviced", auth.units_serviced, (e) => handleAuthorizationChange(auth.auth_uuid, "units_serviced", e.target.value), { type: "number", placeholder: "Enter serviced units" })}
+                                        {renderInputWithError(`auth_balance_units_${index}`, "Balance Units", auth.balance_units, (e) => handleAuthorizationChange(auth.auth_uuid, "balance_units", e.target.value), { placeholder: "Balance", readOnly: true })}
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {renderInputWithError(`auth_start_date_${index}`, "Start Date", auth.start_date, (e) => handleAuthorizationChange(auth.auth_uuid, "start_date", e.target.value), { type: "date" })}
+                                        {renderInputWithError(`auth_end_date_${index}`, "End Date", auth.end_date, (e) => handleAuthorizationChange(auth.auth_uuid, "end_date", e.target.value), { type: "date" })}
+                                    </div>
+                                </div>
+                            ))}
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                              {renderInputWithError(
-                                `auth_units_approved_per_15_min_${index}`,
-                                "Units Approved (per 15 min) *",
-                                auth.units_approved_per_15_min,
-                                (e) => handleAuthorizationChange(index, "units_approved_per_15_min", e.target.value),
-                                { type: "number", placeholder: "Enter approved units" },
-                              )}
-                              <div>
-                                <Label>Units Serviced</Label>
-                                <Input
-                                  type="number"
-                                  value={auth.units_serviced}
-                                  onChange={(e) => handleAuthorizationChange(index, "units_serviced", e.target.value)}
-                                  placeholder="Enter serviced units"
-                                />
-                              </div>
-                              <div>
-                                <Label>Balance Units</Label>
-                                <Input
-                                  value={auth.balance_units}
-                                  readOnly
-                                  placeholder="Calculated balance"
-                                  className="bg-gray-100 cursor-not-allowed"
-                                />
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {renderInputWithError(
-                                `auth_start_date_${index}`,
-                                "Start Date *",
-                                auth.start_date || "",
-                                (e) => handleAuthorizationChange(index, "start_date", e.target.value),
-                                { type: "date" },
-                              )}
-                              {renderInputWithError(
-                                `auth_end_date_${index}`,
-                                "End Date *",
-                                auth.end_date || "",
-                                (e) => handleAuthorizationChange(index, "end_date", e.target.value),
-                                { type: "date" },
-                              )}
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {renderSelectWithError(
-                                `auth_insurance_id_${index}`,
-                                "Linked Insurance *",
-                                auth.insurance_id || "",
-                                (value) => handleAuthorizationChange(index, "insurance_id", value),
-                                formData.insurances.map((insurance, i) => (
-                                  <SelectItem key={i} value={String(i)}>
-                                    {insurance.insurance_provider || `Insurance #${i + 1}`}
-                                  </SelectItem>
-                                )),
-                                "Select insurance",
-                              )}
-                              {renderSelectWithError(
-                                `auth_status_${index}`,
-                                "Status *",
-                                auth.status || "Active",
-                                (value) => handleAuthorizationChange(index, "status", value),
-                                authorizationStatuses.map((status) => (
-                                  <SelectItem key={status} value={status}>
-                                    {status}
-                                  </SelectItem>
-                                )),
-                                "Select status",
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addAuthorization}
-                        className="w-full border-dashed border-slate-300 bg-transparent"
-                      >
-                        <Plus className="h-4 w-4 mr-2" /> Add Another Authorization
-                      </Button>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
+                         )}
+                    </CardContent>
+                </Card>
+                )}
             </TabsContent>
-
-            {/* Documents */}
+            
             <TabsContent value="documents" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <File className="h-5 w-5 text-teal-600" /> Client Documents
-                    <Badge variant="secondary" className="ml-2">Optional</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {formData.documents.length === 0 ? (
-                    <div className="text-center py-8">
-                      <File className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                      <p className="text-gray-500 mb-4">No documents added yet</p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addDocument}
-                        className="border-dashed border-slate-300 bg-transparent"
-                      >
-                        <Plus className="h-4 w-4 mr-2" /> Add Document
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      {formData.documents.map((doc, index) => (
-                        <div key={index} className="border rounded-lg p-4 bg-slate-50 relative">
-                          <div className="flex items-center justify-between mb-4">
-                            <h4 className="font-medium">Document #{index + 1}</h4>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => removeDocument(index)}
-                              className="text-red-600 border-red-300 hover:bg-red-50"
-                            >
-                              <Trash2 className="h-4 w-4" />
+                 <Card>
+                    <CardHeader>
+                         <CardTitle className="flex items-center gap-2 justify-between">
+                            <div className="flex items-center gap-2">
+                                <File className="h-5 w-5 text-teal-600" /> Documents
+                                <Badge variant="secondary" className="ml-2">Optional</Badge>
+                            </div>
+                            <Button type="button" variant="outline" size="sm" onClick={addDocument} className="flex items-center gap-2 bg-transparent">
+                                <Plus className="h-4 w-4" /> Add Document
                             </Button>
-                          </div>
-                          <div className="space-y-4">
-                            {renderSelectWithError(
-                              `document_document_type_${index}`,
-                              "Document Type *",
-                              doc.document_type,
-                              (value) => handleDocumentChange(index, "document_type", value),
-                              documentTypes.map((type) => (
-                                <SelectItem key={type} value={type}>
-                                  {type}
-                                </SelectItem>
-                              )),
-                              "Select document type",
-                            )}
-                            {renderInputWithError(
-                              `document_file_url_${index}`,
-                              "Document URL/Path *",
-                              doc.file_url,
-                              (e) => handleDocumentChange(index, "file_url", e.target.value),
-                              { placeholder: "Enter URL or path to document" },
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addDocument}
-                        className="w-full border-dashed border-slate-300 bg-transparent"
-                      >
-                        <Plus className="h-4 w-4 mr-2" /> Add Another Document
-                      </Button>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {formData.documents.length === 0 ? (
+                            <p className="text-gray-500 text-center py-8">No documents added yet.</p>
+                        ) : (
+                            <div className="space-y-4">
+                            {formData.documents.map((doc, index) => (
+                                <div key={doc.doc_uuid} className="border rounded-lg p-4 space-y-4">
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="font-semibold">Document #{index + 1}</h4>
+                                        <Button type="button" variant="outline" size="sm" onClick={() => removeDocument(doc.doc_uuid)} className="text-red-600 hover:text-red-700">
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {renderInputWithError(`document_document_type_${index}`, "Document Type", doc.document_type, (e) => handleDocumentChange(doc.doc_uuid, "document_type", e.target.value), { placeholder: "e.g., Insurance Card, ID" })}
+                                        {renderInputWithError(`document_file_url_${index}`, "File URL", doc.file_url, (e) => handleDocumentChange(doc.doc_uuid, "file_url", e.target.value), { placeholder: "Enter file URL" })}
+                                    </div>
+                                </div>
+                            ))}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
             </TabsContent>
 
-            {/* Notes */}
             <TabsContent value="notes" className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-teal-600" /> Notes & Additional Information
-                    <Badge variant="secondary" className="ml-2">Optional</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="client_notes">Client Notes</Label>
-                    <Textarea
-                      id="client_notes"
-                      value={formData.client_notes}
-                      onChange={(e) => handleInputChange("client_notes", e.target.value)}
-                      placeholder="Enter any notes about the client"
-                      rows={4}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="other_information">Other Information</Label>
-                    <Textarea
-                      id="other_information"
-                      value={formData.other_information}
-                      onChange={(e) => handleInputChange("other_information", e.target.value)}
-                      placeholder="Enter any additional information"
-                      rows={4}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
+                <Card>
+                    <CardHeader>
+                         <CardTitle className="flex items-center gap-2">
+                             <FileText className="h-5 w-5 text-teal-600" /> Notes & Additional Information
+                             <Badge variant="secondary" className="ml-2">Optional</Badge>
+                         </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div>
+                            <Label htmlFor="client_notes">Client Notes</Label>
+                            <Textarea id="client_notes" value={formData.client_notes} onChange={(e) => handleInputChange("client_notes", e.target.value)} placeholder="Enter any notes about the client..." rows={4} />
+                        </div>
+                         <div>
+                            <Label htmlFor="other_information">Other Information</Label>
+                            <Textarea id="other_information" value={formData.other_information} onChange={(e) => handleInputChange("other_information", e.target.value)} placeholder="Enter any additional information..." rows={4} />
+                        </div>
+                    </CardContent>
+                </Card>
             </TabsContent>
+            
           </Tabs>
 
           <div className="flex justify-between gap-3 pt-6 border-t">
@@ -1403,8 +919,8 @@ export default function AddClientModal({ isOpen, onClose, onSave, editingClient 
               )}
             </div>
             <div className="flex gap-3">
-              <Button type="submit" className="bg-teal-600 hover:bg-teal-700">
-                {editingClient ? "Update Client" : "Add Client"}
+              <Button type="submit" disabled={saving} className="bg-teal-600 hover:bg-teal-700">
+                {saving ? "Saving..." : isLastTab || !editingClient ? (editingClient ? "Update Client" : "Add Client") : "Save & Continue"}
               </Button>
               {!isLastTab && (
                 <Button type="button" onClick={handleNextTab} variant="outline">

@@ -9,9 +9,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     exit();
 }
 
-$host = "db5018266079.hosting-data.io";
-$dbname = "dbs14484433";
-$user = "dbu3321929";
+$host = "db5018419668.hosting-data.io";
+$dbname = "dbs14649042";
+$user = "dbu1183438";
 $pass = "M@h@B3h@v1or@lH3@lth4@ut1sm";
 
 try {

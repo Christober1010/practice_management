@@ -38,6 +38,7 @@ const initialForm = {
   endDateTime: "",
   endTZ: "",
   authCode: "",
+  serviceLocation: "Clinic",
 }
 
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
@@ -48,13 +49,16 @@ export default function NewSessionFormModal({
   onSave,
   editingSession = null,
   selectedDate = null,
-  clients = [], // Added clients prop
+  clients = [],
 }) {
   const [form, setForm] = useState(initialForm)
   const [errors, setErrors] = useState({})
   const [activeTab, setActiveTab] = useState("scheduling")
   const [staff, setStaff] = useState([])
   const [loadingStaff, setLoadingStaff] = useState(false)
+
+  const selectedProvider = staff.find((s) => s.id === form.provider)
+  const isSupervisionRequired = ["rbt", "bt"].includes(selectedProvider?.staffType?.toLowerCase())
 
   const tabOrder = ["scheduling", "notes"]
 
@@ -100,12 +104,12 @@ export default function NewSessionFormModal({
     if (!isOpen) return
 
     if (editingSession) {
-      console.log("[v0] Editing session data:", editingSession) // Debug log
+      console.log("[v0] Editing session data:", editingSession)
 
       setForm({
         clientId: editingSession.clientId || "",
-        provider: editingSession.providerId || "", // Fixed: use providerId instead of provider
-        supervisingProvider: editingSession.supervisingProviderId || "", // Fixed: use supervisingProviderId
+        provider: editingSession.providerId || "",
+        supervisingProvider: editingSession.supervisingProviderId || "",
         recurring: editingSession.recurring || "No",
         placeOfService: editingSession.placeOfService || "Clinic",
         locationAddress: editingSession.locationAddress || "",
@@ -140,11 +144,18 @@ export default function NewSessionFormModal({
   }, [isOpen, editingSession, selectedDate])
 
   const clientOptions = useMemo(() => {
-    return clients.map((c) => ({
-      id: c.client_id, // Use client_id from API response
-      name: [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(" "),
-      authorizations: Array.isArray(c.authorizations) ? c.authorizations : [],
-    }))
+    return clients.map((c) => {
+      const addressParts = [c.address_line_1, c.address_line_2, c.city, c.state, c.zipcode, c.country].filter(Boolean)
+
+      const fullAddress = addressParts.join(", ")
+
+      return {
+        id: c.client_id,
+        name: [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(" "),
+        authorizations: Array.isArray(c.authorizations) ? c.authorizations : [],
+        address: fullAddress,
+      }
+    })
   }, [clients])
 
   const selectedClient = useMemo(
@@ -153,7 +164,6 @@ export default function NewSessionFormModal({
   )
 
   useEffect(() => {
-    // Only reset auth code when changing client in new session mode, not when editing
     if (!editingSession) {
       setForm((prev) => ({ ...prev, authCode: "" }))
     }
@@ -178,6 +188,10 @@ export default function NewSessionFormModal({
       e.endDateTime = "End must be after Start"
     }
 
+    if (isSupervisionRequired && !form.supervisingProvider) {
+      e.supervisingProvider = `Required for ${selectedProvider?.staffType} provider`
+    }
+
     if (!form.authCode) e.authCode = "Required"
     if (!form.startTZ) e.startTZ = "Required"
     if (!form.endTZ) e.endTZ = "Required"
@@ -194,8 +208,8 @@ export default function NewSessionFormModal({
   }
 
   const handleNextClick = (e) => {
-    e.preventDefault() // Prevent form submission
-    e.stopPropagation() // Stop event bubbling
+    e.preventDefault()
+    e.stopPropagation()
 
     if (!validateSchedulingTab()) {
       setActiveTab("notes")
@@ -219,8 +233,7 @@ export default function NewSessionFormModal({
     const payload = {
       clientId: form.clientId,
       clientName,
-      ...(editingSession?.sessionId ? { therapist: form.provider } : { provider: form.provider }),
-      supervisingProvider: form.supervisingProvider,
+      provider: form.provider, // Always use 'provider' field name
       startDateTime: form.startDateTime,
       endDateTime: form.endDateTime,
       startTZ: form.startTZ,
@@ -233,11 +246,15 @@ export default function NewSessionFormModal({
       status: "upcoming",
     }
 
+    if (form.supervisingProvider && form.supervisingProvider.trim()) {
+      payload.supervisingProvider = form.supervisingProvider
+    }
+
     if (editingSession?.sessionId) {
       payload.session_id = editingSession.sessionId
     }
 
-    console.log("[v0] Submitting payload:", payload) // Debug log
+    console.log("[v0] Submitting payload:", payload)
 
     try {
       const method = editingSession?.sessionId ? "PUT" : "POST"
@@ -248,16 +265,19 @@ export default function NewSessionFormModal({
       })
 
       const data = await res.json()
-      console.log("[v0] API Response:", data) // Debug log
+      console.log("[v0] API Response:", data)
 
       if (res.ok && data.success) {
         toast.success(editingSession ? "Session updated!" : "Session scheduled!")
-        onSave?.({ ...payload, sessionId: data.session_id || editingSession?.sessionId })
+        onSave?.({
+          ...payload,
+          sessionId: data.session_id || editingSession?.sessionId,
+        })
         onClose?.()
         setForm(initialForm)
         setErrors({})
       } else {
-        console.error("[v0] API Error:", data) // Debug log
+        console.error("[v0] API Error:", data)
         toast.error(data.error || `Failed to ${editingSession ? "update" : "save"} session`)
       }
     } catch (err) {
@@ -266,7 +286,6 @@ export default function NewSessionFormModal({
     }
   }
 
-  // ⬇️ Helpers for inputs
   const renderInputWithError = (id, label, value, onChange, props = {}) => (
     <div>
       <Label htmlFor={id}>{label}</Label>
@@ -290,9 +309,15 @@ export default function NewSessionFormModal({
 
   const handleClose = () => {
     setForm(initialForm)
-    setErrors({}) // Clear errors on close
+    setErrors({})
     onClose?.()
   }
+
+  useEffect(() => {
+    if (!isSupervisionRequired && form.supervisingProvider) {
+      setField("supervisingProvider", "")
+    }
+  }, [form.provider, isSupervisionRequired])
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -313,7 +338,6 @@ export default function NewSessionFormModal({
               </TabsTrigger>
             </TabsList>
 
-            {/* ✅ Scheduling Tab */}
             <TabsContent value="scheduling">
               <Card>
                 <CardHeader>
@@ -350,18 +374,23 @@ export default function NewSessionFormModal({
                     )}
                   </div>
 
-                  {/* Supervising Provider */}
-                  {renderSelectWithError(
-                    "supervisingProvider",
-                    "Supervising Provider",
-                    form.supervisingProvider,
-                    (v) => setField("supervisingProvider", v),
-                    staff.map((s) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.fullName} ({s.staffType})
-                      </SelectItem>
-                    )),
-                    "Select supervising provider",
+                  {isSupervisionRequired && (
+                    <div className="grid grid-cols-1 gap-4">
+                      {renderSelectWithError(
+                        "supervisingProvider",
+                        "Supervising Provider *",
+                        form.supervisingProvider,
+                        (v) => setField("supervisingProvider", v),
+                        staff
+                          .filter((s) => s.id !== form.provider) // Don't allow same provider as supervisor
+                          .map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.fullName} ({s.staffType})
+                            </SelectItem>
+                          )),
+                        "Select supervising provider",
+                      )}
+                    </div>
                   )}
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -370,7 +399,7 @@ export default function NewSessionFormModal({
                       "Start Date & Time *",
                       form.startDateTime,
                       (e) => setField("startDateTime", e.target.value),
-                      { type: "datetime-local" }, // ✅ allows past dates now
+                      { type: "datetime-local" },
                     )}
                     {renderSelectWithError(
                       "startTZ",
@@ -407,6 +436,19 @@ export default function NewSessionFormModal({
                   </div>
 
                   {renderSelectWithError(
+                    "placeOfService",
+                    "Service Location *",
+                    form.placeOfService,
+                    (v) => setField("placeOfService", v),
+                    ["Home", "Clinic", "School", "Virtual", "Other"].map((loc) => (
+                      <SelectItem key={loc} value={loc}>
+                        {loc}
+                      </SelectItem>
+                    )),
+                    "Select service location",
+                  )}
+
+                  {renderSelectWithError(
                     "authCode",
                     "Authorization Code *",
                     form.authCode,
@@ -422,22 +464,28 @@ export default function NewSessionFormModal({
                     selectedClient ? "Select auth code" : "Select client first",
                   )}
 
-                  {renderInputWithError(
+                  {renderSelectWithError(
                     "locationAddress",
                     "Location Address *",
                     form.locationAddress,
-                    (e) => setField("locationAddress", e.target.value),
-                    { placeholder: "Enter address" },
+                    (v) => setField("locationAddress", v),
+                    selectedClient ? (
+                      <SelectItem key={selectedClient.id} value={selectedClient.address}>
+                        {selectedClient.address}
+                      </SelectItem>
+                    ) : (
+                      []
+                    ),
+                    selectedClient ? "Select location" : "Select client first",
                   )}
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* ✅ Notes Tab */}
             <TabsContent value="notes">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex gap-2"> 
+                  <CardTitle className="flex gap-2">
                     <FileText className="h-5 w-5 text-teal-600" /> Notes
                   </CardTitle>
                 </CardHeader>
@@ -449,7 +497,6 @@ export default function NewSessionFormModal({
             </TabsContent>
           </Tabs>
 
-          {/* Footer Buttons */}
           <div className="flex justify-between pt-4">
             <Button type="button" variant="outline" onClick={handleClose}>
               Cancel
