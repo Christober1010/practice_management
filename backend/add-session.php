@@ -20,11 +20,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // DB Connection
-$host = "db5018419668.hosting-data.io";
-$username = "dbu1183438";
+$host = "db5018266079.hosting-data.io";
+$database = "dbs14484433";
+$username = "dbu3321929";
 $password = "M@h@B3h@v1or@lH3@lth4@ut1sm";
-$database = "dbs14649042";
-
 
 try {
     $conn = new mysqli($host, $username, $password, $database);

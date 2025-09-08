@@ -52,7 +52,7 @@ function handleGetStaff($conn) {
         $staff[] = $row;
     }
 
-    echo json_encode(["success" => true, "data" => $staff]);
+    echo json_encode(["success" => true, "staff_records" => $staff]);
     $stmt->close();
 }
 

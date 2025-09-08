@@ -45,8 +45,8 @@ export default function StaffView() {
   const [isLoading, setIsLoading] = useState(true)
   const [expandedStaff, setExpandedStaff] = useState(null)
 
-  const activeStaffCount = staff.filter((member) => !member.archived).length
-  const archivedStaffCount = staff.filter((member) => member.archived).length
+  const activeStaffCount = staff?.filter((member) => !member.archived).length
+  const archivedStaffCount = staff?.filter((member) => member.archived).length
 
   const fetchStaff = useCallback(async () => {
     setIsLoading(true)
@@ -73,7 +73,7 @@ export default function StaffView() {
     fetchStaff()
   }, [fetchStaff])
 
-  const filteredStaff = staff.filter((member) => {
+  const filteredStaff = staff?.filter((member) => {
     const matchesSearch =
       member.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -351,7 +351,7 @@ export default function StaffView() {
           <CardHeader className="pb-4">
             <CardTitle className="text-slate-800 flex items-center">
               <Users className="h-5 w-5 mr-2 text-teal-600" />
-              {showArchived ? "Archived" : "Active"} Staff ({filteredStaff.length})
+              {showArchived ? "Archived" : "Active"} Staff ({filteredStaff?.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -367,7 +367,7 @@ export default function StaffView() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredStaff.map((member) => {
+                  {filteredStaff?.map((member) => {
                     const isExpanded = expandedStaff === member.id
                     return (
                       <>
@@ -619,7 +619,7 @@ export default function StaffView() {
                   })}
                 </TableBody>
               </Table>
-              {filteredStaff.length === 0 && !isLoading && (
+              {filteredStaff?.length === 0 && !isLoading && (
                 <div className="text-center py-12">
                   <Users className="h-12 w-12 text-slate-400 mx-auto mb-4" />
                   <p className="text-slate-500">

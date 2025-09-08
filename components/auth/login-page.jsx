@@ -26,6 +26,13 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [loginError, setLoginError] = useState("");
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [otpVerified, setOtpVerified] = useState(false);
+
+  // Add these state variables at the top of your LoginPage component
+  const [view, setView] = useState("login"); // 'login', 'forgotPassword', 'resetPassword'
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [otp, setOtp] = useState("");
 
   // Check for existing session on component mount
   useEffect(() => {
@@ -116,6 +123,96 @@ export default function LoginPage() {
     toast.success("Logged out successfully");
   };
 
+  // Add these functions inside your LoginPage component
+
+  const handleSendOtp = async () => {
+    if (!email) {
+      setLoginError("Please enter your email address.");
+      return;
+    }
+    setIsLoading(true);
+    setLoginError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/send-otp.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success("An OTP has been sent to your email.");
+        setView("verifyOtp"); // Switch to the OTP/new password view
+      } else {
+        setLoginError(data.error || "Failed to send OTP. Please try again.");
+      }
+    } catch (error) {
+      console.error("Send OTP error:", error);
+      setLoginError("Network error. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const validatePassword = (pwd) => {
+    const regex =
+      /^(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+={}\[\]:;<>,.?~\\/-]).{6,}$/;
+    return regex.test(pwd);
+  };
+  const [error, setError] = useState();
+  const handleNewPasswordChange = (e) => {
+    const value = e.target.value;
+    setNewPassword(value);
+
+    if (!validatePassword(value)) {
+      setError(
+        "Password must have 1 capital, 1 number, 1 symbol, and min 6 characters"
+      );
+    } else {
+      setError("");
+    }
+  };
+  const handleResetPassword = async () => {
+    if (newPassword !== confirmPassword) {
+      setLoginError("Passwords do not match.");
+      return;
+    }
+    if (!otp || !newPassword) {
+      setLoginError("Please fill in all fields.");
+      return;
+    }
+    setIsLoading(true);
+    setLoginError("");
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/reset-password-with-otp.php`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, otp, newPassword }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success("Password has been reset successfully! Please log in.");
+        setView("login"); // Switch back to the login view
+        setPassword(""); // Clear the old password field
+      } else {
+        setLoginError(data.error || "Failed to reset password. Invalid OTP?");
+      }
+    } catch (error) {
+      console.error("Reset password error:", error);
+      setLoginError("Network error. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (isCheckingAuth) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-teal-200 via-blue-200 to-indigo-200 flex items-center justify-center p-4">
@@ -123,11 +220,13 @@ export default function LoginPage() {
           <div className="flex items-center justify-center space-x-2">
             <div className="rounded-full bg-white shadow-lg p-4 animate-pulse">
               {/* <Heart className="h-8 w-8 text-teal-600" /> */}
-              <Image src={img} className="h-10 w-10" alt="Maha Logo"/>
+              <Image src={img} className="h-10 w-10" alt="Maha Logo" />
             </div>
             <div>
               <h1 className="text-3xl font-bold text-slate-800">Mahaverse</h1>
-              <p className="text-md font-bold text-slate-600">Shining in Every Shade of the Spectrum</p>
+              <p className="text-md font-bold text-slate-600">
+                Shining in Every Shade of the Spectrum
+              </p>
               <p className="text-sm text-teal-600 font-medium">
                 Practice Management
               </p>
@@ -145,128 +244,272 @@ export default function LoginPage() {
   if (user) {
     return <DashboardLayout userRole={user} onLogout={handleLogout} />;
   }
-  
 
+  const handleVerifyOtp = async () => {
+    if (!otp) {
+      setLoginError("Enter the OTP from your email.");
+      return;
+    }
+    setIsLoading(true);
+    setLoginError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/verify-otp.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, otp }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        toast.success("OTP verified. You can now reset your password.");
+        setOtpVerified(true);
+        setView("resetPassword");
+      } else {
+        setLoginError(data.error || "Invalid or expired OTP.");
+      }
+    } catch (err) {
+      setLoginError("Network error. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
   return (
     <div className="min-h-screen bg-gradient-to-br from-teal-200 via-blue-200 to-indigo-200 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-6">
-        {/* Logo and Header */}
-        <div className="text-center space-y-2">
-          <div className="flex items-center justify-center space-x-2">
-            {/* Replaced favicon import with Heart icon */}
-            <div className="rounded-full bg-white shadow-lg p-4 transition-shadow duration-700">
-              <Image src={img} className="h-10 w-10" />
-            </div>
-            <div className="text-left">
-             <h1 className="text-3xl font-bold text-slate-800">Mahaverse</h1>
-              <p className="text-md font-bold text-slate-700">Shining in Every Shade of the Spectrum</p>
-              <p className="text-sm text-teal-600 font-medium">
-                Practice Management
-              </p>
+      {view === "login" ? (
+        <div className="w-full max-w-md space-y-6">
+          {/* Logo and Header */}
+          <div className="text-center space-y-2">
+            <div className="flex items-center justify-center space-x-2">
+              <div className="rounded-full bg-white shadow-lg p-4 transition-shadow duration-700">
+                <Image src={img} className="h-10 w-10" alt="Maha Logo" />
+              </div>
+              <div className="text-left">
+                <h1 className="text-3xl font-bold text-slate-800">Mahaverse</h1>
+                <p className="text-md font-bold text-slate-700">
+                  Shining in Every Shade of the Spectrum
+                </p>
+                <p className="text-sm text-teal-600 font-medium">
+                  Practice Management
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Login Card */}
-        <Card className="shadow-xl border-0 bg-white/95 backdrop-blur">
-          <CardHeader className="space-y-1 pb-6">
-            <CardTitle className="text-2xl text-center text-slate-800">
-              Welcome Back
-            </CardTitle>
-            <CardDescription className="text-center text-slate-600">
-              Sign in to access your dashboard
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="email" className="text-slate-700 font-medium">
-                Email Address
-              </Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="therapist@example.com"
-                className="h-12 border-slate-200 focus:border-teal-500 focus:ring-teal-500"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={isLoading}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password" className="text-slate-700 font-medium">
-                Password
-              </Label>
-              <div className="relative">
+          {/* Login Card */}
+          <Card className="shadow-xl border-0 bg-white/95 backdrop-blur">
+            <CardHeader className="space-y-1 pb-6">
+              <CardTitle className="text-2xl text-center text-slate-800">
+                Welcome Back
+              </CardTitle>
+              <CardDescription className="text-center text-slate-600">
+                Sign in to access your dashboard
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-slate-700 font-medium">
+                  Email Address
+                </Label>
                 <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter your password"
-                  className="h-12 pr-12 border-slate-200 focus:border-teal-500 focus:ring-teal-500"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  id="email"
+                  type="email"
+                  placeholder="therapist@example.com"
+                  className="h-12 border-slate-200 focus:border-teal-500 focus:ring-teal-500"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   disabled={isLoading}
-                  onKeyPress={(e) => e.key === "Enter" && handleSignIn()}
                 />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                  onClick={() => setShowPassword(!showPassword)}
-                  disabled={isLoading}
+              </div>
+
+              <div className="space-y-2">
+                <Label
+                  htmlFor="password"
+                  className="text-slate-700 font-medium"
                 >
-                  {showPassword ? (
-                    <EyeOff className="h-4 w-4 text-slate-400" />
-                  ) : (
-                    <Eye className="h-4 w-4 text-slate-400" />
-                  )}
+                  Password
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter your password"
+                    className="h-12 pr-12 border-slate-200 focus:border-teal-500 focus:ring-teal-500"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={isLoading}
+                    onKeyPress={(e) => e.key === "Enter" && handleSignIn()}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                    onClick={() => setShowPassword(!showPassword)}
+                    disabled={isLoading}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4 text-slate-400" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-slate-400" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {loginError && (
+                <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                  <p className="text-red-600 text-sm text-center">
+                    {loginError}
+                  </p>
+                </div>
+              )}
+
+              <Button
+                onClick={handleSignIn}
+                disabled={isLoading}
+                className="w-full h-12 bg-teal-600 hover:bg-teal-700 text-white font-medium shadow-lg disabled:opacity-50"
+              >
+                {isLoading ? "Signing In..." : "Sign In Securely"}
+              </Button>
+
+              <div className="text-center">
+                <Button
+                  onClick={() => {
+                    setView("forgotPassword");
+                    setLoginError("");
+                  }}
+                  variant="link"
+                  className="text-sm text-teal-600 hover:text-teal-700"
+                >
+                  Forgot your password?
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Security Notice */}
+          <div className="text-center text-sm text-slate-600 space-y-1 bg-white/60 backdrop-blur rounded-lg p-4">
+            <div className="flex items-center justify-center space-x-2">
+              <Shield className="h-4 w-4 text-teal-600" />
+              <span className="font-medium">HIPAA Compliant & Secure</span>
             </div>
-
-            {loginError && (
-              <div className="bg-red-50 border border-red-200 rounded-md p-3">
-                <p className="text-red-600 text-sm text-center">{loginError}</p>
-              </div>
-            )}
-
-            <Button
-              onClick={handleSignIn}
-              disabled={isLoading}
-              className="w-full h-12 bg-teal-600 hover:bg-teal-700 text-white font-medium shadow-lg disabled:opacity-50"
-            >
-              {isLoading ? "Signing In..." : "Sign In Securely"}
-            </Button>
-
-            <div className="text-center">
-              <Button
-                variant="link"
-                className="text-sm text-teal-600 hover:text-teal-700"
-              >
-                Forgot your password?
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Security Notice */}
-        <div className="text-center text-sm text-slate-600 space-y-1 bg-white/60 backdrop-blur rounded-lg p-4">
-          <div className="flex items-center justify-center space-x-2">
-            <Shield className="h-4 w-4 text-teal-600" />
-            <span className="font-medium">HIPAA Compliant & Secure</span>
+            <p>
+              Your data is encrypted and protected with enterprise-grade
+              security
+            </p>
           </div>
-          <p>
-            Your data is encrypted and protected with enterprise-grade security
-          </p>
         </div>
-
-        {/* <div className="text-center text-xs text-slate-500 bg-white/40 backdrop-blur rounded-lg p-3">
-          <p className="font-medium mb-1">Demo Credentials:</p>
-          <p>admin@maha.com | bcba@maha.com | parent@maha.com | rbt@maha.com</p>
-          <p>Password: Password@2025</p>
-        </div> */}
-      </div>
+      ) : view === "forgotPassword" ? (
+        <div className="w-full max-w-md space-y-6">
+          <Card className="shadow-xl border-0 bg-white/95 backdrop-blur">
+            <CardHeader>
+              <CardTitle>Forgot Password</CardTitle>
+              <CardDescription>
+                Enter your email to receive a password reset OTP.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email Address</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={isLoading}
+                />
+              </div>
+              {loginError && (
+                <p className="text-red-600 text-sm">{loginError}</p>
+              )}
+              <Button
+                onClick={handleSendOtp}
+                disabled={isLoading}
+                className="w-full"
+              >
+                {isLoading ? "Sending..." : "Send OTP"}
+              </Button>
+              <Button variant="link" onClick={() => setView("login")}>
+                Back to Sign In
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      ) : view === "verifyOtp" ? (
+        <div className="w-full max-w-md space-y-6">
+          <Card className="shadow-xl border-0 bg-white/95 backdrop-blur">
+            <CardHeader>
+              <CardTitle>Verify OTP</CardTitle>
+              <CardDescription>
+                An OTP was sent to {email}. It will expire in 10 minutes.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Input
+                placeholder="Enter OTP"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value)}
+                inputMode="numeric"
+                className="h-12 border-slate-200 focus:border-teal-500 focus:ring-teal-500"
+              />
+              {loginError && (
+                <p className="text-red-600 text-sm">{loginError}</p>
+              )}
+              <Button
+                onClick={handleVerifyOtp}
+                disabled={isLoading}
+                className="w-full"
+              >
+                {isLoading ? "Verifying..." : "Verify OTP"}
+              </Button>
+              <Button variant="link" onClick={() => setView("forgotPassword")}>
+                Resend OTP
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      ) : view === "resetPassword" ? (
+        <div className="w-full max-w-md space-y-6">
+          <Card className="shadow-xl border-0 bg-white/95 backdrop-blur">
+            <CardHeader>
+              <CardTitle>Reset Your Password</CardTitle>
+              <CardDescription>Enter your new password.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Input
+                type="password"
+                placeholder="New Password"
+                value={newPassword}
+                onChange={(e) => handleNewPasswordChange(e)}
+                className="h-12 border-slate-200 focus:border-teal-500 focus:ring-teal-500"
+              />
+              {error && <p className="text-red-500 text-sm p-2">{error}</p>}
+              <Input
+                type="password"
+                placeholder="Confirm New Password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="h-12 border-slate-200 focus:border-teal-500 focus:ring-teal-500"
+              />
+              {loginError && (
+                <p className="text-red-600 text-sm">{loginError}</p>
+              )}
+              <Button
+                onClick={handleResetPassword}
+                disabled={isLoading || !otpVerified}
+                className="w-full"
+              >
+                {isLoading ? "Resetting..." : "Reset Password"}
+              </Button>
+              <Button variant="link" onClick={() => setView("login")}>
+                Back to Sign In
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        ""
+      )}
       <Toaster />
     </div>
   );

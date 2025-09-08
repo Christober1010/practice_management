@@ -38,6 +38,13 @@ export default function AppSidebar({
   const lastScrollY = useRef(0);
 
   useEffect(() => {
+    // On mount, restore last tab
+    const savedView = localStorage.getItem("currentView");
+    if (savedView) {
+      setCurrentView(savedView);
+    }
+  }, [setCurrentView]);
+  useEffect(() => {
     const handleScroll = () => {
       // Only run on mobile view (adjust breakpoint as needed)
       if (window.innerWidth > 768) return;
@@ -63,17 +70,19 @@ export default function AppSidebar({
 
   const handleMenuSelect = (id) => {
     setCurrentView(id);
+    localStorage.setItem("currentView", id); // ✅ persist selection
+
     setCollapsed(true); // Collapse sidebar after selection
   };
 
   const getMenuItems = () => {
     const baseItems = [
-      {
-        id: "dashboard",
-        label: "Dashboard",
-        icon: LayoutDashboard,
-        color: "text-teal-600",
-      },
+      // {
+      //   id: "dashboard",
+      //   label: "Dashboard",
+      //   icon: LayoutDashboard,
+      //   color: "text-teal-600",
+      // },
       {
         id: "scheduling",
         label: "Scheduling",
@@ -86,12 +95,12 @@ export default function AppSidebar({
         icon: Users,
         color: "text-indigo-600",
       },
-      {
-        id: "sessions",
-        label: "Sessions",
-        icon: FileText,
-        color: "text-purple-600",
-      },
+      // {
+      //   id: "sessions",
+      //   label: "Sessions",
+      //   icon: FileText,
+      //   color: "text-purple-600",
+      // },
     ];
 
     if (userRole.role === "admin" || userRole.role === "bcba") {
@@ -102,12 +111,12 @@ export default function AppSidebar({
           icon: UserCheck,
           color: "text-orange-600",
         },
-        {
-          id: "billing",
-          label: "Billing",
-          icon: CreditCard,
-          color: "text-emerald-600",
-        }
+        // {
+        //   id: "billing",
+        //   label: "Billing",
+        //   icon: CreditCard,
+        //   color: "text-emerald-600",
+        // }
       );
     }
 
@@ -119,13 +128,13 @@ export default function AppSidebar({
           icon: LayoutDashboard,
           color: "text-teal-600",
         },
-        { id: "portal", label: "My Child", icon: Baby, color: "text-pink-600" },
-        {
-          id: "billing",
-          label: "Billing",
-          icon: CreditCard,
-          color: "text-emerald-600",
-        },
+        // { id: "portal", label: "My Child", icon: Baby, color: "text-pink-600" },
+        // {
+        //   id: "billing",
+        //   label: "Billing",
+        //   icon: CreditCard,
+        //   color: "text-emerald-600",
+        // },
       ];
     }
 
@@ -146,6 +155,7 @@ export default function AppSidebar({
         return "bg-teal-600";
     }
   };
+  
 
   return (
     <Sidebar
@@ -161,7 +171,7 @@ export default function AppSidebar({
             <Image src={img} className="h-16 w-16 rounded-full" alt="logo" />
           </div>
           <span className="text-xl font-bold text-slate-800 group-data-[state=collapsed]/sidebar-wrapper:hidden">
-            Mahaverse 
+            Mahaverse
           </span>
         </div>
       </SidebarHeader>
@@ -213,7 +223,7 @@ export default function AppSidebar({
       {/* Bottom Actions */}
       <SidebarFooter>
         <SidebarMenu>
-          <SidebarMenuItem>
+          {/* <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Settings">
               <a
                 href="#"
@@ -229,7 +239,7 @@ export default function AppSidebar({
                 </span>
               </a>
             </SidebarMenuButton>
-          </SidebarMenuItem>
+          </SidebarMenuItem> */}
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Sign Out">
               <button

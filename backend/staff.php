@@ -106,7 +106,8 @@ function handleAddStaff($conn) {
     // Use CAST(? AS JSON) for JSON columns
     $sql = "INSERT INTO staff (id, firstName, lastName, fullName, staffType, certificationNumber, npiNumber, address, email, phone, dateOfJoining, dateOfLeaving, status, availability, locationPreferences, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), ?)";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("sssssssssssssisi",
+    // Correct bind_param string: 13 's' for initial fields, 2 's' for JSON, 1 'i' for archived
+    $stmt->bind_param("sssssssssssssssi",
         $id, $data['firstName'], $data['lastName'], $fullName, $data['staffType'],
         $data['certificationNumber'], $npiNumber, $address, $data['email'], $phone,
         $data['dateOfJoining'], $dateOfLeaving, $status, $availability_json, // Use the encoded JSON string
@@ -227,7 +228,8 @@ function handleUpdateStaff($conn) {
     // Proceed with update only if changes were detected
     $sql = "UPDATE staff SET firstName=?, lastName=?, fullName=?, staffType=?, certificationNumber=?, npiNumber=?, address=?, email=?, phone=?, dateOfJoining=?, dateOfLeaving=?, status=?, availability=CAST(? AS JSON), locationPreferences=CAST(? AS JSON), archived=? WHERE id=?";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("sssssssssssssisi",
+    // Correct bind_param string: 12 's' for initial fields, 2 's' for JSON, 1 'i' for archived, 1 's' for WHERE id
+    $stmt->bind_param("ssssssssssssssis",
         $data['firstName'], $data['lastName'], $fullName, $data['staffType'],
         $data['certificationNumber'], $npiNumber, $address, $newEmail, $phone,
         $data['dateOfJoining'], $dateOfLeaving, $status, $availability_json,

@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Maha Behavioral Health Services – Client Intake Packet</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <head>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
+        rel="stylesheet"
+      />
+    </head>
+  </head>
+  <body class="bg-gray-100 text-gray-800 font-sans">
+    <div
+      class="mx-auto my-8 max-w-5xl rounded-xl bg-white p-6 shadow-lg md:p-10"
+    >
+      <header class="mb-8">
+        <img class="h-[100px] w-[100px] mx-auto" src="https://mahaverse.mahabehavioralhealth.com/_next/static/media/favicon.58c2322e.ico"/>
+        <h1 class="text-center text-2xl font-bold">
+          Maha Behavioral Health Services
+        </h1>
+        <p class="text-center text-sm text-gray-600">Engage, Empower, Excel</p>
+        <h2 class="mt-6 text-center text-xl font-semibold">
+          Client Intake Packet
+        </h2>
+        <p class="mt-4 text-sm leading-relaxed text-gray-700">
+          This questionnaire is to be completed by the child’s parent or legal
+          guardian so that Maha Behavioral Health Services (MBHS) may learn
+          essential information about your child for use in treatment planning.
+          Maha Behavioral Health Services will ensure that any information
+          provided by you is kept confidential according to HIPAA guidelines.
+          Please contact the behavior analyst if you have any questions when
+          completing this form. Please use the back of the page if you need more
+          space.
+        </p>
+      </header>
+
+      <form action="submit.php" method="POST" class="space-y-10">
+        <!-- Demographic / Biopsychosocial Information -->
+        <section id="demographic" class="space-y-6">
+          <h3 class="text-lg font-semibold">
+            Demographic/Biopsychosocial Information
+          </h3>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <label class="block text-sm font-medium"
+                >1. Legal name of child</label
+              >
+              <input
+                type="text"
+                name="child_name"
+                class="mt-1 w-full rounded-lg border p-2"
+                placeholder="e.g., IMANUELLE RAMOS"
+                required
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium">Child’s DOB</label>
+              <input
+                type="date"
+                name="child_dob"
+                class="mt-1 w-full rounded-lg border p-2"
+                required
+              />
+            </div>
+
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium"
+                >2. Name of Person Completing this form</label
+              >
+              <input
+                type="text"
+                name="completer_name"
+                class="mt-1 w-full rounded-lg border p-2"
+                required
+              />
+            </div>
+
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium"
+                >3. Child’s Home Address (Line 1)</label
+              >
+              <input
+                type="text"
+                name="address_line1"
+                class="mt-1 w-full rounded-lg border p-2"
+                required
+              />
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium">Address (Line 2)</label>
+              <input
+                type="text"
+                name="address_line2"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium">City</label>
+              <input
+                type="text"
+                name="city"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium">State/Province</label>
+              <input
+                type="text"
+                name="state"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium">Postal Code</label>
+              <input
+                type="text"
+                name="zip"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium">Country</label>
+              <input
+                type="text"
+                name="country"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium"
+                >4. Telephone Number (home)</label
+              >
+              <input
+                type="tel"
+                name="phone_home"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium"
+                >Telephone Number (cell)</label
+              >
+              <input
+                type="tel"
+                name="phone_cell"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium"
+                >5. Child’s physician’s name/location</label
+              >
+              <input
+                type="text"
+                name="physician"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium"
+                >6. Child’s neurologist’s name/location</label
+              >
+              <input
+                type="text"
+                name="neurologist"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium">
+                7. Describe family composition (including siblings/ages, and
+                others living in the home)
+              </label>
+              <textarea
+                name="family_composition"
+                rows="4"
+                class="mt-1 w-full rounded-lg border p-2"
+              ></textarea>
+            </div>
+          </div>
+        </section>
+
+        <!-- General Information -->
+        <section id="general" class="space-y-6">
+          <h3 class="text-lg font-semibold">General Information</h3>
+
+          <div>
+            <label class="block text-sm font-medium"
+              >8. Please indicate your goals for therapy?</label
+            >
+            <textarea
+              name="goals_for_therapy"
+              rows="4"
+              class="mt-1 w-full rounded-lg border p-2"
+            ></textarea>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium">
+              9. Please indicate your preferred days/times for therapy
+              (weekdays/weekends).
+              <span class="block text-xs text-gray-500">
+                Note that behavior therapy is most effective when implemented
+                continuously and frequently.
+              </span>
+            </label>
+            <textarea
+              name="preferred_times"
+              rows="3"
+              class="mt-1 w-full rounded-lg border p-2"
+            ></textarea>
+          </div>
+
+          <div>
+            <p class="mb-2 text-sm font-medium">
+              10. Please indicate items that your child prefers (approaches
+              and/or engages with consistently and independently) in each
+              category below:
+            </p>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label class="mb-1 block text-xs text-gray-600"
+                  >Edible (e.g., chips)</label
+                >
+                <input
+                  type="text"
+                  name="pref_edible"
+                  class="w-full rounded-lg border p-2"
+                  placeholder="List items"
+                />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs text-gray-600"
+                  >Tangible (e.g., balls)</label
+                >
+                <input
+                  type="text"
+                  name="pref_tangible"
+                  class="w-full rounded-lg border p-2"
+                  placeholder="List items"
+                />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs text-gray-600"
+                  >Social (e.g., tickles)</label
+                >
+                <input
+                  type="text"
+                  name="pref_social"
+                  class="w-full rounded-lg border p-2"
+                  placeholder="List items"
+                />
+              </div>
+              <div>
+                <label class="mb-1 block text-xs text-gray-600"
+                  >Activity (e.g., swim)</label
+                >
+                <input
+                  type="text"
+                  name="pref_activity"
+                  class="w-full rounded-lg border p-2"
+                  placeholder="List items"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Medical History -->
+        <section id="medical" class="space-y-6">
+          <h3 class="text-lg font-semibold">Medical History</h3>
+
+          <div>
+            <label class="block text-sm font-medium">
+              11. Indicate child’s diagnosis, including age at diagnosis.
+            </label>
+            <textarea
+              name="diagnosis"
+              rows="3"
+              class="mt-1 w-full rounded-lg border p-2"
+            ></textarea>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium">
+              12. Indicate any medical conditions/serious illnesses (e.g.,
+              asthma, recurrent ear infections) experienced by your child.
+            </label>
+            <textarea
+              name="medical_conditions"
+              rows="3"
+              class="mt-1 w-full rounded-lg border p-2"
+            ></textarea>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium">
+              13. Does your child require a special diet? If yes, please
+              describe.
+            </label>
+            <textarea
+              name="special_diet"
+              rows="3"
+              class="mt-1 w-full rounded-lg border p-2"
+            ></textarea>
+          </div>
+
+          <div>
+            <label class="mb-2 block text-sm font-medium">
+              14. Indicate any medications taken by your child, including
+              dosage, time of administration (e.g., morning), start date, and
+              indication (purpose of medication).
+            </label>
+
+            <!-- Medications table -->
+            <div class="overflow-x-auto rounded-lg border">
+              <table class="min-w-full text-sm">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="p-2 text-left">Medication Name</th>
+                    <th class="p-2 text-left">Dosage/Admin Time</th>
+                    <th class="p-2 text-left">Start Date</th>
+                    <th class="p-2 text-left">Indication</th>
+                    <th class="p-2 text-left">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="medications-body">
+                  <tr>
+                    <td class="p-2">
+                      <input
+                        type="text"
+                        name="medications[0][name]"
+                        class="w-full rounded-lg border p-2"
+                      />
+                    </td>
+                    <td class="p-2">
+                      <input
+                        type="text"
+                        name="medications[0][dosage_time]"
+                        class="w-full rounded-lg border p-2"
+                        placeholder="e.g., 5mg AM"
+                      />
+                    </td>
+                    <td class="p-2">
+                      <input
+                        type="date"
+                        name="medications[0][start_date]"
+                        class="w-full rounded-lg border p-2"
+                      />
+                    </td>
+                    <td class="p-2">
+                      <input
+                        type="text"
+                        name="medications[0][indication]"
+                        class="w-full rounded-lg border p-2"
+                      />
+                    </td>
+                    <td class="p-2 text-center">
+                      <button
+                        type="button"
+                        class="add-med rounded-lg border px-3 py-1"
+                      >
+                        Add
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <label class="mb-2 block text-sm font-medium">
+              15. Check any applicable conditions experienced by your child, and
+              provide descriptive information about the conditions below.
+            </label>
+            <div class="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+              <label class="inline-flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="conditions[]"
+                  value="Allergies"
+                  class="rounded"
+                />
+                <span>Allergies</span>
+              </label>
+              <label class="inline-flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="conditions[]"
+                  value="Vision"
+                  class="rounded"
+                />
+                <span>Vision</span>
+              </label>
+              <label class="inline-flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="conditions[]"
+                  value="Hearing"
+                  class="rounded"
+                />
+                <span>Hearing</span>
+              </label>
+              <label class="inline-flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="conditions[]"
+                  value="Sleep"
+                  class="rounded"
+                />
+                <span>Sleep</span>
+              </label>
+              <label class="inline-flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="conditions[]"
+                  value="Feeding"
+                  class="rounded"
+                />
+                <span>Feeding</span>
+              </label>
+              <label class="inline-flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="conditions[]"
+                  value="Sensory"
+                  class="rounded"
+                />
+                <span>Sensory</span>
+              </label>
+              <label class="inline-flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="conditions[]"
+                  value="Educational"
+                  class="rounded"
+                />
+                <span>Educational</span>
+              </label>
+              <label class="inline-flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="conditions[]"
+                  value="Other"
+                  class="rounded"
+                />
+                <span>Other (e.g., processing disorder)</span>
+              </label>
+            </div>
+            <label class="mt-3 block text-xs text-gray-600"
+              >Descriptive information:</label
+            >
+            <textarea
+              name="conditions_description"
+              rows="3"
+              class="mt-1 w-full rounded-lg border p-2"
+            ></textarea>
+          </div>
+        </section>
+
+        <!-- Educational Information -->
+        <section id="education" class="space-y-6">
+          <h3 class="text-lg font-semibold">Educational Information</h3>
+
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div>
+              <label class="block text-sm font-medium">16a. School name</label>
+              <input
+                type="text"
+                name="school_name"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium">Grade</label>
+              <input
+                type="text"
+                name="grade"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium"
+                >16b. Child’s teacher(s)</label
+              >
+              <input
+                type="text"
+                name="teachers"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium"
+                >16c. Type of classroom (e.g., self-contained)</label
+              >
+              <input
+                type="text"
+                name="classroom_type"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium">16d. Address</label>
+              <input
+                type="text"
+                name="school_address"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium">16e. School hours</label>
+              <input
+                type="text"
+                name="school_hours"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium"
+                >16f. Transportation information (e.g., bus)</label
+              >
+              <input
+                type="text"
+                name="transportation"
+                class="mt-1 w-full rounded-lg border p-2"
+              />
+            </div>
+
+            <div class="md:col-span-2">
+              <label class="block text-sm font-medium">
+                16g. Please indicate if your child currently receives supportive
+                therapies (e.g., Speech and Language, Occupational?). Please
+                indicate arranged times.
+              </label>
+              <textarea
+                name="supportive_therapies"
+                rows="3"
+                class="mt-1 w-full rounded-lg border p-2"
+              ></textarea>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium">
+              17. Has your child received ABA therapy in the past? If yes,
+              please indicate time period and outcomes.
+            </label>
+            <textarea
+              name="past_aba"
+              rows="3"
+              class="mt-1 w-full rounded-lg border p-2"
+            ></textarea>
+          </div>
+        </section>
+
+        <!-- Caregiver Guidelines & Agreement -->
+        <section id="guidelines" class="space-y-6">
+          <h3 class="text-lg font-semibold">Caregiver Guidelines</h3>
+
+          <p class="text-sm text-gray-700">
+            The following guidelines are suggested for caregivers during applied
+            behavior therapy. Caregiver participation in therapy is a must, and
+            required by funding sources.
+          </p>
+
+          <ol class="list-decimal space-y-2 pl-6 text-sm text-gray-800">
+            <li>
+              A parent or responsible adult (over 18 years of age) must be in
+              the home when therapy is being provided.
+            </li>
+            <li>
+              Caregivers are expected to participate in therapy sessions.
+              Specifically, caregivers will be trained to implement their
+              child’s behavior program, and data on the accuracy of their
+              implementation will be collected.
+            </li>
+            <li>
+              The area being used for therapy must be clean, of comfortable
+              temperature, and well lit. In some cases, the therapist may ask
+              for distracting stimuli to be removed from the training
+              environment. Caregivers should not smoke in the home when a
+              therapist is present. In addition, pets should be removed from
+              therapy area to the greatest extent possible.
+            </li>
+            <li>
+              Therapy may be conducted at home, school, or other environment
+              (i.e., community), and will be allocated to those locations in
+              which the child has the most difficulty
+            </li>
+            <li>
+              The materials and reinforcers used for therapy should be reserved
+              for therapy sessions unless otherwise stated by the therapist
+            </li>
+            <li>
+              The child should be dressed and fed prior to therapist arrival
+              unless these skills are being addressed in the program.
+            </li>
+            <li>
+              Caregivers should contact the therapist 24 hours prior to the
+              appointment if they know they are going to cancel a session. If
+              more than 20% of sessions are canceled in a 3-month period, your
+              child may lose his/her therapy slot.
+            </li>
+            <li>
+              Sickness. Please give the therapist as much notice as possible
+              prior to the scheduled session if you know that your child is
+              sick. Sickness includes, but not limited to the following:<br />
+              • Temperature above 100 &nbsp;&nbsp;• Mumps &nbsp;&nbsp;• Pin
+              Worm<br />
+              • Communicable Disease &nbsp;&nbsp;• Chicken Pox &nbsp;&nbsp;•
+              Strep Throat<br />
+              • Foot/Mouth Disease &nbsp;&nbsp;• Measles &nbsp;&nbsp;• Lice<br />
+              • Vomit &nbsp;&nbsp;&nbsp;&nbsp;• Diarrhea &nbsp;&nbsp;• Rash
+              &nbsp;&nbsp;• Pink Eye
+            </li>
+            <li>
+              If the therapist arrives, and the child is not at home, the
+              therapist will wait 15 minutes before leaving. This will be
+              considered a no-show. More than two no-shows within a 2-month
+              period may result in your child losing his therapy slot
+            </li>
+            <li>
+              A therapist cannot change appointment times without agreement with
+              the family.
+            </li>
+            <li>
+              The therapist will give the family as much notice as possible
+              before canceling a session. The therapist will call the family if
+              they are going to be arriving more than 5 min late.
+            </li>
+            <li>Please do not call the therapist before 8 am or after 8 pm.</li>
+            <li>
+              In case of an accident or unusual incident (e.g., Baker Act,
+              runaway), the family should immediately notify the therapist, who
+              will inform their Regional Director of the event.
+            </li>
+            <li>
+              Parents and contractors should be respectful and courteous to each
+              other. Open communication between parents and contractors is
+              essential to the establishment of a successful program for the
+              child.
+            </li>
+            <li>
+              If there are any problems or concerns, please contact the Lead
+              Analyst on the case immediately.
+            </li>
+          </ol>
+
+          <div class="mt-4 space-y-4">
+            <div class="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                name="guidelines_agree"
+                value="1"
+                id="agree"
+                class="rounded"
+                required
+              />
+              <label for="agree" class="text-sm"
+                >I understand and agree to the caregiver guidelines</label
+              >
+            </div>
+
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label class="block text-sm font-medium"
+                  >Signature of Caregiver/Guardian</label
+                >
+                <input
+                  type="text"
+                  name="signature_guardian"
+                  class="mt-1 w-full rounded-lg border p-2"
+                  placeholder="Type full name as signature"
+                  required
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium">Date</label>
+                <input
+                  type="date"
+                  name="signature_guardian_date"
+                  class="mt-1 w-full rounded-lg border p-2"
+                  required
+                />
+              </div>
+
+              <div>
+                <label class="block text-sm font-medium"
+                  >Signature of MBHS Behavior Analysis Provider</label
+                >
+                <input
+                  type="text"
+                  name="signature_provider"
+                  class="mt-1 w-full rounded-lg border p-2"
+                  placeholder="(for office use)"
+                />
+              </div>
+              <div>
+                <label class="block text-sm font-medium">Date</label>
+                <input
+                  type="date"
+                  name="signature_provider_date"
+                  class="mt-1 w-full rounded-lg border p-2"
+                />
+              </div>
+            </div>
+          </div>
+
+          <input type="hidden" name="guidelines_version" value="MBHS-CG-v1" />
+        </section>
+
+        <div class="border-t pt-4">
+          <button
+            type="submit"
+            class="w-full rounded-lg bg-indigo-600 px-6 py-3 font-semibold text-white hover:bg-indigo-700 md:w-auto"
+          >
+            Submit
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      // Simple dynamic rows for Medications
+      document.addEventListener("click", function (e) {
+        if (e.target && e.target.classList.contains("add-med")) {
+          const tbody = document.getElementById("medications-body");
+          const idx = tbody.querySelectorAll("tr").length;
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td class="p-2">
+              <input type="text" name="medications[${idx}][name]" class="w-full border rounded-lg p-2" />
+            </td>
+            <td class="p-2">
+              <input type="text" name="medications[${idx}][dosage_time]" class="w-full border rounded-lg p-2" placeholder="e.g., 5mg AM" />
+            </td>
+            <td class="p-2">
+              <input type="date" name="medications[${idx}][start_date]" class="w-full border rounded-lg p-2" />
+            </td>
+            <td class="p-2">
+              <input type="text" name="medications[${idx}][indication]" class="w-full border rounded-lg p-2" />
+            </td>
+            <td class="p-2 text-center">
+              <button type="button" class="px-3 py-1 border rounded-lg remove-med">Remove</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        }
+        if (e.target && e.target.classList.contains("remove-med")) {
+          const row = e.target.closest("tr");
+          row.parentNode.removeChild(row);
+        }
+      });
+    </script>
+  </body>
+</html>

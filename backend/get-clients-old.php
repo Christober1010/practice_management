@@ -9,11 +9,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     exit();
 }
 
-$host = "db5018419668.hosting-data.io";
-$dbname = "dbs14649042";
-$user = "dbu1183438";
+$host = "db5018266079.hosting-data.io";
+$dbname = "dbs14484433";
+$user = "dbu3321929";
 $pass = "M@h@B3h@v1or@lH3@lth4@ut1sm";
-
 
 try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass);
@@ -26,9 +25,8 @@ try {
     while ($client = $stmtClients->fetch(PDO::FETCH_ASSOC)) {
         $client['insurances'] = [];
         $client['authorizations'] = [];
-        $client['documents'] = [];
-        $client['addresses'] = [];
-        $clientsData[$client['client_id']] = $client;
+        $client['documents'] = []; // Initialize documents array
+        $clientsData[$client['client_id']] = $client; // Use client_id as the unique key
     }
 
     // 2. Fetch all insurances and group by client_id
@@ -47,7 +45,7 @@ try {
     $authorizationsByClient = [];
     while ($auth = $stmtAuthorizations->fetch(PDO::FETCH_ASSOC)) {
         $clientId = $auth['client_id'];
-        unset($auth['client_id']);
+        unset($auth['client_id']); // Remove client_id from auth object itself
         $authorizationsByClient[$clientId][] = $auth;
     }
 
@@ -58,18 +56,7 @@ try {
         $documentsByClient[$document['client_id']][] = $document;
     }
 
-    $addressesByClient = [];
-    try {
-        $stmtAddresses = $conn->query("SELECT * FROM client_addresses");
-        while ($address = $stmtAddresses->fetch(PDO::FETCH_ASSOC)) {
-            $addressesByClient[$address['client_id']][] = $address;
-        }
-    } catch (PDOException $e) {
-        // Table might not exist yet, ignore error
-        error_log("client_addresses table not found: " . $e->getMessage());
-    }
-
-    // 6. Combine all data
+    // 5. Combine all data
     foreach ($clientsData as $clientId => &$client) {
         if (isset($insurancesByClient[$clientId])) {
             $client['insurances'] = $insurancesByClient[$clientId];
@@ -78,40 +65,10 @@ try {
             $client['authorizations'] = $authorizationsByClient[$clientId];
         }
         if (isset($documentsByClient[$clientId])) {
-            $client['documents'] = $documentsByClient[$clientId];
-        }
-        
-        $primaryAddress = [
-            'id' => 1,
-            'service_location' => $client['service_location'] ?? 'Home',
-            'address_line_1' => $client['address_line_1'] ?? '',
-            'address_line_2' => $client['address_line_2'] ?? '',
-            'city' => $client['city'] ?? '',
-            'state' => $client['state'] ?? '',
-            'zipcode' => $client['zipcode'] ?? '',
-            'country' => $client['country'] ?? 'USA',
-            'countryOther' => ''
-        ];
-        
-        $client['addresses'] = [$primaryAddress];
-        
-        if (isset($addressesByClient[$clientId])) {
-            foreach ($addressesByClient[$clientId] as $index => $addr) {
-                $client['addresses'][] = [
-                    'id' => $index + 2,
-                    'service_location' => $addr['service_location'] ?? 'Home',
-                    'address_line_1' => $addr['address_line_1'] ?? '',
-                    'address_line_2' => $addr['address_line_2'] ?? '',
-                    'city' => $addr['city'] ?? '',
-                    'state' => $addr['state'] ?? '',
-                    'zipcode' => $addr['zipcode'] ?? '',
-                    'country' => $addr['country'] ?? 'USA',
-                    'countryOther' => ''
-                ];
-            }
+            $client['documents'] = $documentsByClient[$clientId]; // Assign documents
         }
     }
-    unset($client);
+    unset($client); // Break the reference
 
     echo json_encode(["success" => true, "clients" => array_values($clientsData)]);
 
