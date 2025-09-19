@@ -7,10 +7,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -18,30 +18,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Users,
+  Phone,
+  User,
+  Shield,
+  File,
+  FileText,
+  MapPin,
   Plus,
   Trash2,
-  Users,
-  Shield,
-  FileText,
-  Phone,
-  MapPin,
   Heart,
-  User,
-  File,
+  ChevronDown,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 const popularCountries = [
-  "United States",
+  "USA",
   "Canada",
   "United Kingdom",
   "Australia",
   "Germany",
   "France",
-  "India",
+  "Italy",
+  "Spain",
+  "Netherlands",
   "Other",
 ];
 
@@ -85,75 +94,51 @@ const initialClientState = {
   preferred_language: "",
   client_status: "New",
   wait_list_status: "No",
-  // Contact Info
+
+  // Contact
   phone: "",
   email: "",
   appointment_reminder: "",
-  // Address
-  address_line_1: "",
-  address_line_2: "",
-  city: "",
-  state: "",
-  zipcode: "",
-  country: "",
-  countryOther: "",
-  // Guardian
+
+  addresses: [
+    {
+      id: Date.now(),
+      service_location: "Home",
+      address_line_1: "",
+      address_line_2: "",
+      city: "",
+      state: "",
+      zipcode: "",
+      country: "USA",
+      countryOther: "",
+    },
+  ],
+
+  // Guardian/Parent
   parent_first_name: "",
   parent_last_name: "",
   relationship_to_insured: "",
   relation_other: "",
+
   // Emergency Contact
   emergency_contact_name: "",
   emg_relationship: "",
   emg_phone: "",
   emg_email: "",
+
+  // Insurance
+  insurances: [],
+  authorizations: [],
+
+  // Documents
+  documents: [],
+
   // Notes
   client_notes: "",
   other_information: "",
-  // Arrays
-  insurances: [],
-  authorizations: [],
-  documents: [],
 };
 
-const initialInsurance = {
-  insurance_type: "Primary",
-  insurance_provider: "",
-  treatment_type: "",
-  insurance_id_number: "",
-  group_number: "",
-  coinsurance: "",
-  deductible: "",
-  start_date: "",
-  end_date: "",
-};
-
-const initialAuthorization = {
-  authorization_number: "",
-  billing_codes: "",
-  units_approved_per_15_min: "",
-  units_serviced: "",
-  balance_units: "",
-  start_date: "",
-  end_date: "",
-  insurance_id: "",
-  status: "Active",
-};
-
-const emptyDocument = {
-  document_type: "",
-  file_url: "",
-};
-
-function generateDocUUID() {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0,
-      v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
-export default function AddClientModalBackup({
+export default function AddClientModal({
   isOpen,
   onClose,
   onSave,
@@ -164,6 +149,9 @@ export default function AddClientModalBackup({
   const [activeTab, setActiveTab] = useState("personal");
   const [saving, setSaving] = useState(false);
 
+  const primaryTabs = ["personal", "contact", "insurance"];
+  const moreTabs = ["guardian", "documents", "notes"];
+  const allTabs = [...primaryTabs, ...moreTabs];
   const tabOrder = [
     "personal",
     "contact",
@@ -175,64 +163,63 @@ export default function AddClientModalBackup({
 
   useEffect(() => {
     if (editingClient) {
+      const addresses = editingClient.addresses?.length
+        ? editingClient.addresses
+        : [
+            {
+              id: Date.now(),
+              service_location: "Home",
+              address_line_1: editingClient.address_line_1 || "",
+              address_line_2: editingClient.address_line_2 || "",
+              city: editingClient.city || "",
+              state: editingClient.state || "",
+              zipcode: editingClient.zipcode || "",
+              country: editingClient.country || "USA",
+              countryOther: editingClient.countryOther || "",
+            },
+          ];
+
       setFormData({
         ...initialClientState,
         ...editingClient,
-        insurances:
-          Array.isArray(editingClient.insurances) &&
-          editingClient.insurances.length > 0
-            ? editingClient.insurances
-            : [],
-        authorizations:
-          Array.isArray(editingClient.authorizations) &&
-          editingClient.authorizations.length > 0
-            ? editingClient.authorizations.map((auth) => ({
-                ...initialAuthorization,
-                ...auth,
-                status: auth.status || "Active",
-                insurance_id: auth.insurance_id || "",
-                units_serviced: auth.units_serviced || "",
-                balance_units: auth.balance_units || "",
-              }))
-            : [],
-        documents:
-          Array.isArray(editingClient.documents) &&
-          editingClient.documents.length > 0
-            ? editingClient.documents
-            : [],
+        addresses,
+        insurances: editingClient.insurances || [],
+        authorizations: editingClient.authorizations || [],
+        documents: editingClient.documents || [],
         date_of_birth: editingClient.date_of_birth?.slice(0, 10) || "",
-        country: editingClient.country || "",
-        countryOther: editingClient.countryOther || "",
-        relationship_to_insured: editingClient.relationship_to_insured || "",
-        relation_other: editingClient.relation_other || "",
-        appointment_reminder: editingClient.appointment_reminder || "",
       });
     } else {
-      setFormData({
-        ...initialClientState,
-        insurances: [],
-        authorizations: [],
-        documents: [],
-      });
+      setFormData(initialClientState);
     }
     setErrors({});
     setActiveTab("personal");
   }, [editingClient, isOpen]);
 
   const prepareDataForSave = () => {
+    const firstAddress = formData.addresses[0] || {};
+
     const cleanedData = {
       ...formData,
+      address_line_1: firstAddress.address_line_1 || "",
+      address_line_2: firstAddress.address_line_2 || "",
+      city: firstAddress.city || "",
+      state: firstAddress.state || "",
+      zipcode: firstAddress.zipcode || "",
       country:
-        formData.country === "Other"
-          ? formData.countryOther.trim()
-          : formData.country,
+        firstAddress.country === "Other"
+          ? firstAddress.countryOther
+          : firstAddress.country || "USA",
+      service_location: firstAddress.service_location || "Home",
+
+      addresses: formData.addresses,
+
       insurances: formData.insurances.filter(
         (ins) =>
           ins.insurance_provider ||
           ins.insurance_id_number ||
           ins.treatment_type
       ),
-      authorizations: formData.authorizations
+      authorizations: (formData.authorizations || [])
         .filter(
           (auth) =>
             auth.authorization_number ||
@@ -255,7 +242,6 @@ export default function AddClientModalBackup({
         (doc) => doc.document_type || doc.file_url
       ),
     };
-    delete cleanedData.countryOther;
     return cleanedData;
   };
 
@@ -266,17 +252,91 @@ export default function AddClientModalBackup({
     }
   };
 
-  const handleInsuranceChange = (index, field, value) => {
+  const handleAddressChange = (addressId, field, value) => {
     setFormData((prev) => ({
       ...prev,
-      insurances: prev.insurances.map((ins, i) =>
-        i === index ? { ...ins, [field]: value } : ins
+      addresses: prev.addresses.map((addr) =>
+        addr.id === addressId ? { ...addr, [field]: value } : addr
       ),
     }));
+  };
+
+  const addAddress = () => {
+    const newAddress = {
+      id: Date.now(),
+      service_location: "Home",
+      address_line_1: "",
+      address_line_2: "",
+      city: "",
+      state: "",
+      zipcode: "",
+      country: "USA",
+      countryOther: "",
+    };
+    setFormData((prev) => ({
+      ...prev,
+      addresses: [...prev.addresses, newAddress],
+    }));
+  };
+
+  const removeAddress = (addressId) => {
+    if (formData.addresses.length > 1) {
+      setFormData((prev) => ({
+        ...prev,
+        addresses: prev.addresses.filter((addr) => addr.id !== addressId),
+      }));
+    }
+  };
+
+  const handleInsuranceChange = (insuranceId, field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      insurances: prev.insurances.map((ins) =>
+        ins.insurance_id === insuranceId ? { ...ins, [field]: value } : ins
+      ),
+    }));
+    // Also clear errors
+    const index = formData.insurances.findIndex(
+      (ins) => ins.insurance_id === insuranceId
+    );
     const errorKey = `insurance_${field}_${index}`;
     if (errors[errorKey]) {
       setErrors((prev) => ({ ...prev, [errorKey]: null }));
     }
+  };
+
+  const addInsurance = () => {
+    const newInsurance = {
+      insurance_id: Date.now(),
+      insurance_type: "Primary",
+      insurance_provider: "",
+      treatment_type: "",
+      rendering_provider: "",
+      start_date: "",
+      end_date: "",
+      insurance_id_number: "",
+      group_number: "",
+      coinsurance: "",
+      deductible: "",
+      copay_rate: "",
+    };
+    setFormData((prev) => ({
+      ...prev,
+      insurances: [...prev.insurances, newInsurance],
+    }));
+  };
+
+  const removeInsurance = (insuranceId) => {
+    setFormData((prev) => ({
+      ...prev,
+      insurances: prev.insurances.filter(
+        (ins) => ins.insurance_id !== insuranceId
+      ),
+      authorizations:
+        prev.authorizations?.filter(
+          (auth) => auth.insurance_id !== insuranceId.toString()
+        ) || [],
+    }));
   };
 
   const handleAuthorizationChange = (index, field, value) => {
@@ -307,71 +367,67 @@ export default function AddClientModalBackup({
     }
   };
 
-  const handleDocumentChange = (index, field, value) => {
+  const addAuthorization = () => {
+    const newAuth = {
+      auth_uuid: `auth_${Date.now()}`,
+      insurance_id: "",
+      authorization_number: "",
+      billing_codes: "",
+      units_approved_per_15_min: "",
+      units_serviced: "",
+      balance_units: "",
+      start_date: "",
+      end_date: "",
+      status: "Active",
+    };
     setFormData((prev) => ({
       ...prev,
-      documents: prev.documents.map((doc, i) =>
-        i === index ? { ...doc, [field]: value } : doc
+      authorizations: [...(prev.authorizations || []), newAuth],
+    }));
+  };
+
+  const removeAuthorization = (authUuid) => {
+    setFormData((prev) => ({
+      ...prev,
+      authorizations:
+        prev.authorizations?.filter((auth) => auth.auth_uuid !== authUuid) ||
+        [],
+    }));
+  };
+
+  const handleDocumentChange = (docUuid, field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      documents: prev.documents.map((doc) =>
+        doc.doc_uuid === docUuid ? { ...doc, [field]: value } : doc
       ),
     }));
+    // Also clear errors
+    const index = formData.documents.findIndex(
+      (doc) => doc.doc_uuid === docUuid
+    );
     const errorKey = `document_${field}_${index}`;
     if (errors[errorKey]) {
       setErrors((prev) => ({ ...prev, [errorKey]: null }));
     }
   };
 
-  const addInsurance = () => {
-    setFormData((prev) => ({
-      ...prev,
-      insurances: [
-        ...prev.insurances,
-        { ...initialInsurance, insurance_type: "Secondary" },
-      ],
-    }));
-  };
-
-  const removeInsurance = (index) => {
-    setFormData((prev) => {
-      const updatedInsurances = prev.insurances.filter((_, i) => i !== index);
-      const updatedAuthorizations = prev.authorizations.filter(
-        (auth) => auth.insurance_id !== String(index)
-      );
-      return {
-        ...prev,
-        insurances: updatedInsurances,
-        authorizations: updatedAuthorizations,
-      };
-    });
-  };
-
-  const addAuthorization = () => {
-    setFormData((prev) => ({
-      ...prev,
-      authorizations: [...prev.authorizations, { ...initialAuthorization }],
-    }));
-  };
-
-  const removeAuthorization = (index) => {
-    setFormData((prev) => ({
-      ...prev,
-      authorizations: prev.authorizations.filter((_, i) => i !== index),
-    }));
-  };
-
   const addDocument = () => {
+    const newDoc = {
+      doc_uuid: `doc_${Date.now()}`,
+      document_type: "",
+      file_url: "",
+    };
     setFormData((prev) => ({
       ...prev,
-      documents: [
-        ...prev.documents,
-        { ...emptyDocument, doc_uuid: generateDocUUID() },
-      ],
+      documents: [...prev.documents, newDoc],
     }));
   };
 
-  const removeDocument = (index) => {
+  const removeDocument = (docUuid) => {
     setFormData((prev) => ({
       ...prev,
-      documents: prev.documents.filter((_, i) => i !== index),
+      documents: prev.documents.filter((doc) => doc.doc_uuid !== docUuid),
     }));
   };
 
@@ -379,256 +435,189 @@ export default function AddClientModalBackup({
     const currentTabErrors = {};
     let hasErrors = false;
 
+    const requiredEntry = (field) => {
+      if (!field || !field.trim()) {
+        hasErrors = true;
+        return "Missing Required Entry";
+      }
+      return null;
+    };
+
     switch (tab) {
       case "personal":
-        if (!formData.first_name.trim()) {
-          currentTabErrors.first_name = "Missing Required Entry";
-          hasErrors = true;
-        }
-        if (!formData.last_name.trim()) {
-          currentTabErrors.last_name = "Missing Required Entry";
-          hasErrors = true;
-        }
-        if (!formData.date_of_birth) {
-          currentTabErrors.date_of_birth = "Missing Required Entry";
-          hasErrors = true;
-        }
-        if (!formData.client_status.trim()) {
-          currentTabErrors.client_status = "Missing Required Entry";
-          hasErrors = true;
-        }
+        currentTabErrors.first_name = requiredEntry(formData.first_name);
+        currentTabErrors.last_name = requiredEntry(formData.last_name);
+        currentTabErrors.date_of_birth = requiredEntry(formData.date_of_birth);
+        currentTabErrors.client_status = requiredEntry(formData.client_status);
         break;
 
       case "contact":
-        if (!formData.phone.trim()) {
-          currentTabErrors.phone = "Missing Required Entry";
-          hasErrors = true;
-        }
-        if (!formData.email.trim()) {
-          currentTabErrors.email = "Missing Required Entry";
-          hasErrors = true;
+        currentTabErrors.phone = requiredEntry(formData.phone);
+        const emailError = requiredEntry(formData.email);
+        if (emailError) {
+          currentTabErrors.email = emailError;
         } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
           currentTabErrors.email = "Invalid email format";
           hasErrors = true;
         }
-        // All address fields are now optional for initial client creation
         break;
 
       case "guardian":
-        // All guardian fields are now optional
-        // Only validate if user starts filling them out
         if (
-          formData.parent_first_name.trim() ||
-          formData.parent_last_name.trim()
+          formData.parent_first_name?.trim() ||
+          formData.parent_last_name?.trim()
         ) {
-          if (!formData.parent_first_name.trim()) {
-            currentTabErrors.parent_first_name = "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!formData.parent_last_name.trim()) {
-            currentTabErrors.parent_last_name = "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!formData.relationship_to_insured.trim()) {
-            currentTabErrors.relationship_to_insured = "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (
-            formData.relationship_to_insured === "Other" &&
-            !formData.relation_other.trim()
-          ) {
-            currentTabErrors.relation_other = "Missing Required Entry";
-            hasErrors = true;
+          currentTabErrors.parent_first_name = requiredEntry(
+            formData.parent_first_name
+          );
+          currentTabErrors.parent_last_name = requiredEntry(
+            formData.parent_last_name
+          );
+          currentTabErrors.relationship_to_insured = requiredEntry(
+            formData.relationship_to_insured
+          );
+          if (formData.relationship_to_insured === "Other") {
+            currentTabErrors.relation_other = requiredEntry(
+              formData.relation_other
+            );
           }
         }
-        // Emergency contact validation only if started
         if (
-          formData.emergency_contact_name.trim() ||
-          formData.emg_relationship.trim() ||
-          formData.emg_phone.trim()
+          formData.emergency_contact_name?.trim() ||
+          formData.emg_relationship?.trim() ||
+          formData.emg_phone?.trim()
         ) {
-          if (!formData.emergency_contact_name.trim()) {
-            currentTabErrors.emergency_contact_name = "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!formData.emg_relationship.trim()) {
-            currentTabErrors.emg_relationship = "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!formData.emg_phone.trim()) {
-            currentTabErrors.emg_phone = "Missing Required Entry";
-            hasErrors = true;
-          }
+          currentTabErrors.emergency_contact_name = requiredEntry(
+            formData.emergency_contact_name
+          );
+          currentTabErrors.emg_relationship = requiredEntry(
+            formData.emg_relationship
+          );
+          currentTabErrors.emg_phone = requiredEntry(formData.emg_phone);
         }
         break;
 
       case "insurance":
-        // Only validate insurances if they exist
         formData.insurances.forEach((insurance, idx) => {
-          if (!insurance.insurance_type.trim()) {
-            currentTabErrors[`insurance_insurance_type_${idx}`] =
-              "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!insurance.insurance_provider.trim()) {
+          // CORRECTED: Only validate if key fields have been entered.
+          if (
+            insurance.insurance_provider?.trim() ||
+            insurance.insurance_id_number?.trim() ||
+            insurance.group_number?.trim()
+          ) {
+            currentTabErrors[`insurance_insurance_type_${idx}`] = requiredEntry(
+              insurance.insurance_type
+            );
             currentTabErrors[`insurance_insurance_provider_${idx}`] =
-              "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!insurance.treatment_type.trim()) {
-            currentTabErrors[`insurance_treatment_type_${idx}`] =
-              "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!insurance.insurance_id_number.trim()) {
+              requiredEntry(insurance.insurance_provider);
+            currentTabErrors[`insurance_treatment_type_${idx}`] = requiredEntry(
+              insurance.treatment_type
+            );
             currentTabErrors[`insurance_insurance_id_number_${idx}`] =
-              "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!insurance.group_number.trim()) {
-            currentTabErrors[`insurance_group_number_${idx}`] =
-              "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!insurance.start_date.trim()) {
-            currentTabErrors[`insurance_start_date_${idx}`] =
-              "Missing Required Entry";
-            hasErrors = true;
+              requiredEntry(insurance.insurance_id_number);
+            currentTabErrors[`insurance_group_number_${idx}`] = requiredEntry(
+              insurance.group_number
+            );
+            currentTabErrors[`insurance_start_date_${idx}`] = requiredEntry(
+              insurance.start_date
+            );
           }
         });
 
-        // Only validate authorizations if they exist
-        formData.authorizations.forEach((auth, idx) => {
-          if (!auth.authorization_number.trim()) {
-            currentTabErrors[`auth_authorization_number_${idx}`] =
-              "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!auth.billing_codes.trim()) {
-            currentTabErrors[`auth_billing_codes_${idx}`] =
-              "Missing Required Entry";
-            hasErrors = true;
-          }
-          const unitsApproved = Number(auth.units_approved_per_15_min);
+        formData.authorizations?.forEach((auth, idx) => {
+          // CORRECTED: Only validate if key fields have been entered.
           if (
-            auth.units_approved_per_15_min === "" ||
-            isNaN(unitsApproved) ||
-            unitsApproved < 0
+            auth.authorization_number?.trim() ||
+            auth.billing_codes?.trim() ||
+            auth.units_approved_per_15_min?.trim()
           ) {
+            currentTabErrors[`auth_authorization_number_${idx}`] =
+              requiredEntry(auth.authorization_number);
+            currentTabErrors[`auth_billing_codes_${idx}`] = requiredEntry(
+              auth.billing_codes
+            );
             currentTabErrors[`auth_units_approved_per_15_min_${idx}`] =
-              "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!auth.start_date.trim()) {
-            currentTabErrors[`auth_start_date_${idx}`] =
-              "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!auth.end_date.trim()) {
-            currentTabErrors[`auth_end_date_${idx}`] = "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!auth.insurance_id.trim()) {
-            currentTabErrors[`auth_insurance_id_${idx}`] =
-              "Missing Required Entry";
-            hasErrors = true;
-          }
-          if (!auth.status.trim()) {
-            currentTabErrors[`auth_status_${idx}`] = "Missing Required Entry";
-            hasErrors = true;
-          }
-          const approved =
-            Number.parseFloat(auth.units_approved_per_15_min) || 0;
-          const serviced = Number.parseFloat(auth.units_serviced) || 0;
-          if (serviced > approved) {
-            currentTabErrors[`auth_units_serviced_${idx}`] =
-              "Units Serviced cannot exceed Units Approved";
-            hasErrors = true;
+              requiredEntry(auth.units_approved_per_15_min);
+            currentTabErrors[`auth_start_date_${idx}`] = requiredEntry(
+              auth.start_date
+            );
+            currentTabErrors[`auth_end_date_${idx}`] = requiredEntry(
+              auth.end_date
+            );
+            currentTabErrors[`auth_insurance_id_${idx}`] = requiredEntry(
+              auth.insurance_id
+            );
+            currentTabErrors[`auth_status_${idx}`] = requiredEntry(auth.status);
+
+            const approved =
+              Number.parseFloat(auth.units_approved_per_15_min) || 0;
+            const serviced = Number.parseFloat(auth.units_serviced) || 0;
+            if (serviced > approved) {
+              currentTabErrors[`auth_units_serviced_${idx}`] =
+                "Cannot exceed approved units";
+              hasErrors = true;
+            }
           }
         });
         break;
 
       case "documents":
-        // Only validate documents if they exist
         formData.documents.forEach((doc, idx) => {
-          if (doc.document_type.trim() || doc.file_url.trim()) {
-            if (!doc.document_type.trim()) {
-              currentTabErrors[`document_document_type_${idx}`] =
-                "Missing Required Entry";
-              hasErrors = true;
-            }
-            if (!doc.file_url.trim()) {
-              currentTabErrors[`document_file_url_${idx}`] =
-                "Missing Required Entry";
-              hasErrors = true;
-            }
+          if (doc.document_type?.trim() || doc.file_url?.trim()) {
+            currentTabErrors[`document_document_type_${idx}`] = requiredEntry(
+              doc.document_type
+            );
+            currentTabErrors[`document_file_url_${idx}`] = requiredEntry(
+              doc.file_url
+            );
           }
         });
-        break;
-
-      case "notes":
-        // No required fields for notes tab
         break;
 
       default:
         break;
     }
 
-    setErrors((prev) => ({ ...prev, ...currentTabErrors }));
+    const finalErrors = Object.fromEntries(
+      Object.entries(currentTabErrors).filter(([_, v]) => v != null)
+    );
+    setErrors((prev) => ({ ...prev, ...finalErrors }));
+
     return hasErrors;
   };
 
   const validateRequiredTabs = () => {
-    const allErrors = {};
     let hasAnyErrors = false;
     let firstErrorTab = null;
 
-    // Only validate personal and contact tabs as required
     const requiredTabs = ["personal", "contact"];
 
-    requiredTabs.forEach((tab) => {
+    for (const tab of requiredTabs) {
       const hasTabErrors = validateCurrentTab(tab);
       if (hasTabErrors && !firstErrorTab) {
         firstErrorTab = tab;
         hasAnyErrors = true;
       }
-    });
-
-    // Also validate any tabs that have data entered
-    const optionalTabsWithData = [];
-
-    // Check if guardian tab has data
-    if (
-      formData.parent_first_name.trim() ||
-      formData.parent_last_name.trim() ||
-      formData.emergency_contact_name.trim() ||
-      formData.emg_relationship.trim() ||
-      formData.emg_phone.trim()
-    ) {
-      optionalTabsWithData.push("guardian");
     }
 
-    // Check if insurance tab has data
-    if (formData.insurances.length > 0 || formData.authorizations.length > 0) {
-      optionalTabsWithData.push("insurance");
+    if (firstErrorTab) {
+      setActiveTab(firstErrorTab);
     }
 
-    // Check if documents tab has data
-    if (
-      formData.documents.some(
-        (doc) => doc.document_type.trim() || doc.file_url.trim()
-      )
-    ) {
-      optionalTabsWithData.push("documents");
-    }
+    return hasAnyErrors;
+  };
 
-    optionalTabsWithData.forEach((tab) => {
+  const validateAllTabs = () => {
+    let hasAnyErrors = false;
+    let firstErrorTab = null;
+
+    for (const tab of tabOrder) {
       const hasTabErrors = validateCurrentTab(tab);
       if (hasTabErrors && !firstErrorTab) {
         firstErrorTab = tab;
         hasAnyErrors = true;
       }
-    });
+    }
 
     if (firstErrorTab) {
       setActiveTab(firstErrorTab);
@@ -640,8 +629,9 @@ export default function AddClientModalBackup({
   const handleSave = async (e) => {
     e.preventDefault();
     setSaving(true);
+    setErrors({}); // Clear previous errors
 
-    const hasErrors = validateRequiredTabs();
+    const hasErrors = validateRequiredTabs(); // Changed from validateAllTabs()
     if (hasErrors) {
       setSaving(false);
       return;
@@ -655,16 +645,17 @@ export default function AddClientModalBackup({
 
   const handleNextTab = (e) => {
     e.preventDefault();
+    setErrors({});
     const hasErrors = validateCurrentTab(activeTab);
     if (hasErrors) {
-      return; // Stay on current tab if there are errors
+      return;
     }
 
     const currentIndex = tabOrder.indexOf(activeTab);
     if (currentIndex < tabOrder.length - 1) {
       setActiveTab(tabOrder[currentIndex + 1]);
     } else {
-      handleSave(e); // If on the last tab, save the form
+      handleSave(e);
     }
   };
 
@@ -689,7 +680,7 @@ export default function AddClientModalBackup({
       <Label htmlFor={id}>{label}</Label>
       <Input
         id={id}
-        value={value}
+        value={value || ""}
         onChange={onChange}
         className={
           errors[id]
@@ -712,8 +703,9 @@ export default function AddClientModalBackup({
   ) => (
     <div>
       <Label htmlFor={id}>{label}</Label>
-      <Select value={value} onValueChange={onValueChange}>
+      <Select value={value || ""} onValueChange={onValueChange}>
         <SelectTrigger
+          id={id}
           className={
             errors[id]
               ? "border-red-500 focus:border-red-500 focus:ring-red-500"
@@ -728,28 +720,17 @@ export default function AddClientModalBackup({
     </div>
   );
 
+  if (!isOpen) return null;
+
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-xl font-semibold text-slate-800">
+          <DialogTitle className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-teal-600" />
             {editingClient ? "Edit Client" : "Add New Client"}
-            {saving && (
-              <span className="ml-2 text-sm text-gray-500 italic">
-                Saving...
-              </span>
-            )}
           </DialogTitle>
         </DialogHeader>
-
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-          <p className="text-sm text-blue-700">
-            <strong>Quick Start:</strong> You can add a client with just
-            Personal and Contact information. All other sections (Guardian,
-            Insurance, Documents, Notes) are optional and can be filled out
-            later.
-          </p>
-        </div>
 
         <form onSubmit={handleSave} className="space-y-6">
           <Tabs
@@ -757,40 +738,82 @@ export default function AddClientModalBackup({
             onValueChange={setActiveTab}
             className="w-full"
           >
-            <TabsList className="grid w-full grid-cols-5 lg:grid-cols-6">
-              <TabsTrigger value="personal" className="flex items-center gap-2">
-                <Users className="h-4 w-4" /> Personal *
-              </TabsTrigger>
-              <TabsTrigger value="contact" className="flex items-center gap-2">
-                <Phone className="h-4 w-4" /> Contact *
-              </TabsTrigger>
-              <TabsTrigger value="guardian" className="flex items-center gap-2">
-                <User className="h-4 w-4" /> Guardian
-              </TabsTrigger>
-              <TabsTrigger
-                value="insurance"
-                className="flex items-center gap-2"
-              >
-                <Shield className="h-4 w-4" /> Insurance
-              </TabsTrigger>
-              <TabsTrigger
-                value="documents"
-                className="flex items-center gap-2"
-              >
-                <File className="h-4 w-4" /> Documents
-              </TabsTrigger>
-              <TabsTrigger value="notes" className="flex items-center gap-2">
-                <FileText className="h-4 w-4" /> Notes
-              </TabsTrigger>
-            </TabsList>
+            <div className="space-y-2">
+              <TabsList className="grid w-full grid-cols-3">
+                {primaryTabs.map((tab) => (
+                  <TabsTrigger
+                    key={tab}
+                    value={tab}
+                    className="flex items-center gap-2"
+                  >
+                    {tab === "personal" && (
+                      <>
+                        <Users className="h-4 w-4" /> Personal *
+                      </>
+                    )}
+                    {tab === "contact" && (
+                      <>
+                        <Phone className="h-4 w-4" /> Contact *
+                      </>
+                    )}
+                    {tab === "insurance" && (
+                      <>
+                        <Shield className="h-4 w-4" /> Insurance
+                      </>
+                    )}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
 
-            {/* Personal */}
+              <div className="flex justify-center">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex items-center gap-2 bg-transparent"
+                    >
+                      More Options
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-48">
+                    {moreTabs.map((tab) => (
+                      <DropdownMenuItem
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                      >
+                        {tab === "guardian" && (
+                          <>
+                            <User className="h-4 w-4 mr-2" /> Guardian
+                          </>
+                        )}
+                        {tab === "documents" && (
+                          <>
+                            <File className="h-4 w-4 mr-2" /> Documents
+                          </>
+                        )}
+                        {tab === "notes" && (
+                          <>
+                            <FileText className="h-4 w-4 mr-2" /> Notes
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+
             <TabsContent value="personal" className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Users className="h-5 w-5 text-teal-600" /> Personal
                     Information
+                    <Badge variant="destructive" className="ml-2">
+                      Required
+                    </Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -802,17 +825,13 @@ export default function AddClientModalBackup({
                       (e) => handleInputChange("first_name", e.target.value),
                       { placeholder: "Enter first name" }
                     )}
-                    <div>
-                      <Label htmlFor="middle_name">Middle Name</Label>
-                      <Input
-                        id="middle_name"
-                        value={formData.middle_name}
-                        onChange={(e) =>
-                          handleInputChange("middle_name", e.target.value)
-                        }
-                        placeholder="Enter middle name"
-                      />
-                    </div>
+                    {renderInputWithError(
+                      "middle_name",
+                      "Middle Name",
+                      formData.middle_name,
+                      (e) => handleInputChange("middle_name", e.target.value),
+                      { placeholder: "Enter middle name" }
+                    )}
                     {renderInputWithError(
                       "last_name",
                       "Last Name *",
@@ -821,7 +840,7 @@ export default function AddClientModalBackup({
                       { placeholder: "Enter last name" }
                     )}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     {renderInputWithError(
                       "date_of_birth",
                       "Date of Birth *",
@@ -829,45 +848,29 @@ export default function AddClientModalBackup({
                       (e) => handleInputChange("date_of_birth", e.target.value),
                       { type: "date" }
                     )}
-                    <div>
-                      <Label htmlFor="gender">Gender</Label>
-                      <Select
-                        value={formData.gender}
-                        onValueChange={(value) =>
-                          handleInputChange("gender", value)
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select gender" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Male">Male</SelectItem>
-                          <SelectItem value="Female">Female</SelectItem>
-                          <SelectItem value="Other">Other</SelectItem>
-                          <SelectItem value="Prefer not to say">
-                            Prefer not to say
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="preferred_language">
-                        Preferred Language
-                      </Label>
-                      <Input
-                        id="preferred_language"
-                        value={formData.preferred_language}
-                        onChange={(e) =>
-                          handleInputChange(
-                            "preferred_language",
-                            e.target.value
-                          )
-                        }
-                        placeholder="Enter preferred language"
-                      />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {renderSelectWithError(
+                      "gender",
+                      "Gender",
+                      formData.gender,
+                      (value) => handleInputChange("gender", value),
+                      <>
+                        <SelectItem value="Male">Male</SelectItem>
+                        <SelectItem value="Female">Female</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                        <SelectItem value="Prefer not to say">
+                          Prefer not to say
+                        </SelectItem>
+                      </>,
+                      "Select gender"
+                    )}
+                    {renderInputWithError(
+                      "preferred_language",
+                      "Preferred Language",
+                      formData.preferred_language,
+                      (e) =>
+                        handleInputChange("preferred_language", e.target.value),
+                      { placeholder: "e.g., English, Spanish" }
+                    )}
                     {renderSelectWithError(
                       "client_status",
                       "Client Status *",
@@ -892,35 +895,33 @@ export default function AddClientModalBackup({
                       </>,
                       "Select status"
                     )}
-                    <div>
-                      <Label htmlFor="wait_list_status">Wait List Status</Label>
-                      <Select
-                        value={formData.wait_list_status}
-                        onValueChange={(value) =>
-                          handleInputChange("wait_list_status", value)
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select wait list status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="Yes">Yes</SelectItem>
-                          <SelectItem value="No">No</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  </div>
+                  <div>
+                    {renderSelectWithError(
+                      "wait_list_status",
+                      "Wait List Status",
+                      formData.wait_list_status,
+                      (value) => handleInputChange("wait_list_status", value),
+                      <>
+                        <SelectItem value="Yes">Yes</SelectItem>
+                        <SelectItem value="No">No</SelectItem>
+                      </>,
+                      "Select wait list status"
+                    )}
                   </div>
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* Contact */}
             <TabsContent value="contact" className="space-y-6">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Phone className="h-5 w-5 text-teal-600" /> Contact
                     Information
+                    <Badge variant="destructive" className="ml-2">
+                      Required
+                    </Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -941,142 +942,188 @@ export default function AddClientModalBackup({
                     )}
                   </div>
                   <div>
-                    <Label htmlFor="appointment_reminder">
-                      Appointment Reminder Preference
-                    </Label>
-                    <Select
-                      value={formData.appointment_reminder}
-                      onValueChange={(value) =>
-                        handleInputChange("appointment_reminder", value)
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select reminder preference" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="text">Text Message</SelectItem>
+                    {renderSelectWithError(
+                      "appointment_reminder",
+                      "Appointment Reminder Preference",
+                      formData.appointment_reminder,
+                      (value) =>
+                        handleInputChange("appointment_reminder", value),
+                      <>
                         <SelectItem value="email">Email</SelectItem>
+                        <SelectItem value="sms">SMS</SelectItem>
                         <SelectItem value="phone">Phone Call</SelectItem>
-                        <SelectItem value="none">No Reminder</SelectItem>
-                      </SelectContent>
-                    </Select>
+                        <SelectItem value="none">No Reminders</SelectItem>
+                      </>,
+                      "Select reminder preference"
+                    )}
                   </div>
                 </CardContent>
               </Card>
-
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MapPin className="h-5 w-5 text-teal-600" /> Address
-                    Information
-                    <Badge variant="secondary" className="ml-2">
-                      Optional
-                    </Badge>
+                  <CardTitle className="flex items-center gap-2 justify-between">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="h-5 w-5 text-teal-600" /> Address
+                      Information
+                      <Badge variant="secondary" className="ml-2">
+                        Optional
+                      </Badge>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addAddress}
+                      className="flex items-center gap-2 bg-transparent"
+                    >
+                      <Plus className="h-4 w-4" /> Add Address
+                    </Button>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="address_line_1">Address Line 1</Label>
-                    <Input
-                      id="address_line_1"
-                      value={formData.address_line_1}
-                      onChange={(e) =>
-                        handleInputChange("address_line_1", e.target.value)
-                      }
-                      placeholder="Enter street address"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="address_line_2">Address Line 2</Label>
-                    <Input
-                      id="address_line_2"
-                      value={formData.address_line_2}
-                      onChange={(e) =>
-                        handleInputChange("address_line_2", e.target.value)
-                      }
-                      placeholder="Apartment, suite, etc."
-                    />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <Label htmlFor="city">City</Label>
-                      <Input
-                        id="city"
-                        value={formData.city}
-                        onChange={(e) =>
-                          handleInputChange("city", e.target.value)
-                        }
-                        placeholder="Enter city"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="state">State</Label>
-                      <Input
-                        id="state"
-                        value={formData.state}
-                        onChange={(e) =>
-                          handleInputChange("state", e.target.value)
-                        }
-                        placeholder="Enter state"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="zipcode">ZIP Code</Label>
-                      <Input
-                        id="zipcode"
-                        value={formData.zipcode}
-                        onChange={(e) =>
-                          handleInputChange("zipcode", e.target.value)
-                        }
-                        placeholder="Enter ZIP code"
-                      />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                      <div>
-                        <Label htmlFor="country">Country</Label>
-                        <Select
-                          value={formData.country}
-                          onValueChange={(value) => {
-                            handleInputChange("country", value);
+                <CardContent className="space-y-6">
+                  {formData.addresses.map((address, index) => (
+                    <div
+                      key={address.id}
+                      className="border rounded-lg p-4 space-y-4"
+                    >
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-semibold">Address #{index + 1}</h4>
+                        {formData.addresses.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => removeAddress(address.id)}
+                            className="text-red-600 hover:text-red-700"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                      {renderSelectWithError(
+                        `service_location_${address.id}`,
+                        "Service Location",
+                        address.service_location,
+                        (value) =>
+                          handleAddressChange(
+                            address.id,
+                            "service_location",
+                            value
+                          ),
+                        <>
+                          <SelectItem value="Home">Home</SelectItem>
+                          <SelectItem value="Clinic">Clinic</SelectItem>
+                          <SelectItem value="School">School</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </>,
+                        "Select service location"
+                      )}
+                      {renderInputWithError(
+                        `address_line_1_${address.id}`,
+                        "Address Line 1",
+                        address.address_line_1,
+                        (e) =>
+                          handleAddressChange(
+                            address.id,
+                            "address_line_1",
+                            e.target.value
+                          ),
+                        { placeholder: "Enter street address" }
+                      )}
+                      {renderInputWithError(
+                        `address_line_2_${address.id}`,
+                        "Address Line 2",
+                        address.address_line_2,
+                        (e) =>
+                          handleAddressChange(
+                            address.id,
+                            "address_line_2",
+                            e.target.value
+                          ),
+                        { placeholder: "Apartment, suite, etc." }
+                      )}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {renderInputWithError(
+                          `city_${address.id}`,
+                          "City",
+                          address.city,
+                          (e) =>
+                            handleAddressChange(
+                              address.id,
+                              "city",
+                              e.target.value
+                            ),
+                          { placeholder: "Enter city" }
+                        )}
+                        {renderInputWithError(
+                          `state_${address.id}`,
+                          "State",
+                          address.state,
+                          (e) =>
+                            handleAddressChange(
+                              address.id,
+                              "state",
+                              e.target.value
+                            ),
+                          { placeholder: "Enter state" }
+                        )}
+                        {renderInputWithError(
+                          `zipcode_${address.id}`,
+                          "ZIP Code",
+                          address.zipcode,
+                          (e) =>
+                            handleAddressChange(
+                              address.id,
+                              "zipcode",
+                              e.target.value
+                            ),
+                          { placeholder: "Enter ZIP code" }
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                        {renderSelectWithError(
+                          `country_${address.id}`,
+                          "Country",
+                          address.country,
+                          (value) => {
+                            handleAddressChange(address.id, "country", value);
                             if (value !== "Other") {
-                              handleInputChange("countryOther", "");
+                              handleAddressChange(
+                                address.id,
+                                "countryOther",
+                                ""
+                              );
                             }
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select country" />
-                          </SelectTrigger>
-                          <SelectContent>
+                          },
+                          <>
                             {popularCountries.map((country) => (
                               <SelectItem key={country} value={country}>
                                 {country}
                               </SelectItem>
                             ))}
-                          </SelectContent>
-                        </Select>
+                          </>,
+                          "Select country"
+                        )}
+                        {address.country === "Other" &&
+                          renderInputWithError(
+                            `countryOther_${address.id}`,
+                            "Specify Country",
+                            address.countryOther,
+                            (e) =>
+                              handleAddressChange(
+                                address.id,
+                                "countryOther",
+                                e.target.value
+                              ),
+                            { placeholder: "Enter country name" }
+                          )}
                       </div>
-                      {formData.country === "Other" && (
-                        <div>
-                          <Label htmlFor="countryOther">Specify Country</Label>
-                          <Input
-                            id="countryOther"
-                            value={formData.countryOther || ""}
-                            onChange={(e) =>
-                              handleInputChange("countryOther", e.target.value)
-                            }
-                            placeholder="Enter country name"
-                          />
-                        </div>
-                      )}
                     </div>
-                  </div>
+                  ))}
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* Guardian */}
             <TabsContent value="guardian" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -1089,13 +1136,6 @@ export default function AddClientModalBackup({
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                    <p className="text-sm text-yellow-700">
-                      <strong>Note:</strong> If you start filling out
-                      parent/guardian information, all marked fields will become
-                      required.
-                    </p>
-                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {renderInputWithError(
                       "parent_first_name",
@@ -1103,7 +1143,7 @@ export default function AddClientModalBackup({
                       formData.parent_first_name,
                       (e) =>
                         handleInputChange("parent_first_name", e.target.value),
-                      { placeholder: "Enter parent/guardian first name" }
+                      { placeholder: "Enter first name" }
                     )}
                     {renderInputWithError(
                       "parent_last_name",
@@ -1111,7 +1151,7 @@ export default function AddClientModalBackup({
                       formData.parent_last_name,
                       (e) =>
                         handleInputChange("parent_last_name", e.target.value),
-                      { placeholder: "Enter parent/guardian last name" }
+                      { placeholder: "Enter last name" }
                     )}
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1125,7 +1165,7 @@ export default function AddClientModalBackup({
                         <SelectItem value="Parent">Parent</SelectItem>
                         <SelectItem value="Guardian">Guardian</SelectItem>
                         <SelectItem value="Spouse">Spouse</SelectItem>
-                        <SelectItem value="Self">Self</SelectItem>
+                        <SelectItem value="Sibling">Sibling</SelectItem>
                         <SelectItem value="Other">Other</SelectItem>
                       </>,
                       "Select relationship"
@@ -1133,7 +1173,7 @@ export default function AddClientModalBackup({
                     {formData.relationship_to_insured === "Other" &&
                       renderInputWithError(
                         "relation_other",
-                        "Specify Other Relationship",
+                        "Specify Relationship",
                         formData.relation_other,
                         (e) =>
                           handleInputChange("relation_other", e.target.value),
@@ -1142,7 +1182,6 @@ export default function AddClientModalBackup({
                   </div>
                 </CardContent>
               </Card>
-
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
@@ -1154,13 +1193,6 @@ export default function AddClientModalBackup({
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                    <p className="text-sm text-yellow-700">
-                      <strong>Note:</strong> If you start filling out emergency
-                      contact information, all marked fields will become
-                      required.
-                    </p>
-                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {renderInputWithError(
                       "emergency_contact_name",
@@ -1171,7 +1203,7 @@ export default function AddClientModalBackup({
                           "emergency_contact_name",
                           e.target.value
                         ),
-                      { placeholder: "Enter emergency contact name" }
+                      { placeholder: "Enter contact name" }
                     )}
                     {renderInputWithError(
                       "emg_relationship",
@@ -1188,288 +1220,316 @@ export default function AddClientModalBackup({
                       "Emergency Contact Phone",
                       formData.emg_phone,
                       (e) => handleInputChange("emg_phone", e.target.value),
-                      { placeholder: "Enter emergency contact phone" }
+                      { placeholder: "Enter phone number" }
                     )}
-                    <div>
-                      <Label htmlFor="emg_email">Emergency Contact Email</Label>
-                      <Input
-                        id="emg_email"
-                        type="email"
-                        value={formData.emg_email}
-                        onChange={(e) =>
-                          handleInputChange("emg_email", e.target.value)
-                        }
-                        placeholder="Enter emergency contact email"
-                      />
-                    </div>
+                    {renderInputWithError(
+                      "emg_email",
+                      "Emergency Contact Email",
+                      formData.emg_email,
+                      (e) => handleInputChange("emg_email", e.target.value),
+                      { type: "email", placeholder: "Enter email address" }
+                    )}
                   </div>
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* Insurance */}
             <TabsContent value="insurance" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Shield className="h-5 w-5 text-teal-600" /> Insurance
-                    Information
-                    <Badge variant="secondary" className="ml-2">
-                      Optional
-                    </Badge>
+                  <CardTitle className="flex items-center gap-2 justify-between">
+                    <div className="flex items-center gap-2">
+                      <Shield className="h-5 w-5 text-teal-600" /> Insurance
+                      Information
+                      <Badge variant="secondary" className="ml-2">
+                        Optional
+                      </Badge>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addInsurance}
+                      className="flex items-center gap-2 bg-transparent"
+                    >
+                      <Plus className="h-4 w-4" /> Add Insurance
+                    </Button>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-6">
+                <CardContent>
                   {formData.insurances.length === 0 ? (
-                    <div className="text-center py-8">
-                      <Shield className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                      <p className="text-gray-500 mb-4">
-                        No insurance information added yet
-                      </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addInsurance}
-                        className="border-dashed border-slate-300 bg-transparent"
-                      >
-                        <Plus className="h-4 w-4 mr-2" /> Add Insurance
-                        Information
-                      </Button>
-                    </div>
+                    <p className="text-gray-500 text-center py-8">
+                      No insurance information added yet.
+                    </p>
                   ) : (
-                    <>
+                    <div className="space-y-6">
                       {formData.insurances.map((insurance, index) => (
                         <div
-                          key={index}
-                          className="border rounded-lg p-4 bg-slate-50 relative"
+                          key={insurance.insurance_id}
+                          className="border rounded-lg p-4 space-y-4"
                         >
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                              <h4 className="font-medium">
-                                Insurance #{index + 1}
-                              </h4>
-                              <Badge
-                                variant="outline"
-                                className={
-                                  insurance.insurance_type === "Primary"
-                                    ? "border-blue-300 text-blue-700"
-                                    : "border-green-300 text-green-700"
-                                }
-                              >
-                                {insurance.insurance_type}
-                              </Badge>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => removeInsurance(index)}
-                              className="text-red-600 border-red-300 hover:bg-red-50"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <div className="space-y-4">
-                            {renderSelectWithError(
-                              `insurance_insurance_type_${index}`,
-                              "Insurance Type *",
-                              insurance.insurance_type,
-                              (value) =>
-                                handleInsuranceChange(
-                                  index,
-                                  "insurance_type",
-                                  value
-                                ),
-                              <>
-                                <SelectItem value="Primary">Primary</SelectItem>
-                                <SelectItem value="Secondary">
-                                  Secondary
-                                </SelectItem>
-                              </>,
-                              "Select insurance type"
-                            )}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {renderInputWithError(
-                                `insurance_insurance_provider_${index}`,
-                                "Insurance Provider *",
-                                insurance.insurance_provider,
-                                (e) =>
-                                  handleInsuranceChange(
-                                    index,
-                                    "insurance_provider",
-                                    e.target.value
-                                  ),
-                                { placeholder: "Enter insurance provider" }
-                              )}
-                              {renderInputWithError(
-                                `insurance_treatment_type_${index}`,
-                                "Treatment Type *",
-                                insurance.treatment_type,
-                                (e) =>
-                                  handleInsuranceChange(
-                                    index,
-                                    "treatment_type",
-                                    e.target.value
-                                  ),
-                                { placeholder: "Enter treatment type" }
-                              )}
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {renderInputWithError(
-                                `insurance_insurance_id_number_${index}`,
-                                "Insurance ID *",
-                                insurance.insurance_id_number,
-                                (e) =>
-                                  handleInsuranceChange(
-                                    index,
-                                    "insurance_id_number",
-                                    e.target.value
-                                  ),
-                                { placeholder: "Enter insurance ID" }
-                              )}
-                              {renderInputWithError(
-                                `insurance_group_number_${index}`,
-                                "Group Number *",
-                                insurance.group_number,
-                                (e) =>
-                                  handleInsuranceChange(
-                                    index,
-                                    "group_number",
-                                    e.target.value
-                                  ),
-                                { placeholder: "Enter group number" }
-                              )}
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <Label>Coinsurance</Label>
-                                <Input
-                                  value={insurance.coinsurance}
-                                  onChange={(e) =>
-                                    handleInsuranceChange(
-                                      index,
-                                      "coinsurance",
-                                      e.target.value
-                                    )
-                                  }
-                                  placeholder="Enter coinsurance"
-                                />
-                              </div>
-                              <div>
-                                <Label>Deductible</Label>
-                                <Input
-                                  value={insurance.deductible}
-                                  onChange={(e) =>
-                                    handleInsuranceChange(
-                                      index,
-                                      "deductible",
-                                      e.target.value
-                                    )
-                                  }
-                                  placeholder="Enter deductible"
-                                />
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {renderInputWithError(
-                                `insurance_start_date_${index}`,
-                                "Start Date *",
-                                insurance.start_date,
-                                (e) =>
-                                  handleInsuranceChange(
-                                    index,
-                                    "start_date",
-                                    e.target.value
-                                  ),
-                                { type: "date" }
-                              )}
-                              <div>
-                                <Label>End Date</Label>
-                                <Input
-                                  type="date"
-                                  value={insurance.end_date}
-                                  onChange={(e) =>
-                                    handleInsuranceChange(
-                                      index,
-                                      "end_date",
-                                      e.target.value
-                                    )
-                                  }
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addInsurance}
-                        className="w-full border-dashed border-slate-300 bg-transparent"
-                      >
-                        <Plus className="h-4 w-4 mr-2" /> Add Another Insurance
-                      </Button>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Authorization Information */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FileText className="h-5 w-5 text-teal-600" /> Authorization
-                    Information
-                    <Badge variant="secondary" className="ml-2">
-                      Optional
-                    </Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {formData.authorizations.length === 0 ? (
-                    <div className="text-center py-8">
-                      <FileText className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                      <p className="text-gray-500 mb-4">
-                        No authorization information added yet
-                      </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addAuthorization}
-                        className="border-dashed border-slate-300 bg-transparent"
-                        disabled={formData.insurances.length === 0}
-                      >
-                        <Plus className="h-4 w-4 mr-2" /> Add Authorization
-                        Information
-                      </Button>
-                      {formData.insurances.length === 0 && (
-                        <p className="text-xs text-gray-400 mt-2">
-                          Add insurance information first
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      {formData.authorizations.map((auth, index) => (
-                        <div
-                          key={index}
-                          className="border rounded-lg p-4 bg-slate-50 relative"
-                        >
-                          <div className="flex items-center justify-between mb-4">
-                            <h4 className="font-medium">
-                              Authorization #{index + 1}
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-semibold">
+                              Insurance #{index + 1}
                             </h4>
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => removeAuthorization(index)}
-                              className="text-red-600 border-red-300 hover:bg-red-50"
+                              onClick={() =>
+                                removeInsurance(insurance.insurance_id)
+                              }
+                              className="text-red-600 hover:text-red-700"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
-                          <div className="space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {renderSelectWithError(
+                              `insurance_insurance_type_${index}`,
+                              "Insurance Type",
+                              insurance.insurance_type,
+                              (value) =>
+                                handleInsuranceChange(
+                                  insurance.insurance_id,
+                                  "insurance_type",
+                                  value
+                                ),
+                              <>
+                                {" "}
+                                <SelectItem value="Primary">
+                                  Primary
+                                </SelectItem>{" "}
+                                <SelectItem value="Secondary">
+                                  Secondary
+                                </SelectItem>{" "}
+                              </>,
+                              "Select type"
+                            )}
+                            {renderInputWithError(
+                              `insurance_insurance_provider_${index}`,
+                              "Insurance Provider",
+                              insurance.insurance_provider,
+                              (e) =>
+                                handleInsuranceChange(
+                                  insurance.insurance_id,
+                                  "insurance_provider",
+                                  e.target.value
+                                ),
+                              { placeholder: "Enter provider name" }
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {renderInputWithError(
+                              `insurance_treatment_type_${index}`,
+                              "Treatment Type",
+                              insurance.treatment_type,
+                              (e) =>
+                                handleInsuranceChange(
+                                  insurance.insurance_id,
+                                  "treatment_type",
+                                  e.target.value
+                                ),
+                              { placeholder: "Enter treatment type" }
+                            )}
+                            {renderInputWithError(
+                              `insurance_rendering_provider_${index}`,
+                              "Rendering Provider",
+                              insurance.rendering_provider,
+                              (e) =>
+                                handleInsuranceChange(
+                                  insurance.insurance_id,
+                                  "rendering_provider",
+                                  e.target.value
+                                ),
+                              { placeholder: "Enter rendering provider" }
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {renderInputWithError(
+                              `insurance_insurance_id_number_${index}`,
+                              "Insurance ID Number",
+                              insurance.insurance_id_number,
+                              (e) =>
+                                handleInsuranceChange(
+                                  insurance.insurance_id,
+                                  "insurance_id_number",
+                                  e.target.value
+                                ),
+                              { placeholder: "Enter ID number" }
+                            )}
+                            {renderInputWithError(
+                              `insurance_group_number_${index}`,
+                              "Group Number",
+                              insurance.group_number,
+                              (e) =>
+                                handleInsuranceChange(
+                                  insurance.insurance_id,
+                                  "group_number",
+                                  e.target.value
+                                ),
+                              { placeholder: "Enter group number" }
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {renderInputWithError(
+                              `insurance_coinsurance_${index}`,
+                              "Coinsurance",
+                              insurance.coinsurance,
+                              (e) =>
+                                handleInsuranceChange(
+                                  insurance.insurance_id,
+                                  "coinsurance",
+                                  e.target.value
+                                ),
+                              { placeholder: "e.g., 20%" }
+                            )}
+                            {renderInputWithError(
+                              `insurance_deductible_${index}`,
+                              "Deductible",
+                              insurance.deductible,
+                              (e) =>
+                                handleInsuranceChange(
+                                  insurance.insurance_id,
+                                  "deductible",
+                                  e.target.value
+                                ),
+                              { placeholder: "e.g., $500" }
+                            )}
+                            {renderInputWithError(
+                              `insurance_copay_rate_${index}`,
+                              "Copay Rate",
+                              insurance.copay_rate,
+                              (e) =>
+                                handleInsuranceChange(
+                                  insurance.insurance_id,
+                                  "copay_rate",
+                                  e.target.value
+                                ),
+                              { placeholder: "e.g., $25" }
+                            )}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {renderInputWithError(
+                              `insurance_start_date_${index}`,
+                              "Start Date",
+                              insurance.start_date,
+                              (e) =>
+                                handleInsuranceChange(
+                                  insurance.insurance_id,
+                                  "start_date",
+                                  e.target.value
+                                ),
+                              { type: "date" }
+                            )}
+                            {renderInputWithError(
+                              `insurance_end_date_${index}`,
+                              "End Date",
+                              insurance.end_date,
+                              (e) =>
+                                handleInsuranceChange(
+                                  insurance.insurance_id,
+                                  "end_date",
+                                  e.target.value
+                                ),
+                              { type: "date" }
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+              {formData.insurances.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-5 w-5 text-teal-600" />{" "}
+                        Authorizations
+                        <Badge variant="secondary" className="ml-2">
+                          Optional
+                        </Badge>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={addAuthorization}
+                        className="flex items-center gap-2 bg-transparent"
+                      >
+                        <Plus className="h-4 w-4" /> Add Authorization
+                      </Button>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {!formData.authorizations ||
+                    formData.authorizations.length === 0 ? (
+                      <p className="text-gray-500 text-center py-8">
+                        No authorizations added yet.
+                      </p>
+                    ) : (
+                      <div className="space-y-6">
+                        {formData.authorizations.map((auth, index) => (
+                          <div
+                            key={auth.auth_uuid}
+                            className="border rounded-lg p-4 space-y-4"
+                          >
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-semibold">
+                                Authorization #{index + 1}
+                              </h4>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  removeAuthorization(auth.auth_uuid)
+                                }
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {renderSelectWithError(
+                                `auth_insurance_id_${index}`,
+                                "Linked Insurance *",
+                                auth.insurance_id || "",
+                                (value) =>
+                                  handleAuthorizationChange(
+                                    index,
+                                    "insurance_id",
+                                    value
+                                  ),
+                                formData.insurances.map((insurance, i) => (
+                                  <SelectItem key={i} value={String(i)}>
+                                    {insurance.insurance_provider ||
+                                      `Insurance #${i + 1}`}
+                                  </SelectItem>
+                                )),
+                                "Select insurance"
+                              )}
+                              {renderSelectWithError(
+                                `auth_status_${index}`,
+                                "Status *",
+                                auth.status || "Active",
+                                (value) =>
+                                  handleAuthorizationChange(
+                                    index,
+                                    "status",
+                                    value
+                                  ),
+                                authorizationStatuses.map((status) => (
+                                  <SelectItem key={status} value={status}>
+                                    {status}
+                                  </SelectItem>
+                                )),
+                                "Select status"
+                              )}
+                            </div>
+                            {/* change here the auth number */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               {renderInputWithError(
                                 `auth_authorization_number_${index}`,
@@ -1571,157 +1631,96 @@ export default function AddClientModalBackup({
                                 { type: "date" }
                               )}
                             </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              {renderSelectWithError(
-                                `auth_insurance_id_${index}`,
-                                "Linked Insurance *",
-                                auth.insurance_id || "",
-                                (value) =>
-                                  handleAuthorizationChange(
-                                    index,
-                                    "insurance_id",
-                                    value
-                                  ),
-                                formData.insurances.map((insurance, i) => (
-                                  <SelectItem key={i} value={String(i)}>
-                                    {insurance.insurance_provider ||
-                                      `Insurance #${i + 1}`}
-                                  </SelectItem>
-                                )),
-                                "Select insurance"
-                              )}
-                              {renderSelectWithError(
-                                `auth_status_${index}`,
-                                "Status *",
-                                auth.status || "Active",
-                                (value) =>
-                                  handleAuthorizationChange(
-                                    index,
-                                    "status",
-                                    value
-                                  ),
-                                authorizationStatuses.map((status) => (
-                                  <SelectItem key={status} value={status}>
-                                    {status}
-                                  </SelectItem>
-                                )),
-                                "Select status"
-                              )}
-                            </div>
                           </div>
-                        </div>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addAuthorization}
-                        className="w-full border-dashed border-slate-300 bg-transparent"
-                      >
-                        <Plus className="h-4 w-4 mr-2" /> Add Another
-                        Authorization
-                      </Button>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
 
-            {/* Documents */}
             <TabsContent value="documents" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <File className="h-5 w-5 text-teal-600" /> Client Documents
-                    <Badge variant="secondary" className="ml-2">
-                      Optional
-                    </Badge>
+                  <CardTitle className="flex items-center gap-2 justify-between">
+                    <div className="flex items-center gap-2">
+                      <File className="h-5 w-5 text-teal-600" /> Documents
+                      <Badge variant="secondary" className="ml-2">
+                        Optional
+                      </Badge>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addDocument}
+                      className="flex items-center gap-2 bg-transparent"
+                    >
+                      <Plus className="h-4 w-4" /> Add Document
+                    </Button>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-6">
+                <CardContent>
                   {formData.documents.length === 0 ? (
-                    <div className="text-center py-8">
-                      <File className="h-12 w-12 text-gray-400 mx-auto mb-3" />
-                      <p className="text-gray-500 mb-4">
-                        No documents added yet
-                      </p>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addDocument}
-                        className="border-dashed border-slate-300 bg-transparent"
-                      >
-                        <Plus className="h-4 w-4 mr-2" /> Add Document
-                      </Button>
-                    </div>
+                    <p className="text-gray-500 text-center py-8">
+                      No documents added yet.
+                    </p>
                   ) : (
-                    <>
+                    <div className="space-y-4">
                       {formData.documents.map((doc, index) => (
                         <div
-                          key={index}
-                          className="border rounded-lg p-4 bg-slate-50 relative"
+                          key={doc.doc_uuid}
+                          className="border rounded-lg p-4 space-y-4"
                         >
-                          <div className="flex items-center justify-between mb-4">
-                            <h4 className="font-medium">
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-semibold">
                               Document #{index + 1}
                             </h4>
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => removeDocument(index)}
-                              className="text-red-600 border-red-300 hover:bg-red-50"
+                              onClick={() => removeDocument(doc.doc_uuid)}
+                              className="text-red-600 hover:text-red-700"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
-                          <div className="space-y-4">
-                            {renderSelectWithError(
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {renderInputWithError(
                               `document_document_type_${index}`,
-                              "Document Type *",
+                              "Document Type",
                               doc.document_type,
-                              (value) =>
+                              (e) =>
                                 handleDocumentChange(
-                                  index,
+                                  doc.doc_uuid,
                                   "document_type",
-                                  value
+                                  e.target.value
                                 ),
-                              documentTypes.map((type) => (
-                                <SelectItem key={type} value={type}>
-                                  {type}
-                                </SelectItem>
-                              )),
-                              "Select document type"
+                              { placeholder: "e.g., Insurance Card, ID" }
                             )}
                             {renderInputWithError(
                               `document_file_url_${index}`,
-                              "Document URL/Path *",
+                              "File URL",
                               doc.file_url,
                               (e) =>
                                 handleDocumentChange(
-                                  index,
+                                  doc.doc_uuid,
                                   "file_url",
                                   e.target.value
                                 ),
-                              { placeholder: "Enter URL or path to document" }
+                              { placeholder: "Enter file URL" }
                             )}
                           </div>
                         </div>
                       ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addDocument}
-                        className="w-full border-dashed border-slate-300 bg-transparent"
-                      >
-                        <Plus className="h-4 w-4 mr-2" /> Add Another Document
-                      </Button>
-                    </>
+                    </div>
                   )}
                 </CardContent>
               </Card>
             </TabsContent>
 
-            {/* Notes */}
             <TabsContent value="notes" className="space-y-6">
               <Card>
                 <CardHeader>
@@ -1742,7 +1741,7 @@ export default function AddClientModalBackup({
                       onChange={(e) =>
                         handleInputChange("client_notes", e.target.value)
                       }
-                      placeholder="Enter any notes about the client"
+                      placeholder="Enter any notes about the client..."
                       rows={4}
                     />
                   </div>
@@ -1754,7 +1753,7 @@ export default function AddClientModalBackup({
                       onChange={(e) =>
                         handleInputChange("other_information", e.target.value)
                       }
-                      placeholder="Enter any additional information"
+                      placeholder="Enter any additional information..."
                       rows={4}
                     />
                   </div>
@@ -1779,8 +1778,18 @@ export default function AddClientModalBackup({
               )}
             </div>
             <div className="flex gap-3">
-              <Button type="submit" className="bg-teal-600 hover:bg-teal-700">
-                {editingClient ? "Update Client" : "Add Client"}
+              <Button
+                type="submit"
+                disabled={saving}
+                className="bg-teal-600 hover:bg-teal-700"
+              >
+                {saving
+                  ? "Saving..."
+                  : isLastTab || !editingClient
+                  ? editingClient
+                    ? "Update Client"
+                    : "Add Client"
+                  : "Save & Continue"}
               </Button>
               {!isLastTab && (
                 <Button type="button" onClick={handleNextTab} variant="outline">

@@ -147,13 +147,13 @@ try {
     if (isset($input["addresses"]) && is_array($input["addresses"]) && count($input["addresses"]) > 1) {
         // Clear existing additional addresses
         $conn->prepare("DELETE FROM client_addresses WHERE client_id = ?")->execute([$clientId]);
-        
+
         // Insert additional addresses (skip first one as it's stored in main client table)
         $addressStmt = $conn->prepare("INSERT INTO client_addresses (
             client_id, service_location, address_line_1, address_line_2, 
             city, state, zipcode, country
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        
+
         for ($i = 1; $i < count($input["addresses"]); $i++) {
             $addr = $input["addresses"][$i];
             $addressStmt->execute([
@@ -195,7 +195,11 @@ try {
                 $ins["authorization_number"] ?? '',
                 $ins["insurance_id_number"] ?? '',
                 $ins["group_number"] ?? '',
-                $ins["diagnosis_1"] ?? '', $ins["diagnosis_2"] ?? '', $ins["diagnosis_3"] ?? '', $ins["diagnosis_4"] ?? '', $ins["diagnosis_5"] ?? '',
+                $ins["diagnosis_1"] ?? '',
+                $ins["diagnosis_2"] ?? '',
+                $ins["diagnosis_3"] ?? '',
+                $ins["diagnosis_4"] ?? '',
+                $ins["diagnosis_5"] ?? '',
                 $ins["coinsurance"] ?? '',
                 $ins["deductible"] ?? '',
                 $ins["copay_per"] ?? 'hr',
@@ -258,7 +262,6 @@ try {
         "success" => true,
         "message" => $exists ? "Client updated successfully" : "Client added successfully"
     ]);
-
 } catch (PDOException $e) {
     if ($conn && $conn->inTransaction()) {
         $conn->rollBack();
@@ -270,4 +273,3 @@ try {
         "message" => "Server error: " . $e->getMessage()
     ]);
 }
-?>

@@ -1,19 +1,32 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useCallback } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useState, useEffect, useCallback } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
+} from "@/components/ui/dropdown-menu";
 import {
   Users,
   Plus,
@@ -28,60 +41,72 @@ import {
   MapPin,
   Phone,
   MoreVertical,
-} from "lucide-react"
-import AddStaffModal from "./add-staff-modal"
-import toast, { Toaster } from "react-hot-toast"
+} from "lucide-react";
+import AddStaffModal from "./add-staff-modal";
+import toast, { Toaster } from "react-hot-toast";
+import { fetchClients } from "@/app/store/clientSlice";
+import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
 
-const API_BASE_URL = `${process.env.NEXT_PUBLIC_BASE_URL}/staff.php`
+const API_BASE_URL = `${process.env.NEXT_PUBLIC_BASE_URL}/staff.php`;
 
 export default function StaffView() {
-  const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [typeFilter, setTypeFilter] = useState("all")
-  const [showArchived, setShowArchived] = useState(false)
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false)
-  const [editingStaff, setEditingStaff] = useState(null)
-  const [staff, setStaff] = useState([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [expandedStaff, setExpandedStaff] = useState(null)
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [showArchived, setShowArchived] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingStaff, setEditingStaff] = useState(null);
+  const [staff, setStaff] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [expandedStaff, setExpandedStaff] = useState(null);
 
-  const activeStaffCount = staff?.filter((member) => !member.archived).length
-  const archivedStaffCount = staff?.filter((member) => member.archived).length
-
+  const activeStaffCount = staff?.filter((member) => !member.archived).length;
+  const archivedStaffCount = staff?.filter((member) => member.archived).length;
   const fetchStaff = useCallback(async () => {
-    setIsLoading(true)
+    setIsLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}?showArchived=${showArchived}`)
+      const response = await fetch(
+        `${API_BASE_URL}?showArchived=${showArchived}`
+      );
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-      const result = await response.json()
+      const result = await response.json();
       if (result.success) {
-        setStaff(result.staff_records)
+        setStaff(result.staff_records);
+        console.log(staff, "staff");
       } else {
-        toast.error(`Failed to fetch staff: ${result.message}`)
+        toast.error(`Failed to fetch staff: ${result.message}`);
       }
     } catch (error) {
-      console.error("Error fetching staff:", error)
-      toast.error("Failed to load staff data.")
+      console.error("Error fetching staff:", error);
+      toast.error("Failed to load staff data.");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }, [showArchived])
+  }, [showArchived]);
+  const dispatch = useAppDispatch();
+  const clients = useAppSelector((state) => state.clients.items || []);
 
   useEffect(() => {
-    fetchStaff()
-  }, [fetchStaff])
+    dispatch(fetchClients());
+  }, []);
+  useEffect(() => {
+    fetchStaff();
+  }, [fetchStaff]);
 
   const filteredStaff = staff?.filter((member) => {
     const matchesSearch =
       member.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      member.certificationNumber.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesStatus = statusFilter === "all" || member.status === statusFilter
-    const matchesType = typeFilter === "all" || member.staffType === typeFilter
-    return matchesSearch && matchesStatus && matchesType
-  })
+      member.certificationNumber
+        .toLowerCase()
+        .includes(searchTerm.toLowerCase());
+    const matchesStatus =
+      statusFilter === "all" || member.status === statusFilter;
+    const matchesType = typeFilter === "all" || member.staffType === typeFilter;
+    return matchesSearch && matchesStatus && matchesType;
+  });
 
   const handleAddStaff = async (staffData) => {
     try {
@@ -91,19 +116,19 @@ export default function StaffView() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(staffData),
-      })
-      const result = await response.json()
+      });
+      const result = await response.json();
       if (result.success) {
-        toast.success("Staff added successfully!")
-        fetchStaff()
+        toast.success("Staff added successfully!");
+        fetchStaff();
       } else {
-        toast.error(`Failed to add staff: ${result.message}`)
+        toast.error(`Failed to add staff: ${result.message}`);
       }
     } catch (error) {
-      console.error("Error adding staff:", error)
-      toast.error("Failed to add staff member.")
+      console.error("Error adding staff:", error);
+      toast.error("Failed to add staff member.");
     }
-  }
+  };
 
   const handleEditStaff = async (staffData) => {
     try {
@@ -113,21 +138,21 @@ export default function StaffView() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(staffData),
-      })
-      const result = await response.json()
+      });
+      const result = await response.json();
       if (result.success) {
-        toast.success("Staff updated successfully!")
-        fetchStaff()
+        toast.success("Staff updated successfully!");
+        fetchStaff();
       } else {
-        toast.error(`Failed to update staff: ${result.message}`)
+        toast.error(`Failed to update staff: ${result.message}`);
       }
     } catch (error) {
-      console.error("Error updating staff:", error)
-      toast.error("Failed to update staff member.")
+      console.error("Error updating staff:", error);
+      toast.error("Failed to update staff member.");
     } finally {
-      setEditingStaff(null)
+      setEditingStaff(null);
     }
-  }
+  };
 
   const handleOpenEditModal = (member) => {
     const staffCopy = {
@@ -145,21 +170,21 @@ export default function StaffView() {
       status: member.status || "Active",
       availability: member.availability || {},
       locationPreferences: member.locationPreferences || {},
-    }
-    setEditingStaff(staffCopy)
-    setIsAddModalOpen(true)
-  }
+    };
+    setEditingStaff(staffCopy);
+    setIsAddModalOpen(true);
+  };
 
   const handleArchiveStaff = async (staffId) => {
-    const member = staff.find((s) => s.id === staffId)
+    const member = staff.find((s) => s.id === staffId);
     if (!member) {
-      toast.error("Staff member not found")
-      return
+      toast.error("Staff member not found");
+      return;
     }
 
-    const newArchivedStatus = !member.archived
-    const newStatus = newArchivedStatus ? "Inactive" : "Active"
-    const action = newArchivedStatus ? "archived" : "restored"
+    const newArchivedStatus = !member.archived;
+    const newStatus = newArchivedStatus ? "Inactive" : "Active";
+    const action = newArchivedStatus ? "archived" : "restored";
 
     try {
       const response = await fetch(API_BASE_URL, {
@@ -172,59 +197,77 @@ export default function StaffView() {
           archived: newArchivedStatus,
           status: newStatus,
         }),
-      })
-      const result = await response.json()
+      });
+      const result = await response.json();
       if (result.success) {
-        toast.success(`Staff member ${member.fullName} ${action} successfully!`)
-        fetchStaff()
+        toast.success(
+          `Staff member ${member.fullName} ${action} successfully!`
+        );
+        fetchStaff();
       } else {
-        toast.error(`Failed to ${action} staff: ${result.message}`)
+        toast.error(`Failed to ${action} staff: ${result.message}`);
       }
     } catch (error) {
-      console.error(`Error ${action} staff:`, error)
-      toast.error(`Failed to ${action} staff member.`)
+      console.error(`Error ${action} staff:`, error);
+      toast.error(`Failed to ${action} staff member.`);
     }
-  }
+  };
 
   const getStatusColor = (status) => {
     switch (status) {
       case "Active":
-        return "bg-green-100 text-green-800"
+        return "bg-green-100 text-green-800";
       case "Inactive":
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
       case "On Leave":
-        return "bg-yellow-100 text-yellow-800"
+        return "bg-yellow-100 text-yellow-800";
       case "Terminated":
-        return "bg-red-100 text-red-800"
+        return "bg-red-100 text-red-800";
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
     }
-  }
+  };
 
   const getTypeColor = (type) => {
     switch (type) {
       case "BCBA":
-        return "bg-blue-100 text-blue-800"
+        return "bg-blue-100 text-blue-800";
       case "BCaBA":
-        return "bg-purple-100 text-purple-800"
+        return "bg-purple-100 text-purple-800";
       case "RBT":
-        return "bg-teal-100 text-teal-800"
+        return "bg-teal-100 text-teal-800";
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
     }
-  }
+  };
 
   const formatTimeForDisplay = (time24hr) => {
-    if (!time24hr) return "N/A"
-    const [hours, minutes] = time24hr.split(":").map(Number)
-    const ampm = hours >= 12 ? "PM" : "AM"
-    const formattedHours = hours % 12 === 0 ? 12 : hours % 12
-    return `${formattedHours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")} ${ampm}`
-  }
+    if (!time24hr) return "N/A";
+    const [hours, minutes] = time24hr.split(":").map(Number);
+    const ampm = hours >= 12 ? "PM" : "AM";
+    const formattedHours = hours % 12 === 0 ? 12 : hours % 12;
+    return `${formattedHours.toString().padStart(2, "0")}:${minutes
+      .toString()
+      .padStart(2, "0")} ${ampm}`;
+  };
 
   const toggleExpanded = (staffId) => {
-    setExpandedStaff((prev) => (prev === staffId ? null : staffId))
-  }
+    setExpandedStaff((prev) => (prev === staffId ? null : staffId));
+  };
+
+  // Helper function to map IDs to names
+  const mapIdsToNames = (
+    ids,
+    list,
+    idKey = "id",
+    nameFunc = (item) => item.fullName
+  ) => {
+    if (!ids || ids.length === 0) return [];
+    return ids.map((id) => {
+      const item = list.find((obj) => obj[idKey] === id);
+      return item ? nameFunc(item) : id; // Fallback to ID if not found
+    });
+  };
 
   return (
     <div className="space-y-8 px-2 sm:px-0 md:px-6">
@@ -232,8 +275,12 @@ export default function StaffView() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row lg:justify-between sm:justify-center sm:items-center">
         <div>
-          <h2 className="text-3xl font-bold text-slate-800">Staff Management</h2>
-          <p className="text-slate-600 mt-1">Manage staff profiles and information</p>
+          <h2 className="text-3xl font-bold text-slate-800">
+            Staff Management
+          </h2>
+          <p className="text-slate-600 mt-1">
+            Manage staff profiles and information
+          </p>
         </div>
         <div className="flex flex-row flex-wrap gap-2 sm:items-center sm:space-x-3 sm:justify-end">
           <Button
@@ -244,15 +291,21 @@ export default function StaffView() {
           >
             {showArchived ? (
               <>
-                <ArchiveRestore className="h-4 w-4 mr-2" /> Show Active ({activeStaffCount})
+                <ArchiveRestore className="h-4 w-4 mr-2" /> Show Active (
+                {activeStaffCount})
               </>
             ) : (
               <>
-                <Archive className="h-4 w-4 mr-2" /> Show Archived ({archivedStaffCount})
+                <Archive className="h-4 w-4 mr-2" /> Show Archived (
+                {archivedStaffCount})
               </>
             )}
           </Button>
-          <Button onClick={() => setIsAddModalOpen(true)} size="sm" className="bg-teal-600 hover:bg-teal-700 shadow-lg">
+          <Button
+            onClick={() => setIsAddModalOpen(true)}
+            size="sm"
+            className="bg-teal-600 hover:bg-teal-700 shadow-lg"
+          >
             <Plus className="h-4 w-4 mr-2" /> Add Staff
           </Button>
         </div>
@@ -301,9 +354,18 @@ export default function StaffView() {
       {/* Staff Table */}
       {isLoading ? (
         <div className="h-64 w-64 mx-auto">
-          <p className="text-center animate-pulse text-gray-500">Fetching staff</p>
+          <p className="text-center animate-pulse text-gray-500">
+            Fetching staff
+          </p>
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
-            <radialGradient id="a8" cx=".66" fx=".66" cy=".3125" fy=".3125" gradientTransform="scale(1.5)">
+            <radialGradient
+              id="a8"
+              cx=".66"
+              fx=".66"
+              cy=".3125"
+              fy=".3125"
+              gradientTransform="scale(1.5)"
+            >
               <stop offset="0" stopColor="#0C30FF" />
               <stop offset=".3" stopColor="#0C30FF" stopOpacity=".9" />
               <stop offset=".6" stopColor="#0C30FF" stopOpacity=".6" />
@@ -351,7 +413,8 @@ export default function StaffView() {
           <CardHeader className="pb-4">
             <CardTitle className="text-slate-800 flex items-center">
               <Users className="h-5 w-5 mr-2 text-teal-600" />
-              {showArchived ? "Archived" : "Active"} Staff ({filteredStaff?.length})
+              {showArchived ? "Archived" : "Active"} Staff (
+              {filteredStaff?.length})
             </CardTitle>
           </CardHeader>
           <CardContent className="p-0">
@@ -359,20 +422,33 @@ export default function StaffView() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50 border-b">
-                    <TableHead className="font-semibold text-slate-700">Staff Name</TableHead>
-                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">Staff ID</TableHead>
-                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">Status</TableHead>
-                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">Contact #</TableHead>
-                    <TableHead className="font-semibold text-slate-700 lg:text-center text-right">Actions</TableHead>
+                    <TableHead className="font-semibold text-slate-700">
+                      Staff Name
+                    </TableHead>
+                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                      Staff ID
+                    </TableHead>
+                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                      Status
+                    </TableHead>
+                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                      Contact #
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-700 lg:text-center text-right">
+                      Actions
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredStaff?.map((member) => {
-                    const isExpanded = expandedStaff === member.id
+                    const isExpanded = expandedStaff === member.id;
                     return (
                       <>
                         {/* Main Row */}
-                        <TableRow key={member.id} className="hover:bg-slate-50 transition-colors border-b">
+                        <TableRow
+                          key={member.id}
+                          className="hover:bg-slate-50 transition-colors border-b"
+                        >
                           <TableCell className="lg:px-4 sm:px-2 py-4">
                             <div className="flex items-center space-x-3">
                               <span className="hidden sm:inline-block">
@@ -381,12 +457,25 @@ export default function StaffView() {
                                 </div>
                               </span>
                               <div>
-                                <div className="font-semibold text-slate-800">{member.fullName}</div>
+                                <div className="font-semibold text-slate-800">
+                                  {member.fullName}
+                                </div>
                                 <div className="lg:visible sm:hidden flex flex-wrap gap-1 mt-1">
-                                  <Badge className={getTypeColor(member.staffType)}>{member.staffType}</Badge>
-                                  <Badge className={getStatusColor(member.status)}>{member.status}</Badge>
+                                  <Badge
+                                    className={getTypeColor(member.staffType)}
+                                  >
+                                    {member.staffType}
+                                  </Badge>
+                                  <Badge
+                                    className={getStatusColor(member.status)}
+                                  >
+                                    {member.status}
+                                  </Badge>
                                   {member.archived && (
-                                    <Badge variant="outline" className="border-amber-300 text-amber-700 text-xs">
+                                    <Badge
+                                      variant="outline"
+                                      className="border-amber-300 text-amber-700 text-xs"
+                                    >
                                       Archived
                                     </Badge>
                                   )}
@@ -395,10 +484,14 @@ export default function StaffView() {
                             </div>
                           </TableCell>
                           <TableCell className="py-4 hidden sm:table-cell">
-                            <span className="font-mono text-sm">{member.id}</span>
+                            <span className="font-mono text-sm">
+                              {member.id}
+                            </span>
                           </TableCell>
                           <TableCell className="hidden sm:table-cell py-4">
-                            <Badge className={getStatusColor(member.status)}>{member.status}</Badge>
+                            <Badge className={getStatusColor(member.status)}>
+                              {member.status}
+                            </Badge>
                           </TableCell>
                           <TableCell className="hidden sm:table-cell py-4">
                             <div className="text-sm">
@@ -449,22 +542,34 @@ export default function StaffView() {
                                     <MoreVertical className="h-3 w-3" />
                                   </Button>
                                 </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-48">
+                                <DropdownMenuContent
+                                  align="end"
+                                  className="w-48"
+                                >
                                   <DropdownMenuItem>
-                                    <Calendar className="h-4 w-4 mr-2" /> Schedule
+                                    <Calendar className="h-4 w-4 mr-2" />{" "}
+                                    Schedule
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem
-                                    onClick={() => handleArchiveStaff(member.id || "")}
-                                    className={member.archived ? "text-green-600" : "text-amber-600"}
+                                    onClick={() =>
+                                      handleArchiveStaff(member.id || "")
+                                    }
+                                    className={
+                                      member.archived
+                                        ? "text-green-600"
+                                        : "text-amber-600"
+                                    }
                                   >
                                     {member.archived ? (
                                       <>
-                                        <ArchiveRestore className="h-4 w-4 mr-2" /> Restore Staff
+                                        <ArchiveRestore className="h-4 w-4 mr-2" />{" "}
+                                        Restore Staff
                                       </>
                                     ) : (
                                       <>
-                                        <Archive className="h-4 w-4 mr-2" /> Archive Staff
+                                        <Archive className="h-4 w-4 mr-2" />{" "}
+                                        Archive Staff
                                       </>
                                     )}
                                   </DropdownMenuItem>
@@ -482,49 +587,86 @@ export default function StaffView() {
                                 <Card className="border-slate-200">
                                   <CardHeader className="pb-3">
                                     <CardTitle className="flex items-center gap-2 text-base">
-                                      <Users className="h-4 w-4 text-teal-600" /> Personal Information
+                                      <Users className="h-4 w-4 text-teal-600" />{" "}
+                                      Personal Information
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="space-y-3 text-sm">
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                       <div>
-                                        <p className="text-slate-500 mb-1">First Name</p>
-                                        <p className="font-medium">{member.firstName || "N/A"}</p>
+                                        <p className="text-slate-500 mb-1">
+                                          First Name
+                                        </p>
+                                        <p className="font-medium">
+                                          {member.firstName || "N/A"}
+                                        </p>
                                       </div>
                                       <div>
-                                        <p className="text-slate-500 mb-1">Last Name</p>
-                                        <p className="font-medium">{member.lastName || "N/A"}</p>
+                                        <p className="text-slate-500 mb-1">
+                                          Last Name
+                                        </p>
+                                        <p className="font-medium">
+                                          {member.lastName || "N/A"}
+                                        </p>
                                       </div>
                                       <div>
-                                        <p className="text-slate-500 mb-1">Email</p>
-                                        <p className="font-medium">{member.email || "N/A"}</p>
+                                        <p className="text-slate-500 mb-1">
+                                          Email
+                                        </p>
+                                        <p className="font-medium">
+                                          {member.email || "N/A"}
+                                        </p>
                                       </div>
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                       <div>
-                                        <p className="text-slate-500 mb-1">Phone</p>
-                                        <p className="font-medium">{member.phone || "N/A"}</p>
+                                        <p className="text-slate-500 mb-1">
+                                          Phone
+                                        </p>
+                                        <p className="font-medium">
+                                          {member.phone || "N/A"}
+                                        </p>
                                       </div>
                                       <div>
-                                        <p className="text-slate-500 mb-1">Date of Joining</p>
+                                        <p className="text-slate-500 mb-1">
+                                          Date of birth
+                                        </p>
+                                        <p className="font-medium">
+                                          {member.dob || "N/A"}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-slate-500 mb-1">
+                                          Date of Joining
+                                        </p>
                                         <p className="font-medium">
                                           {member.dateOfJoining
-                                            ? new Date(member.dateOfJoining).toLocaleDateString()
+                                            ? new Date(
+                                                member.dateOfJoining
+                                              ).toLocaleDateString()
                                             : "N/A"}
                                         </p>
                                       </div>
                                       <div>
-                                        <p className="text-slate-500 mb-1">Date of Leaving</p>
+                                        <p className="text-slate-500 mb-1">
+                                          Date of Leaving
+                                        </p>
                                         <p className="font-medium">
                                           {member.dateOfLeaving
-                                            ? new Date(member.dateOfLeaving).toLocaleDateString()
+                                            ? new Date(
+                                                member.dateOfLeaving
+                                              ).toLocaleDateString()
                                             : "N/A"}
                                         </p>
                                       </div>
                                     </div>
                                     <div>
-                                      <p className="text-slate-500 mb-1">Address</p>
-                                      <p className="font-medium">{member.address || "N/A"}</p>
+                                      <p className="text-slate-500 mb-1">
+                                        Address
+                                      </p>
+                                      <p className="font-medium">
+                                        {member.address || "N/A"}
+                                      </p>
                                     </div>
                                   </CardContent>
                                 </Card>
@@ -533,27 +675,96 @@ export default function StaffView() {
                                 <Card className="border-slate-200">
                                   <CardHeader className="pb-3">
                                     <CardTitle className="flex items-center gap-2 text-base">
-                                      <Users className="h-4 w-4 text-teal-600" /> Professional Information
+                                      <Users className="h-4 w-4 text-teal-600" />{" "}
+                                      Professional Information
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="space-y-3 text-sm">
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                       <div>
-                                        <p className="text-slate-500 mb-1">Staff Type</p>
-                                        <p className="font-medium">{member.staffType || "N/A"}</p>
+                                        <p className="text-slate-500 mb-1">
+                                          Staff Type
+                                        </p>
+                                        <p className="font-medium">
+                                          {member.staffType || "N/A"}
+                                        </p>
                                       </div>
                                       <div>
-                                        <p className="text-slate-500 mb-1">Certification #</p>
-                                        <p className="font-medium">{member.certificationNumber || "N/A"}</p>
+                                        <p className="text-slate-500 mb-1">
+                                          Certification #
+                                        </p>
+                                        <p className="font-medium">
+                                          {member.certificationNumber || "N/A"}
+                                        </p>
                                       </div>
                                       <div>
-                                        <p className="text-slate-500 mb-1">NPI Number</p>
-                                        <p className="font-medium">{member.npiNumber || "N/A"}</p>
+                                        <p className="text-slate-500 mb-1">
+                                          NPI Number
+                                        </p>
+                                        <p className="font-medium">
+                                          {member.npiNumber || "N/A"}
+                                        </p>
                                       </div>
                                     </div>
                                     <div>
-                                      <p className="text-slate-500 mb-1">Status</p>
-                                      <p className="font-medium">{member.status || "N/A"}</p>
+                                      <p className="text-slate-500 mb-1">
+                                        Status
+                                      </p>
+                                      <p className="font-medium">
+                                        {member.status || "N/A"}
+                                      </p>
+                                    </div>
+                                    <div>
+                                      <p className="text-slate-500 mb-1 font-semibold">
+                                        Assigned Staff
+                                      </p>
+                                      {member.assignedStaffNames &&
+                                      member.assignedStaffNames.length > 0 ? (
+                                        <div className="flex flex-wrap gap-2">
+                                          {member.assignedStaffNames.map(
+                                            (item, index) => (
+                                              <span
+                                                key={index}
+                                                className="inline-block bg-teal-100 text-teal-800 text-sm font-medium px-3 py-1 rounded-full shadow-sm hover:bg-teal-200 transition-colors"
+                                              >
+                                                {item.length > 20
+                                                  ? `${item.slice(0, 17)}...`
+                                                  : item}{" "}
+                                              </span>
+                                            )
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <p className="italic text-gray-500">
+                                          No assigned staff.
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div>
+                                      <p className="text-slate-500 mb-1 font-semibold">
+                                        Assigned Clients
+                                      </p>
+                                      {member.assignedClientNames &&
+                                      member.assignedClientNames.length > 0 ? (
+                                        <div className="flex flex-wrap gap-2">
+                                          {member.assignedClientNames.map(
+                                            (item, index) => (
+                                              <span
+                                                key={index}
+                                                className="inline-block bg-blue-100 text-blue-800 text-sm font-medium px-3 py-1 rounded-full shadow-sm hover:bg-blue-200 transition-colors"
+                                              >
+                                                {item.length > 20
+                                                  ? `${item.slice(0, 17)}...`
+                                                  : item}{" "}
+                                              </span>
+                                            )
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <p className="italic text-gray-500">
+                                          No assigned clients.
+                                        </p>
+                                      )}
                                     </div>
                                   </CardContent>
                                 </Card>
@@ -562,22 +773,46 @@ export default function StaffView() {
                                 <Card className="border-slate-200">
                                   <CardHeader className="pb-3">
                                     <CardTitle className="flex items-center gap-2 text-base">
-                                      <Clock className="h-4 w-4 mr-1" /> Timing Availability
+                                      <Clock className="h-4 w-4 text-teal-600" />{" "}
+                                      Availability
                                     </CardTitle>
                                   </CardHeader>
-                                  <CardContent className="space-y-3 text-sm">
-                                    {Object.entries(member.availability || {}).map(([day, schedule]) => (
-                                      <div key={day} className="flex justify-between items-center">
-                                        <p className="text-slate-500 font-medium capitalize">{day}</p>
-                                        <p className="font-medium">
-                                          {schedule.available
-                                            ? `${formatTimeForDisplay(schedule.start)} - ${formatTimeForDisplay(schedule.end)}`
-                                            : "Not Available"}
-                                        </p>
-                                      </div>
-                                    ))}
-                                    {Object.keys(member.availability || {}).length === 0 && (
-                                      <p className="text-slate-500 italic">No availability information.</p>
+                                  <CardContent>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                                      {Object.entries(
+                                        member.availability || {}
+                                      ).map(([day, schedule]) => (
+                                        <div
+                                          key={day}
+                                          className="border rounded-lg p-3 bg-slate-50"
+                                        >
+                                          <h4 className="font-semibold mb-2 capitalize">
+                                            {day}
+                                          </h4>
+                                          {schedule.available ? (
+                                            <p className="text-green-600">
+                                              Available:{" "}
+                                              {formatTimeForDisplay(
+                                                schedule.start
+                                              )}{" "}
+                                              -{" "}
+                                              {formatTimeForDisplay(
+                                                schedule.end
+                                              )}
+                                            </p>
+                                          ) : (
+                                            <p className="text-gray-500">
+                                              Not Available
+                                            </p>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                    {Object.keys(member.availability || {})
+                                      .length === 0 && (
+                                      <p className="text-slate-500 italic">
+                                        No availability information.
+                                      </p>
                                     )}
                                   </CardContent>
                                 </Card>
@@ -586,26 +821,42 @@ export default function StaffView() {
                                 <Card className="border-slate-200">
                                   <CardHeader className="pb-3">
                                     <CardTitle className="flex items-center gap-2 text-base">
-                                      <MapPin className="h-4 w-4 mr-1" /> Location Preferences
+                                      <MapPin className="h-4 w-4 mr-1" />{" "}
+                                      Location Preferences
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="space-y-3 text-sm">
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                      {Object.entries(member.locationPreferences || {}).map(([location, available]) => (
-                                        <div key={location} className="flex items-center gap-2">
-                                          <span className="text-slate-500 capitalize">{location}:</span>
+                                      {Object.entries(
+                                        member.locationPreferences || {}
+                                      ).map(([location, available]) => (
+                                        <div
+                                          key={location}
+                                          className="flex items-center gap-2"
+                                        >
+                                          <span className="text-slate-500 capitalize">
+                                            {location}:
+                                          </span>
                                           <Badge
                                             variant="outline"
                                             className={
-                                              available ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                                              available
+                                                ? "bg-green-100 text-green-800"
+                                                : "bg-red-100 text-red-800"
                                             }
                                           >
-                                            {available ? "Preferred" : "Not Preferred"}
+                                            {available
+                                              ? "Preferred"
+                                              : "Not Preferred"}
                                           </Badge>
                                         </div>
                                       ))}
-                                      {Object.keys(member.locationPreferences || {}).length === 0 && (
-                                        <p className="text-slate-500 italic">No location preferences.</p>
+                                      {Object.keys(
+                                        member.locationPreferences || {}
+                                      ).length === 0 && (
+                                        <p className="text-slate-500 italic">
+                                          No location preferences.
+                                        </p>
                                       )}
                                     </div>
                                   </CardContent>
@@ -615,7 +866,7 @@ export default function StaffView() {
                           </TableRow>
                         )}
                       </>
-                    )
+                    );
                   })}
                 </TableBody>
               </Table>
@@ -623,7 +874,9 @@ export default function StaffView() {
                 <div className="text-center py-12">
                   <Users className="h-12 w-12 text-slate-400 mx-auto mb-4" />
                   <p className="text-slate-500">
-                    {showArchived ? "No archived staff found." : "No staff found matching your criteria."}
+                    {showArchived
+                      ? "No archived staff found."
+                      : "No staff found matching your criteria."}
                   </p>
                 </div>
               )}
@@ -636,12 +889,13 @@ export default function StaffView() {
       <AddStaffModal
         isOpen={isAddModalOpen}
         onClose={() => {
-          setIsAddModalOpen(false)
-          setEditingStaff(null)
+          setIsAddModalOpen(false);
+          setEditingStaff(null);
         }}
         onSave={editingStaff ? handleEditStaff : handleAddStaff}
         editingStaff={editingStaff}
+        existingStaffs={staff}
       />
     </div>
-  )
+  );
 }

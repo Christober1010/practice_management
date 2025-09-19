@@ -1,4 +1,15 @@
 <?php
+// Enable error reporting for debugging
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
+// Add CORS headers - MUST be at the top before any other output
+header("Access-Control-Allow-Origin: *"); // Allow requests from any origin (for development)
+header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
+header("Content-Type: application/json");
+
 require_once 'db.php'; // Include the database connection file
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -26,7 +37,8 @@ switch ($method) {
         break;
 }
 
-function handleGetStaff($conn) {
+function handleGetStaff($conn)
+{
     $id = $_GET['id'] ?? null;
     $showArchived = isset($_GET['showArchived']) && $_GET['showArchived'] === 'true';
 
@@ -56,7 +68,8 @@ function handleGetStaff($conn) {
     $stmt->close();
 }
 
-function handleAddStaff($conn) {
+function handleAddStaff($conn)
+{
     $data = json_decode(file_get_contents("php://input"), true);
 
     if (!isset($data['firstName'], $data['lastName'], $data['staffType'], $data['certificationNumber'], $data['email'], $data['dateOfJoining'])) {
@@ -107,10 +120,22 @@ function handleAddStaff($conn) {
     $sql = "INSERT INTO staff (id, firstName, lastName, fullName, staffType, certificationNumber, npiNumber, address, email, phone, dateOfJoining, dateOfLeaving, status, availability, locationPreferences, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), ?)";
     $stmt = $conn->prepare($sql);
     // Correct bind_param string: 13 's' for initial fields, 2 's' for JSON, 1 'i' for archived
-    $stmt->bind_param("sssssssssssssssi",
-        $id, $data['firstName'], $data['lastName'], $fullName, $data['staffType'],
-        $data['certificationNumber'], $npiNumber, $address, $data['email'], $phone,
-        $data['dateOfJoining'], $dateOfLeaving, $status, $availability_json, // Use the encoded JSON string
+    $stmt->bind_param(
+        "sssssssssssssssi",
+        $id,
+        $data['firstName'],
+        $data['lastName'],
+        $fullName,
+        $data['staffType'],
+        $data['certificationNumber'],
+        $npiNumber,
+        $address,
+        $data['email'],
+        $phone,
+        $data['dateOfJoining'],
+        $dateOfLeaving,
+        $status,
+        $availability_json, // Use the encoded JSON string
         $locationPreferences_json, // Use the encoded JSON string
         $archived
     );
@@ -124,7 +149,8 @@ function handleAddStaff($conn) {
     $stmt->close();
 }
 
-function handleUpdateStaff($conn) {
+function handleUpdateStaff($conn)
+{
     $data = json_decode(file_get_contents("php://input"), true);
 
     if (!isset($data['id'], $data['firstName'], $data['lastName'], $data['staffType'], $data['certificationNumber'], $data['email'], $data['dateOfJoining'])) {
@@ -229,12 +255,24 @@ function handleUpdateStaff($conn) {
     $sql = "UPDATE staff SET firstName=?, lastName=?, fullName=?, staffType=?, certificationNumber=?, npiNumber=?, address=?, email=?, phone=?, dateOfJoining=?, dateOfLeaving=?, status=?, availability=CAST(? AS JSON), locationPreferences=CAST(? AS JSON), archived=? WHERE id=?";
     $stmt = $conn->prepare($sql);
     // Correct bind_param string: 12 's' for initial fields, 2 's' for JSON, 1 'i' for archived, 1 's' for WHERE id
-    $stmt->bind_param("ssssssssssssssis",
-        $data['firstName'], $data['lastName'], $fullName, $data['staffType'],
-        $data['certificationNumber'], $npiNumber, $address, $newEmail, $phone,
-        $data['dateOfJoining'], $dateOfLeaving, $status, $availability_json,
+    $stmt->bind_param(
+        "ssssssssssssssis",
+        $data['firstName'],
+        $data['lastName'],
+        $fullName,
+        $data['staffType'],
+        $data['certificationNumber'],
+        $npiNumber,
+        $address,
+        $newEmail,
+        $phone,
+        $data['dateOfJoining'],
+        $dateOfLeaving,
+        $status,
+        $availability_json,
         $locationPreferences_json,
-        $archived, $id
+        $archived,
+        $id
     );
 
     if ($stmt->execute()) {
@@ -246,7 +284,8 @@ function handleUpdateStaff($conn) {
     $stmt->close();
 }
 
-function handleArchiveStaff($conn) {
+function handleArchiveStaff($conn)
+{
     $data = json_decode(file_get_contents("php://input"), true); // For DELETE with body
     $id = $data['id'] ?? $_GET['id'] ?? null;
     $archived_status = $data['archived'] ?? null; // Expecting true/false for archive/restore
@@ -276,4 +315,3 @@ function handleArchiveStaff($conn) {
 }
 
 $conn->close();
-?>

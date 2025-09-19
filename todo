@@ -1,5 +1,21 @@
-Forgot password needs to be set= todo
-no field to enter Authorization number= fixed
-View form display provider id and supervising provider id, 
-need to show name instead
-Date and time is blank when try to edit a session-
+Update and cancel appears to fn in backend but UI shows no message and screen stays open .. 
+after action we can close the screen and back to schedule screen.
+
+Email Subject: ABA Therapy Session Scheduled - Mahaverse
+Bro, one condition needs to be added for sending emails, 
+for Rbt session lets send it to Bcba on all crud opn.
+
+1. Deploy scheduling to prod 
+2. Email send to client need to validate preferences in client master 
+3. Client - Availability 
+4. Staff adding additional columns (refer excel) 
+5. Scheduling  add columns (refer excel).
+
+
+
+Done:
+
+Email fix
+update nd cancel working in sessions
+Email send to client need to validate preferences in client master
+Email Subject: ABA Therapy Session Scheduled - Mahaverse

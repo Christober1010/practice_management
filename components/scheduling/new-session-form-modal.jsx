@@ -52,7 +52,7 @@ const initialForm = {
   provider: "",
   providerName: "",
   supervisingProvider: "",
-  supervisingProviderName:"",
+  supervisingProviderName: "",
   recurring: "No",
   repeatFrequency: "Daily",
   repeatOn: [], // For weekly repeats: 'S', 'M', 'T', 'W', 'T', 'F', 'S'
@@ -464,19 +464,19 @@ export default function NewSessionFormModal({
       locationAddress: form.locationAddress,
       quickNote: form.quickNote,
       status: "upcoming",
-      // recurring: {
-      //   frequency: form.recurring === "Repeats" ? form.repeatFrequency : "No",
-      //   days: form.repeatFrequency === "Weekly" ? form.repeatOn : [],
-      //   ends: {
-      //     type: form.recurring === "Repeats" ? form.ends : "Never",
-      //     date: form.ends === "On" ? form.endDate : null,
-      //     occurrences:
-      //       form.ends === "After"
-      //         ? parseInt(form.endAfterOccurrences, 10)
-      //         : null,
-      //   },
-      // },
-      recurring:"No"
+      recurring: {
+        frequency: form.recurring === "Repeats" ? form.repeatFrequency : "No",
+        days: form.repeatFrequency === "Weekly" ? form.repeatOn : [],
+        ends: {
+          type: form.recurring === "Repeats" ? form.ends : "Never",
+          date: form.ends === "On" ? form.endDate : null,
+          occurrences:
+            form.ends === "After"
+              ? Number.parseInt(form.endAfterOccurrences, 10)
+              : null,
+        },
+      },
+      // recurring:"No"
     };
 
     if (form.supervisingProvider) {
@@ -689,7 +689,7 @@ export default function NewSessionFormModal({
                     )}
                   </div>
                   {/* Commenting this for prod */}
-                  {/* <Card className="bg-slate-50/50">
+                  <Card className="bg-slate-50/50">
                     <CardHeader className="pb-4">
                       <CardTitle className="flex items-center gap-2 text-base">
                         <Repeat className="h-5 w-5 text-teal-600" />
@@ -820,7 +820,7 @@ export default function NewSessionFormModal({
                         </div>
                       )}
                     </CardContent>
-                  </Card> */}
+                  </Card>
 
                   {renderSelectWithError(
                     "authCode",
