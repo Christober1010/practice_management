@@ -96,6 +96,7 @@ const initialClientState = {
   preferred_language: "",
   client_status: "New",
   wait_list_status: "No",
+  location:"",
 
   // Contact
   phone: "",
@@ -242,19 +243,23 @@ export default function AddClientModal({
         mondayAvailable: editingClient.availability?.monday?.available || false,
         mondayStart: editingClient.availability?.monday?.start || "",
         mondayEnd: editingClient.availability?.monday?.end || "",
-        tuesdayAvailable: editingClient.availability?.tuesday?.available || false,
+        tuesdayAvailable:
+          editingClient.availability?.tuesday?.available || false,
         tuesdayStart: editingClient.availability?.tuesday?.start || "",
         tuesdayEnd: editingClient.availability?.tuesday?.end || "",
-        wednesdayAvailable: editingClient.availability?.wednesday?.available || false,
+        wednesdayAvailable:
+          editingClient.availability?.wednesday?.available || false,
         wednesdayStart: editingClient.availability?.wednesday?.start || "",
         wednesdayEnd: editingClient.availability?.wednesday?.end || "",
-        thursdayAvailable: editingClient.availability?.thursday?.available || false,
+        thursdayAvailable:
+          editingClient.availability?.thursday?.available || false,
         thursdayStart: editingClient.availability?.thursday?.start || "",
         thursdayEnd: editingClient.availability?.thursday?.end || "",
         fridayAvailable: editingClient.availability?.friday?.available || false,
         fridayStart: editingClient.availability?.friday?.start || "",
         fridayEnd: editingClient.availability?.friday?.end || "",
-        saturdayAvailable: editingClient.availability?.saturday?.available || false,
+        saturdayAvailable:
+          editingClient.availability?.saturday?.available || false,
         saturdayStart: editingClient.availability?.saturday?.start || "",
         saturdayEnd: editingClient.availability?.saturday?.end || "",
         sundayAvailable: editingClient.availability?.sunday?.available || false,
@@ -686,7 +691,15 @@ export default function AddClientModal({
         break;
 
       case "availability":
-        const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+        const days = [
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday",
+          "saturday",
+          "sunday",
+        ];
         days.forEach((day) => {
           if (formData[`${day}Available`]) {
             if (!formData[`${day}Start`].trim()) {
@@ -697,8 +710,13 @@ export default function AddClientModal({
               currentTabErrors[`${day}End`] = "Missing Required Entry";
               hasErrors = true;
             }
-            if (formData[`${day}Start`] && formData[`${day}End`] && formData[`${day}Start`] >= formData[`${day}End`]) {
-              currentTabErrors[`${day}End`] = "End time must be after start time";
+            if (
+              formData[`${day}Start`] &&
+              formData[`${day}End`] &&
+              formData[`${day}Start`] >= formData[`${day}End`]
+            ) {
+              currentTabErrors[`${day}End`] =
+                "End time must be after start time";
               hasErrors = true;
             }
           }
@@ -851,12 +869,17 @@ export default function AddClientModal({
   );
 
   const renderDayAvailability = (day, dayLabel) => (
-    <div key={day} className="flex items-center space-x-4 p-3 border border-slate-200 rounded-lg">
+    <div
+      key={day}
+      className="flex items-center space-x-4 p-3 border border-slate-200 rounded-lg"
+    >
       <div className="flex items-center space-x-2 min-w-[100px]">
         <Checkbox
           id={`${day}Available`}
           checked={formData[`${day}Available`]}
-          onCheckedChange={(checked) => handleInputChange(`${day}Available`, checked)}
+          onCheckedChange={(checked) =>
+            handleInputChange(`${day}Available`, checked)
+          }
         />
         <Label htmlFor={`${day}Available`} className="font-medium">
           {dayLabel}
@@ -865,10 +888,18 @@ export default function AddClientModal({
       {formData[`${day}Available`] && (
         <div className="flex items-center space-x-2">
           <div>
-            <Select value={formData[`${day}Start`]} onValueChange={(value) => handleInputChange(`${day}Start`, value)}>
-              <SelectTrigger className={`w-32 ${errors[`${day}Start`] ? "border-red-500" : ""}`}>
+            <Select
+              value={formData[`${day}Start`]}
+              onValueChange={(value) => handleInputChange(`${day}Start`, value)}
+            >
+              <SelectTrigger
+                className={`w-32 ${
+                  errors[`${day}Start`] ? "border-red-500" : ""
+                }`}
+              >
                 <SelectValue placeholder="Start Time">
-                  {formatTimeForDropdown(formData[`${day}Start`]) || "Start Time"}
+                  {formatTimeForDropdown(formData[`${day}Start`]) ||
+                    "Start Time"}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -879,12 +910,23 @@ export default function AddClientModal({
                 ))}
               </SelectContent>
             </Select>
-            {errors[`${day}Start`] && <p className="text-red-500 text-xs mt-1">{errors[`${day}Start`]}</p>}
+            {errors[`${day}Start`] && (
+              <p className="text-red-500 text-xs mt-1">
+                {errors[`${day}Start`]}
+              </p>
+            )}
           </div>
           <span className="text-slate-500">to</span>
           <div>
-            <Select value={formData[`${day}End`]} onValueChange={(value) => handleInputChange(`${day}End`, value)}>
-              <SelectTrigger className={`w-32 ${errors[`${day}End`] ? "border-red-500" : ""}`}>
+            <Select
+              value={formData[`${day}End`]}
+              onValueChange={(value) => handleInputChange(`${day}End`, value)}
+            >
+              <SelectTrigger
+                className={`w-32 ${
+                  errors[`${day}End`] ? "border-red-500" : ""
+                }`}
+              >
                 <SelectValue placeholder="End Time">
                   {formatTimeForDropdown(formData[`${day}End`]) || "End Time"}
                 </SelectValue>
@@ -897,7 +939,9 @@ export default function AddClientModal({
                 ))}
               </SelectContent>
             </Select>
-            {errors[`${day}End`] && <p className="text-red-500 text-xs mt-1">{errors[`${day}End`]}</p>}
+            {errors[`${day}End`] && (
+              <p className="text-red-500 text-xs mt-1">{errors[`${day}End`]}</p>
+            )}
           </div>
         </div>
       )}
@@ -1096,6 +1140,16 @@ export default function AddClientModal({
                         <SelectItem value="No">No</SelectItem>
                       </>,
                       "Select wait list status"
+                    )}
+                  </div>
+                  <div>
+                    {renderInputWithError(
+                      "location",
+                      "Location",
+                      formData.location,
+                      (e) =>
+                        handleInputChange("location", e.target.value),
+                      { placeholder: "Enter your location" }
                     )}
                   </div>
                 </CardContent>
@@ -1833,7 +1887,8 @@ export default function AddClientModal({
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Clock className="h-5 w-5 text-teal-600" /> Timing Availability
+                    <Clock className="h-5 w-5 text-teal-600" /> Timing
+                    Availability
                     <Badge variant="secondary" className="ml-2">
                       Optional
                     </Badge>

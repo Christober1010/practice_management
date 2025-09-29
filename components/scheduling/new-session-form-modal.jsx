@@ -24,6 +24,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import toast from "react-hot-toast";
 import { Users, Clock, FileText, Repeat } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useDispatch, useSelector } from "react-redux";
+import { fetchClients } from "@/app/store/clientSlice";
 
 // --- Constants ---
 const TIME_ZONES = [
@@ -150,7 +152,6 @@ export default function NewSessionFormModal({
   onSave,
   editingSession = null,
   selectedDate = null,
-  clients = [],
 }) {
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
@@ -158,6 +159,12 @@ export default function NewSessionFormModal({
   const [staff, setStaff] = useState([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [userTimezone, setUserTimezone] = useState("");
+  const dispatch = useDispatch();
+
+  useEffect(() => {
+    dispatch(fetchClients());
+  }, [dispatch]);
+  const clients = useSelector((state) => state.clients?.items || []);
 
   const selectedProvider = staff.find((s) => s.id === form.provider);
   const isSupervisionRequired = ["rbt", "bt"].includes(
@@ -623,30 +630,48 @@ export default function NewSessionFormModal({
                       "Select provider"
                     )}
                   </div>
+                  {renderSelectWithError(
+                    "supervisingProvider",
+                    `Supervising Provider`,
+                    form.supervisingProvider,
+                    (id) => {
+                      const selected = staff.find((s) => s.id === id);
+                      setField("supervisingProvider", id);
+                      setField(
+                        "supervisingProviderName",
+                        selected ? selected.fullName : ""
+                      );
+                    },
+                    (() => {
+                      // Simple filter: All other active staff excluding the selected provider
+                      const availableSupervisors = staff.filter(
+                        (s) =>
+                          s.id !== form.provider &&
+                          s.status === "Active" &&
+                          s.archived !== "1"
+                      );
 
-                  {isSupervisionRequired &&
-                    renderSelectWithError(
-                      "supervisingProvider",
-                      "Supervising Provider *",
-                      form.supervisingProvider, // still keeps the ID
-                      (id) => {
-                        const selected = staff.find((s) => s.id === id);
-                        setField("supervisingProvider", id); // store ID
-                        setField(
-                          "supervisingProviderName",
-                          selected ? selected.fullName : ""
-                        ); // store Name
-                      },
-                      staff
-                        .filter((s) => s.id !== form.provider) // exclude selected provider
-                        .map((s) => (
-                          <SelectItem key={s.id} value={s.id}>
-                            {s.fullName} ({s.staffType})
-                          </SelectItem>
-                        )),
-                      "Select supervising provider"
-                    )}
+                      // If no options, show a message
+                      if (availableSupervisors.length === 0) {
+                        return [
+                          <SelectItem
+                            key="not-available"
+                            value="not-available"
+                            disabled
+                          >
+                            No other staff available
+                          </SelectItem>,
+                        ];
+                      }
 
+                      return availableSupervisors.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.fullName} ({s.staffType})
+                        </SelectItem>
+                      ));
+                    })(),
+                    "Select supervising provider"
+                  )}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {renderInputWithError(
                       "startDateTime",

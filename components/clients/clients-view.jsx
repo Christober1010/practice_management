@@ -583,6 +583,14 @@ export default function ClientsView() {
                                           {client.last_name || "N/A"}
                                         </p>
                                       </div>
+                                      <div>
+                                        <p className="text-slate-500 mb-1">
+                                          Gender
+                                        </p>
+                                        <p className="font-medium">
+                                          {client.gender || "N/A"}
+                                        </p>
+                                      </div>
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                                       <div>
@@ -602,20 +610,21 @@ export default function ClientsView() {
                                           years
                                         </p>
                                       </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Gender
-                                        </p>
-                                        <p className="font-medium">
-                                          {client.gender || "N/A"}
-                                        </p>
-                                      </div>
+                                      
                                       <div>
                                         <p className="text-slate-500 mb-1">
                                           Preferred Language
                                         </p>
                                         <p className="font-medium">
                                           {client.preferred_language || "N/A"}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-slate-500 mb-1">
+                                          Location
+                                        </p>
+                                        <p className="font-medium">
+                                          {client.location || "N/A"}
                                         </p>
                                       </div>
                                     </div>

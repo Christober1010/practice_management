@@ -11,6 +11,8 @@ import {
   Settings,
   LogOut,
   UserCheck,
+  Users2,
+  UserCog,
 } from "lucide-react";
 import {
   Sidebar,
@@ -110,7 +112,7 @@ export default function AppSidebar({
           label: "Staff",
           icon: UserCheck,
           color: "text-orange-600",
-        },
+        }
         // {
         //   id: "billing",
         //   label: "Billing",
@@ -137,6 +139,34 @@ export default function AppSidebar({
         // },
       ];
     }
+    if (userRole.role === "admin") {
+      return [
+        {
+          id: "scheduling",
+          label: "Scheduling",
+          icon: Calendar,
+          color: "text-blue-600",
+        },
+        {
+          id: "clients",
+          label: "Clients",
+          icon: Users,
+          color: "text-indigo-600",
+        },
+        {
+          id: "staff",
+          label: "Staff",
+          icon: UserCheck,
+          color: "text-orange-600",
+        },
+        {
+          id: "users",
+          label: "Users",
+          icon: UserCog,
+          color: "text-orange-600",
+        },
+      ];
+    }
 
     return baseItems;
   };
@@ -155,7 +185,6 @@ export default function AppSidebar({
         return "bg-teal-600";
     }
   };
-  
 
   return (
     <Sidebar

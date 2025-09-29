@@ -48,6 +48,16 @@ import { fetchClients } from "@/app/store/clientSlice";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
 
 const API_BASE_URL = `${process.env.NEXT_PUBLIC_BASE_URL}/staff.php`;
+// Helper function (add this near the top of your component)
+const formatDate = (dateStr) => {
+  if (!dateStr) return "N/A";
+  const [year, month, day] = dateStr.split("-");
+  if (year === "0000" && month === "00" && day === "00") {
+    return "N/A";
+  }
+  return `${month}/${day}/${year}`; // Outputs MM/DD/YYYY - customize as needed
+};
+
 
 export default function StaffView() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -121,6 +131,7 @@ export default function StaffView() {
       if (result.success) {
         toast.success("Staff added successfully!");
         fetchStaff();
+        setIsAddModalOpen(false);
       } else {
         toast.error(`Failed to add staff: ${result.message}`);
       }
@@ -143,6 +154,8 @@ export default function StaffView() {
       if (result.success) {
         toast.success("Staff updated successfully!");
         fetchStaff();
+        setEditingStaff(null);
+        setIsAddModalOpen(false);
       } else {
         toast.error(`Failed to update staff: ${result.message}`);
       }
@@ -432,7 +445,7 @@ export default function StaffView() {
                       Status
                     </TableHead>
                     <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
-                      Contact #
+                      Contact
                     </TableHead>
                     <TableHead className="font-semibold text-slate-700 lg:text-center text-right">
                       Actions
@@ -640,33 +653,35 @@ export default function StaffView() {
                                           Date of Joining
                                         </p>
                                         <p className="font-medium">
-                                          {member.dateOfJoining
-                                            ? new Date(
-                                                member.dateOfJoining
-                                              ).toLocaleDateString()
-                                            : "N/A"}
+                                          {formatDate(member.dateOfJoining)}
                                         </p>
                                       </div>
+
                                       <div>
                                         <p className="text-slate-500 mb-1">
                                           Date of Leaving
                                         </p>
                                         <p className="font-medium">
-                                          {member.dateOfLeaving
-                                            ? new Date(
-                                                member.dateOfLeaving
-                                              ).toLocaleDateString()
-                                            : "N/A"}
+                                          {formatDate(member.dateOfLeaving)}
                                         </p>
                                       </div>
-                                    </div>
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Address
-                                      </p>
-                                      <p className="font-medium">
-                                        {member.address || "N/A"}
-                                      </p>
+
+                                      <div>
+                                        <p className="text-slate-500 mb-1">
+                                          Address
+                                        </p>
+                                        <p className="font-medium">
+                                          {member.address || "N/A"}
+                                        </p>
+                                      </div>
+                                      <div>
+                                        <p className="text-slate-500 mb-1">
+                                          Location
+                                        </p>
+                                        <p className="font-medium">
+                                          {member.location || "N/A"}
+                                        </p>
+                                      </div>
                                     </div>
                                   </CardContent>
                                 </Card>

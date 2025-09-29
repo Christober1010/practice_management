@@ -34,7 +34,16 @@ import {
   CommandInput,
   CommandItem,
 } from "@/components/ui/command";
-import { Users, MapPin, Clock, FileText, Check, ChevronDown } from "lucide-react";
+import {
+  Users,
+  MapPin,
+  Clock,
+  FileText,
+  Check,
+  ChevronDown,
+  CheckCircle,
+  CheckIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils"; // Ensure you have this utility (from Shadcn/UI)
 import { fetchClients } from "@/app/store/clientSlice";
 
@@ -45,6 +54,7 @@ const initialStaffState = {
   email: "",
   phone: "",
   address: "",
+  location: "",
   // Professional Information
   staffType: "RBT",
   certificationNumber: "",
@@ -132,9 +142,7 @@ const MultiSelect = ({ options, selected, onChange, placeholder }) => {
           aria-expanded={open}
           className="w-full justify-between"
         >
-          {selected.length > 0
-            ? `${selected.length} selected`
-            : placeholder}
+          {selected.length > 0 ? `${selected.length} selected` : placeholder}
           <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -148,10 +156,12 @@ const MultiSelect = ({ options, selected, onChange, placeholder }) => {
                 key={option.value}
                 onSelect={() => handleSelect(option.value)}
               >
-                <Check
+                <CheckIcon
                   className={cn(
                     "mr-2 h-4 w-4",
-                    selected.includes(option.value) ? "opacity-100" : "opacity-0"
+                    selected.includes(option.value)
+                      ? "opacity-100"
+                      : "opacity-0"
                   )}
                 />
                 {option.label}
@@ -290,6 +300,8 @@ export default function AddStaffModal({
       fullName: `${formData.firstName.trim()} ${formData.lastName.trim()}`,
       availability,
       locationPreferences,
+      dateOfJoining: formData.dateOfJoining || "", // Raw string, e.g., "2025-09-29"
+      dateOfLeaving: formData.dateOfLeaving || "",
     };
 
     // Remove flattened fields before sending
@@ -694,6 +706,12 @@ export default function AddStaffModal({
                     (e) => handleInputChange("dob", e.target.value),
                     { type: "date" }
                   )}
+                  {renderInputWithError(
+                    "location",
+                    "Location",
+                    formData.location,
+                    (e) => handleInputChange("location", e.target.value)
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -789,7 +807,7 @@ export default function AddStaffModal({
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label>Assigned Staff</Label>
+                      <Label>Assigned Supervisor</Label>
                       <MultiSelect
                         options={existingStaffs.map((staff) => ({
                           value: staff.id,
@@ -799,7 +817,7 @@ export default function AddStaffModal({
                         onChange={(newSelected) =>
                           handleInputChange("assignedStaff", newSelected)
                         }
-                        placeholder="Select staff"
+                        placeholder="Select staffs"
                       />
                     </div>
                     <div>

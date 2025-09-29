@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import {
   Heart,
@@ -10,20 +10,20 @@ import {
   Baby,
   Settings,
   LogOut,
-} from "lucide-react"
-import { Button } from "@/components/ui/button"
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
 
-export default function Sidebar({ userRole, currentView, setCurrentView }) {
+export default function Sidebar({ userRole, currentView, setCurrentView, isOpen, onClose }) {
   const getMenuItems = () => {
     const baseItems = [
       { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, color: "text-teal-600" },
       { id: "scheduling", label: "Scheduling", icon: Calendar, color: "text-blue-600" },
       { id: "clients", label: "Clients", icon: Users, color: "text-indigo-600" },
       { id: "sessions", label: "Sessions", icon: FileText, color: "text-purple-600" },
-    ]
+    ];
 
     if (userRole === "admin" || userRole === "bcba") {
-      baseItems.push({ id: "billing", label: "Billing", icon: CreditCard, color: "text-emerald-600" })
+      baseItems.push({ id: "billing", label: "Billing", icon: CreditCard, color: "text-emerald-600" });
     }
 
     if (userRole === "parent") {
@@ -31,29 +31,35 @@ export default function Sidebar({ userRole, currentView, setCurrentView }) {
         { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, color: "text-teal-600" },
         { id: "portal", label: "My Child", icon: Baby, color: "text-pink-600" },
         { id: "billing", label: "Billing", icon: CreditCard, color: "text-emerald-600" },
-      ]
+      ];
     }
 
-    return baseItems
-  }
+    return baseItems;
+  };
 
   const getRoleColor = () => {
     switch (userRole) {
       case "admin":
-        return "bg-teal-600"
+        return "bg-teal-600";
       case "bcba":
-        return "bg-blue-600"
+        return "bg-blue-600";
       case "rbt":
-        return "bg-indigo-600"
+        return "bg-indigo-600";
       case "parent":
-        return "bg-emerald-600"
+        return "bg-emerald-600";
       default:
-        return "bg-teal-600"
+        return "bg-teal-600";
     }
-  }
+  };
+
+  // Close drawer on menu item click (for mobile)
+  const handleMenuClick = (id) => {
+    setCurrentView(id);
+    if (onClose) onClose();  // Call parent-provided close handler
+  };
 
   return (
-    <div className="fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-xl border-r border-slate-200 lg:block hidden">
+    <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-xl border-r border-slate-200 transform transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:inset-0`}>
       {/* Logo Header */}
       <div className="flex h-16 items-center px-6 border-b border-slate-200 bg-slate-50">
         <div className="flex items-center space-x-3">
@@ -71,13 +77,13 @@ export default function Sidebar({ userRole, currentView, setCurrentView }) {
       <nav className="mt-6 px-4">
         <div className="space-y-2">
           {getMenuItems().map((item) => {
-            const Icon = item.icon
-            const isActive = currentView === item.id
+            const Icon = item.icon;
+            const isActive = currentView === item.id;
 
             return (
               <button
                 key={item.id}
-                onClick={() => setCurrentView(item.id)}
+                onClick={() => handleMenuClick(item.id)}
                 className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
                   isActive
                     ? "bg-teal-50 text-teal-700 border-r-4 border-teal-600 shadow-sm"
@@ -87,7 +93,7 @@ export default function Sidebar({ userRole, currentView, setCurrentView }) {
                 <Icon className={`mr-3 h-5 w-5 ${isActive ? "text-teal-600" : item.color}`} />
                 {item.label}
               </button>
-            )
+            );
           })}
         </div>
 
@@ -104,5 +110,5 @@ export default function Sidebar({ userRole, currentView, setCurrentView }) {
         </div>
       </nav>
     </div>
-  )
+  );
 }

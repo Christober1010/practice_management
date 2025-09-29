@@ -12,6 +12,7 @@ import SessionsView from "@/components/sessions/sessions-view";
 import BillingView from "@/components/billing/billing-view";
 import ParentPortal from "@/components/portal/parent-portal";
 import StaffView from "@/components/staff/staff-view";
+import UsersView from "@/components/users/users-view";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import AppSidebar from "@/components/layout/app-sidebar";
 
@@ -45,6 +46,8 @@ export default function DashboardLayout({ userRole, onLogout }) {
         return <BillingView />;
       case "portal":
         return <ParentPortal />;
+      case "users":
+        return <UsersView />;
       default:
         return <AdminDashboard />;
     }
@@ -58,7 +61,7 @@ export default function DashboardLayout({ userRole, onLogout }) {
         onLogout={onLogout}
       />
       <div className="w-full bg-gray-50 ">
-        <Header userRole={userRole} onLogout={onLogout}/>
+        <Header userRole={userRole} onLogout={onLogout} />
         <main className="p-6 bg-white">{renderContent()}</main>
       </div>
     </SidebarProvider>
