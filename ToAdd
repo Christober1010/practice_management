@@ -1,17 +1,4 @@
-Schedule:
+* Focus on Day view in schedule, include the time dividers for half an hour also
+* Move the changes to prod too, make sure old db table values aren't lost
 
-Supervising provider will flow from Assigned supervisor
-
-Staff:
-
-Add another column "Location" in both Client and Staff table ( for now lets make it text)
-
-
-
-querries ran:
-
-ALTER TABLE clients
-ADD COLUMN location VARCHAR(255) DEFAULT '' AFTER service_location;  
-
-
-ALTER TABLE staff ADD COLUMN location VARCHAR(255) NULL AFTER address;
+* Role based component segregation in UI nd DB

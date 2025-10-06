@@ -1,21 +1,156 @@
-Update and cancel appears to fn in backend but UI shows no message and screen stays open .. 
-after action we can close the screen and back to schedule screen.
+Querries ran to add client_address nd clients
 
-Email Subject: ABA Therapy Session Scheduled - Mahaverse
-Bro, one condition needs to be added for sending emails, 
-for Rbt session lets send it to Bcba on all crud opn.
+<!-- For copying the address data -->
+INSERT INTO client_addresses (
+    client_id,
+    service_location,
+    address_line_1,
+    address_line_2,
+    city,
+    state,
+    zipcode,
+    country
+)
+SELECT
+    client_id,
+    COALESCE(service_location, 'Home'),
+    COALESCE(address_line_1, ''),
+    COALESCE(address_line_2, ''),
+    COALESCE(city, ''),
+    COALESCE(state, ''),
+    COALESCE(zipcode, ''),
+    COALESCE(country, 'USA')
+FROM clients
+WHERE address_line_1 IS NOT NULL
+   OR address_line_2 IS NOT NULL
+   OR city IS NOT NULL
+   OR state IS NOT NULL
+   OR zipcode IS NOT NULL
+   OR country IS NOT NULL;
 
-1. Deploy scheduling to prod 
-2. Email send to client need to validate preferences in client master 
-3. Client - Availability 
-4. Staff adding additional columns (refer excel) 
-5. Scheduling  add columns (refer excel).
+
+<!-- for location -->
+
+ALTER TABLE client_addresses
+ADD COLUMN location VARCHAR(255) DEFAULT NULL AFTER service_location;
+
+<!-- for copying location -->
+
+UPDATE client_addresses ca
+JOIN clients c ON ca.client_id = c.client_id
+SET ca.location = c.location
+WHERE c.location IS NOT NULL;
+
+<!-- for assigned staff nf clients -->
+<!-- -- Table for staff-to-staff assignments -->
+CREATE TABLE `staff_assignments` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `staff_id` VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `assigned_staff_id` VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `createdAt` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `unique_staff_assignment` (`staff_id`, `assigned_staff_id`),
+  FOREIGN KEY (`staff_id`) REFERENCES `staff`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`assigned_staff_id`) REFERENCES `staff`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+<!-- -- Table for staff-to-client assignments -->
+CREATE TABLE `staff_client_assignments` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `staff_id` VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `client_id` VARCHAR(36) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
+  `createdAt` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `unique_staff_client_assignment` (`staff_id`, `client_id`),
+  FOREIGN KEY (`staff_id`) REFERENCES `staff`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`client_id`) REFERENCES `clients`(`client_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 
 
-Done:
+<!-- -- Migrate assignedStaff data -->
+INSERT INTO staff_assignments (staff_id, assigned_staff_id)
+SELECT 
+    s.id,
+    jt.assigned_staff_id
+FROM staff s
+CROSS JOIN JSON_TABLE(
+    s.assignedStaff,
+    '$[*]' COLUMNS (assigned_staff_id VARCHAR(20) PATH '$')
+) AS jt
+WHERE s.assignedStaff IS NOT NULL 
+  AND JSON_LENGTH(s.assignedStaff) > 0
+ON DUPLICATE KEY UPDATE updatedAt = CURRENT_TIMESTAMP;
 
-Email fix
-update nd cancel working in sessions
-Email send to client need to validate preferences in client master
-Email Subject: ABA Therapy Session Scheduled - Mahaverse
+<!-- -- Migrate assignedClients data -->
+INSERT INTO staff_client_assignments (staff_id, client_id)
+SELECT 
+    s.id,
+    jt.client_id
+FROM staff s
+CROSS JOIN JSON_TABLE(
+    s.assignedClients,
+    '$[*]' COLUMNS (client_id VARCHAR(36) PATH '$')
+) AS jt
+WHERE s.assignedClients IS NOT NULL 
+  AND JSON_LENGTH(s.assignedClients) > 0
+ON DUPLICATE KEY UPDATE updatedAt = CURRENT_TIMESTAMP;
+
+<!-- -- After migration is complete and verified, you can remove the JSON columns
+-- ALTER TABLE staff DROP COLUMN assignedStaff;
+-- ALTER TABLE staff DROP COLUMN assignedClients; -->
+
+
+
+CREATE TABLE `client_notes` (
+  `note_id` INT AUTO_INCREMENT PRIMARY KEY,
+  `client_id` VARCHAR(36) NOT NULL,
+  `note` TEXT,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`client_id`) REFERENCES `clients`(`client_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+
+INSERT INTO client_notes (client_id, note, created_at, updated_at)
+SELECT client_id, client_notes, created_at, updated_at FROM clients WHERE client_notes IS NOT NULL AND client_notes <> '';
+
+-- not yet ran
+ALTER TABLE `clients`
+DROP COLUMN `client_notes`;
+
+-- staff certification table
+CREATE TABLE `staff_certifications` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `staff_id` VARCHAR(20) NOT NULL,
+  `certification_type` ENUM('BCBA', 'RBT', 'BCaBA', 'Other') NOT NULL,
+  `certification_number` VARCHAR(255) NOT NULL,
+  `issue_date` DATE NOT NULL,
+  `expiry_date` DATE NOT NULL,
+  `status` ENUM('Active', 'Expired') NOT NULL DEFAULT 'Active',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_staff_certifications_staff` FOREIGN KEY (`staff_id`) REFERENCES `staff`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+
+
+-- Data migration
+
+INSERT INTO staff_certifications (
+  staff_id,
+  certification_type,
+  certification_number,
+  issue_date,
+  expiry_date
+)
+SELECT 
+  id AS staff_id,
+  staffType AS certification_type,     -- reuse staffType to guess BCBA/RBT
+  certificationNumber,
+  CURDATE() AS issue_date,             -- temporary placeholder
+  DATE_ADD(CURDATE(), INTERVAL 1 YEAR) AS expiry_date  -- temporary placeholder
+FROM staff
+WHERE certificationNumber IS NOT NULL 
+  AND certificationNumber <> '';

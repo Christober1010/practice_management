@@ -167,9 +167,9 @@ export default function NewSessionFormModal({
   const clients = useSelector((state) => state.clients?.items || []);
 
   const selectedProvider = staff.find((s) => s.id === form.provider);
-  const isSupervisionRequired = ["rbt", "bt"].includes(
-    selectedProvider?.staffType?.toLowerCase()
-  );
+  // const isSupervisionRequired = ["rbt", "bt"].includes(
+  //   selectedProvider?.staffType?.toLowerCase()
+  // );
 
   const tabOrder = ["scheduling", "notes"];
 
@@ -377,11 +377,11 @@ export default function NewSessionFormModal({
     [clientOptions, form.clientId]
   );
 
-  useEffect(() => {
-    if (!isSupervisionRequired && form.supervisingProvider) {
-      setField("supervisingProvider", "");
-    }
-  }, [form.provider, isSupervisionRequired]);
+  // useEffect(() => {
+  //   if (!isSupervisionRequired && form.supervisingProvider) {
+  //     setField("supervisingProvider", "");
+  //   }
+  // }, [form.provider, isSupervisionRequired]);
 
   const setField = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -404,6 +404,42 @@ export default function NewSessionFormModal({
     }
   };
 
+  // const validateSchedulingTab = () => {
+  //   const e = {};
+  //   if (!form.clientId) e.clientId = "Required";
+  //   if (!form.provider) e.provider = "Required";
+  //   if (!form.placeOfService) e.placeOfService = "Required";
+  //   if (!form.locationAddress.trim()) e.locationAddress = "Required";
+  //   if (!form.startDateTime) e.startDateTime = "Required";
+  //   if (!form.endDateTime) e.endDateTime = "Required";
+  //   if (
+  //     form.startDateTime &&
+  //     form.endDateTime &&
+  //     new Date(form.endDateTime) <= new Date(form.startDateTime)
+  //   ) {
+  //     e.endDateTime = "End must be after Start";
+  //   }
+  //   if (isSupervisionRequired && !form.supervisingProvider) {
+  //     e.supervisingProvider = `Required for ${selectedProvider?.staffType} provider`;
+  //   }
+  //   if (!form.authCode) e.authCode = "Required";
+
+  //   if (form.recurring === "Repeats") {
+  //     if (form.repeatFrequency === "Weekly" && form.repeatOn.length === 0) {
+  //       e.repeatOn = "Select at least one day";
+  //     }
+  //     if (form.ends === "On" && !form.endDate) e.endDate = "Required";
+  //     if (
+  //       form.ends === "After" &&
+  //       (!form.endAfterOccurrences || form.endAfterOccurrences < 1)
+  //     ) {
+  //       e.endAfterOccurrences = "Must be > 0";
+  //     }
+  //   }
+  //   setErrors(e);
+  //   return Object.keys(e).length > 0;
+  // };
+
   const validateSchedulingTab = () => {
     const e = {};
     if (!form.clientId) e.clientId = "Required";
@@ -412,6 +448,30 @@ export default function NewSessionFormModal({
     if (!form.locationAddress.trim()) e.locationAddress = "Required";
     if (!form.startDateTime) e.startDateTime = "Required";
     if (!form.endDateTime) e.endDateTime = "Required";
+    
+    // Validate time is within 8 AM - 8 PM
+    if (form.startDateTime) {
+      const startDate = new Date(form.startDateTime);
+      const startHour = startDate.getHours();
+      const startMinute = startDate.getMinutes();
+      const startInMinutes = startHour * 60 + startMinute;
+      
+      if (startInMinutes < 8 * 60 || startInMinutes >= 20 * 60) {
+        e.startDateTime = "Start time must be between 8:00 AM and 8:00 PM";
+      }
+    }
+    
+    if (form.endDateTime) {
+      const endDate = new Date(form.endDateTime);
+      const endHour = endDate.getHours();
+      const endMinute = endDate.getMinutes();
+      const endInMinutes = endHour * 60 + endMinute;
+      
+      if (endInMinutes < 8 * 60 || endInMinutes > 20 * 60) {
+        e.endDateTime = "End time must be between 8:00 AM and 8:00 PM";
+      }
+    }
+    
     if (
       form.startDateTime &&
       form.endDateTime &&
@@ -419,9 +479,9 @@ export default function NewSessionFormModal({
     ) {
       e.endDateTime = "End must be after Start";
     }
-    if (isSupervisionRequired && !form.supervisingProvider) {
-      e.supervisingProvider = `Required for ${selectedProvider?.staffType} provider`;
-    }
+    // if (isSupervisionRequired && !form.supervisingProvider) {
+    //   e.supervisingProvider = `Required for ${selectedProvider?.staffType} provider`;
+    // }
     if (!form.authCode) e.authCode = "Required";
 
     if (form.recurring === "Repeats") {
@@ -439,7 +499,6 @@ export default function NewSessionFormModal({
     setErrors(e);
     return Object.keys(e).length > 0;
   };
-
   const handleNextClick = (e) => {
     e.preventDefault();
     if (!validateSchedulingTab()) {

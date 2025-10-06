@@ -21,6 +21,62 @@ function safe_json_decode($json_str) {
     }
     return $decoded;
 }
+
+// Helper to get availability as object
+function getStaffAvailability($conn, $staff_id) {
+    $sql = "SELECT day, available, start_time, end_time FROM staff_availability WHERE staff_id = ? ORDER BY FIELD(day, 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday')";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("s", $staff_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $availability = [];
+    while ($row = $result->fetch_assoc()) {
+        $day = strtolower($row['day']);
+        $availability[$day] = [
+            'available' => (bool)$row['available'],
+            'start' => $row['start_time'] ?? '',
+            'end' => $row['end_time'] ?? ''
+        ];
+    }
+    $stmt->close();
+    // Ensure all days are present (default to unavailable)
+    $allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    foreach ($allDays as $day) {
+        if (!isset($availability[$day])) {
+            $availability[$day] = ['available' => false, 'start' => '', 'end' => ''];
+        }
+    }
+    return $availability;
+}
+
+// Helper to insert availability from object
+function insertStaffAvailability($conn, $staff_id, $availability) {
+    if (empty($availability)) return;
+    $sql = "INSERT INTO staff_availability (staff_id, day, available, start_time, end_time) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE available = VALUES(available), start_time = VALUES(start_time), end_time = VALUES(end_time)";
+    $stmt = $conn->prepare($sql);
+    foreach ($availability as $day => $slot) {
+        $day = strtolower($day);
+        $available = isset($slot['available']) ? (int)$slot['available'] : 0;
+        $start = $slot['start'] ?? null;
+        $end = $slot['end'] ?? null;
+        $stmt->bind_param("ssiss", $staff_id, $day, $available, $start, $end);
+        $stmt->execute();
+    }
+    $stmt->close();
+}
+
+// Helper to update availability (delete old, insert new)
+function updateStaffAvailability($conn, $staff_id, $availability) {
+    // Delete existing
+    $deleteSql = "DELETE FROM staff_availability WHERE staff_id = ?";
+    $deleteStmt = $conn->prepare($deleteSql);
+    $deleteStmt->bind_param("s", $staff_id);
+    $deleteStmt->execute();
+    $deleteStmt->close();
+    // Insert new
+    insertStaffAvailability($conn, $staff_id, $availability);
+}
+
 $method = $_SERVER['REQUEST_METHOD'];
 switch ($method) {
     case 'GET':
@@ -70,12 +126,13 @@ function handleGetStaff($conn) {
     $staff = [];
     while ($row = $result->fetch_assoc()) {
         // Decode JSON fields safely
-        $row['availability'] = safe_json_decode($row['availability']);
         $row['locationPreferences'] = safe_json_decode($row['locationPreferences']);
         $row['assignedStaff'] = safe_json_decode($row['assignedStaff']);
         $row['assignedClients'] = safe_json_decode($row['assignedClients']);
         $row['assignedStaffNames'] = safe_json_decode($row['assignedStaffNames']);
         $row['assignedClientNames'] = safe_json_decode($row['assignedClientNames']);
+        // Fetch and format availability as object
+        $row['availability'] = getStaffAvailability($conn, $row['id']);
         $staff[] = $row;
     }
     echo json_encode(["success" => true, "staff_records" => $staff]);
@@ -98,12 +155,7 @@ function handleAddStaff($conn) {
     $dateOfLeaving = $data['dateOfLeaving'] ?? null;
     $status = $data['status'] ?? 'Active';
     $dob = $data['dob'] ?? null;
-    // Encode availability and locationPreferences to JSON strings
-    $availability_json = json_encode($data['availability'] ?? []);
-    if ($availability_json === false) {
-        error_log("JSON Encode Error for availability: " . json_last_error_msg());
-        $availability_json = '[]'; // Default to empty JSON array on error
-    }
+    // Encode JSON fields (without availability)
     $locationPreferences_json = json_encode($data['locationPreferences'] ?? []);
     if ($locationPreferences_json === false) {
         error_log("JSON Encode Error for locationPreferences: " . json_last_error_msg());
@@ -120,21 +172,19 @@ function handleAddStaff($conn) {
         $assignedClients_json = '[]'; // Default to empty JSON array on error
     }
     $archived = $data['archived'] ?? false;
-    // Use INSERT IGNORE to skip duplicates without error
-    $sql = "INSERT IGNORE INTO staff (id, firstName, lastName, fullName, staffType, certificationNumber, npiNumber, address, email, phone, dateOfJoining, dateOfLeaving, status, dob, availability, locationPreferences, assignedStaff, assignedClients, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), ?)";
+    // Use INSERT IGNORE to skip duplicates without error (without availability)
+    $sql = "INSERT IGNORE INTO staff (id, firstName, lastName, fullName, staffType, certificationNumber, npiNumber, address, email, phone, dateOfJoining, dateOfLeaving, status, dob, locationPreferences, assignedStaff, assignedClients, archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), CAST(? AS JSON), ?)";
     $stmt = $conn->prepare($sql);
-    // Correct bind_param string: 14 's' for initial fields, 4 's' for JSON, 1 'i' for archived
-    $stmt->bind_param("ssssssssssssssssssi",
+    $stmt->bind_param("sssssssssssssssssi",
         $id, $data['firstName'], $data['lastName'], $fullName, $data['staffType'],
         $data['certificationNumber'], $npiNumber, $address, $data['email'], $phone,
-        $dateOfJoining, $dateOfLeaving, $status, $dob, $availability_json, // Use the encoded JSON string
-        $locationPreferences_json, // Use the encoded JSON string
-        $assignedStaff_json, // New JSON field
-        $assignedClients_json, // New JSON field
-        $archived
+        $dateOfJoining, $dateOfLeaving, $status, $dob,
+        $locationPreferences_json, $assignedStaff_json, $assignedClients_json, $archived
     );
     if ($stmt->execute()) {
         if ($stmt->affected_rows > 0) {
+            // Now insert availability into new table
+            insertStaffAvailability($conn, $id, $data['availability'] ?? []);
             echo json_encode(["success" => true, "message" => "Staff added successfully", "id" => $id]);
         } else {
             echo json_encode(["success" => false, "message" => "Staff not added (possible duplicate email skipped)"]);
@@ -167,8 +217,8 @@ function handleUpdateStaff($conn) {
         echo json_encode(["success" => false, "message" => "Staff member not found."]);
         return;
     }
-    // Decode current JSON fields for semantic comparison
-    $oldAvailability = safe_json_decode($currentStaffRow['availability']);
+    // Get old availability for comparison (from new table)
+    $oldAvailability = getStaffAvailability($conn, $id);
     $oldLocationPreferences = safe_json_decode($currentStaffRow['locationPreferences']);
     $oldAssignedStaff = safe_json_decode($currentStaffRow['assignedStaff']);
     $oldAssignedClients = safe_json_decode($currentStaffRow['assignedClients']);
@@ -182,12 +232,7 @@ function handleUpdateStaff($conn) {
     $status = $data['status'] ?? 'Active';
     $dob = $data['dob'] ?? null;
     $archived = $data['archived'] ?? false;
-    // Encode incoming availability and locationPreferences to JSON strings for DB
-    $availability_json = json_encode($data['availability'] ?? []);
-    if ($availability_json === false) {
-        error_log("JSON Encode Error for availability: " . json_last_error_msg());
-        $availability_json = '[]';
-    }
+    // Encode incoming JSON for DB (without availability)
     $locationPreferences_json = json_encode($data['locationPreferences'] ?? []);
     if ($locationPreferences_json === false) {
         error_log("JSON Encode Error for locationPreferences: " . json_last_error_msg());
@@ -203,7 +248,7 @@ function handleUpdateStaff($conn) {
         error_log("JSON Encode Error for assignedClients: " . json_last_error_msg());
         $assignedClients_json = '[]';
     }
-    // Decode incoming JSON for semantic comparison
+    // Decode incoming for semantic comparison
     $newAvailability = $data['availability'] ?? [];
     $newLocationPreferences = $data['locationPreferences'] ?? [];
     $newAssignedStaff = $data['assignedStaff'] ?? [];
@@ -251,18 +296,21 @@ function handleUpdateStaff($conn) {
         echo json_encode(["success" => false, "message" => "Staff member found, but no changes were made."]);
         return;
     }
-    // Proceed with update only if changes were detected
-    $sql = "UPDATE staff SET firstName=?, lastName=?, fullName=?, staffType=?, certificationNumber=?, npiNumber=?, address=?, email=?, phone=?, dateOfJoining=?, dateOfLeaving=?, status=?, dob=?, availability=CAST(? AS JSON), locationPreferences=CAST(? AS JSON), assignedStaff=CAST(? AS JSON), assignedClients=CAST(? AS JSON), archived=? WHERE id=?";
+    // Proceed with update only if changes were detected (without availability in SQL)
+    $sql = "UPDATE staff SET firstName=?, lastName=?, fullName=?, staffType=?, certificationNumber=?, npiNumber=?, address=?, email=?, phone=?, dateOfJoining=?, dateOfLeaving=?, status=?, dob=?, locationPreferences=CAST(? AS JSON), assignedStaff=CAST(? AS JSON), assignedClients=CAST(? AS JSON), archived=? WHERE id=?";
     $stmt = $conn->prepare($sql);
-    // Correct bind_param string: 13 's' for initial fields, 4 's' for JSON, 1 'i' for archived, 1 's' for WHERE id
-    $stmt->bind_param("sssssssssssssssssis",
+    $stmt->bind_param("ssssssssssssssssis",
         $data['firstName'], $data['lastName'], $fullName, $data['staffType'],
         $data['certificationNumber'], $npiNumber, $address, $newEmail, $phone,
-        $dateOfJoining, $dateOfLeaving, $status, $dob, $availability_json,
+        $dateOfJoining, $dateOfLeaving, $status, $dob,
         $locationPreferences_json, $assignedStaff_json, $assignedClients_json,
         $archived, $id
     );
     if ($stmt->execute()) {
+        // Update availability if changed
+        if ($oldAvailability !== $newAvailability) {
+            updateStaffAvailability($conn, $id, $newAvailability);
+        }
         echo json_encode(["success" => true, "message" => "Staff updated successfully"]);
     } else {
         http_response_code(500);

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useSelector, useDispatch } from "react-redux";
 import {
   Dialog,
   DialogContent,
@@ -23,29 +22,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-} from "@/components/ui/command";
-import {
   Users,
   MapPin,
   Clock,
   FileText,
-  Check,
   ChevronDown,
   CheckCircle,
   CheckIcon,
+  Trash2,
+  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils"; // Ensure you have this utility (from Shadcn/UI)
-import { fetchClients } from "@/app/store/clientSlice";
 
 const initialStaffState = {
   // Personal Information
@@ -57,7 +44,6 @@ const initialStaffState = {
   location: "",
   // Professional Information
   staffType: "RBT",
-  certificationNumber: "",
   npiNumber: "",
   dateOfJoining: "",
   dateOfLeaving: "",
@@ -65,6 +51,18 @@ const initialStaffState = {
   dob: "",
   assignedStaff: [],
   assignedClients: [],
+
+  // Certifications
+  certifications: [
+    {
+      certificationType: "RBT", // default type
+      certificationNumber: "",
+      npiNumber: "",
+      issueDate: "",
+      expiryDate: "",
+      status: "Active",
+    },
+  ],
 
   // Timing Availability (flattened for form)
   mondayAvailable: false,
@@ -98,7 +96,8 @@ const initialStaffState = {
 // Helper to generate time options for dropdown (e.g., "08:00", "08:15", ..., "23:45")
 const generateTimeOptions = () => {
   const times = [];
-  for (let h = 0; h < 24; h++) {
+  for (let h = 8; h <= 20; h++) {
+    // Only 8AM to 8PM
     for (let m = 0; m < 60; m += 15) {
       const hour = h.toString().padStart(2, "0");
       const minute = m.toString().padStart(2, "0");
@@ -134,27 +133,28 @@ const MultiSelect = ({ options, selected, onChange, placeholder }) => {
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          aria-expanded={open}
-          className="w-full justify-between"
-        >
-          {selected.length > 0 ? `${selected.length} selected` : placeholder}
-          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-full p-0">
-        <Command>
-          <CommandInput placeholder="Search..." />
-          <CommandEmpty>No items found.</CommandEmpty>
-          <CommandGroup className="max-h-48 overflow-y-auto">
+    <div>
+      <Button
+        variant="outline"
+        role="combobox"
+        aria-expanded={open}
+        className="w-full justify-between bg-transparent"
+        onClick={() => setOpen(!open)}
+      >
+        {selected.length > 0 ? `${selected.length} selected` : placeholder}
+        <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+      </Button>
+      {open && (
+        <div className="w-full p-0 mt-2 border border-slate-200 rounded-lg shadow-lg">
+          <div className="p-2">
+            <Input placeholder="Search..." />
+          </div>
+          <div className="max-h-48 overflow-y-auto">
             {options.map((option) => (
-              <CommandItem
+              <div
                 key={option.value}
-                onSelect={() => handleSelect(option.value)}
+                className="p-2 flex items-center space-x-2 cursor-pointer hover:bg-slate-100"
+                onClick={() => handleSelect(option.value)}
               >
                 <CheckIcon
                   className={cn(
@@ -165,12 +165,12 @@ const MultiSelect = ({ options, selected, onChange, placeholder }) => {
                   )}
                 />
                 {option.label}
-              </CommandItem>
+              </div>
             ))}
-          </CommandGroup>
-        </Command>
-      </PopoverContent>
-    </Popover>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -181,23 +181,43 @@ export default function AddStaffModal({
   editingStaff = null,
   existingStaffs = [],
 }) {
-  const dispatch = useDispatch();
   const [formData, setFormData] = useState(initialStaffState);
   const [errors, setErrors] = useState({});
   const [activeTab, setActiveTab] = useState("personal");
   const [saving, setSaving] = useState(false);
-  useEffect(() => {
-    dispatch(fetchClients());
-  }, [dispatch]);
-  const clients = useSelector((state) => state.clients?.items || []);
+  const tabOrder = [
+    "personal",
+    "professional",
+    "certification",
+    "availability",
+    "location",
+  ];
 
-  const tabOrder = ["personal", "professional", "availability", "location"];
+  // Local placeholder; integrate with a clients API later if needed
+  const clients = [];
 
   useEffect(() => {
     if (editingStaff) {
+      const mapCertifications = (certs) => {
+        return certs.map((cert) => ({
+          certificationType:
+            cert.certification_type || cert.certificationType || "RBT",
+          certificationNumber:
+            cert.certification_number || cert.certificationNumber || "",
+          npiNumber: cert.npi_number || cert.npiNumber || "",
+          issueDate: cert.issue_date || cert.issueDate || "",
+          expiryDate: cert.expiry_date || cert.expiryDate || "",
+          status: cert.status || "Active",
+        }));
+      };
+
       setFormData({
         ...initialStaffState,
         ...editingStaff,
+        certifications: editingStaff.certifications
+          ? mapCertifications(editingStaff.certifications)
+          : initialStaffState.certifications,
+
         // Flatten availability for form fields
         mondayAvailable: editingStaff.availability?.monday?.available || false,
         mondayStart: editingStaff.availability?.monday?.start || "",
@@ -300,9 +320,34 @@ export default function AddStaffModal({
       fullName: `${formData.firstName.trim()} ${formData.lastName.trim()}`,
       availability,
       locationPreferences,
-      dateOfJoining: formData.dateOfJoining || "", // Raw string, e.g., "2025-09-29"
+      dateOfJoining: formData.dateOfJoining || "",
       dateOfLeaving: formData.dateOfLeaving || "",
     };
+
+    // Normalize certifications from the form array
+    const normalizedCerts = (formData.certifications || [])
+      .map((c) => ({
+        certification_type: c.certificationType || formData.staffType || "RBT",
+        certification_number: c.certificationNumber || "",
+        npi_number: c.npiNumber || null,
+        issue_date: c.issueDate || null,
+        expiry_date: c.expiryDate || null,
+      }))
+      // only include certs that have a number
+      .filter((c) => !!c.certification_number);
+
+    // Fallback for older data: if array is empty but a legacy top-level field exists
+    if (normalizedCerts.length === 0 && formData.certificationNumber) {
+      normalizedCerts.push({
+        certification_type: formData.staffType || "RBT",
+        certification_number: formData.certificationNumber,
+        npi_number: formData.npiNumber || null,
+        issue_date: null,
+        expiry_date: null,
+      });
+    }
+
+    dataToSave.certifications = normalizedCerts;
 
     // Remove flattened fields before sending
     Object.keys(initialStaffState).forEach((key) => {
@@ -350,10 +395,6 @@ export default function AddStaffModal({
           currentTabErrors.staffType = "Missing Required Entry";
           hasErrors = true;
         }
-        if (!formData.certificationNumber.trim()) {
-          currentTabErrors.certificationNumber = "Missing Required Entry";
-          hasErrors = true;
-        }
         if (!formData.dateOfJoining.trim()) {
           currentTabErrors.dateOfJoining = "Missing Required Entry";
           hasErrors = true;
@@ -362,6 +403,28 @@ export default function AddStaffModal({
           currentTabErrors.status = "Missing Required Entry";
           hasErrors = true;
         }
+        break;
+
+      case "certification":
+        const certifications = formData.certifications;
+        certifications.forEach((cert, index) => {
+          if (!cert.certificationType.trim()) {
+            currentTabErrors[`cert_type_${index}`] = "Missing Required Entry";
+            hasErrors = true;
+          }
+          if (!cert.certificationNumber.trim()) {
+            currentTabErrors[`cert_number_${index}`] = "Missing Required Entry";
+            hasErrors = true;
+          }
+          if (!cert.issueDate.trim()) {
+            currentTabErrors[`issue_date_${index}`] = "Missing Required Entry";
+            hasErrors = true;
+          }
+          if (!cert.expiryDate.trim()) {
+            currentTabErrors[`expiry_date_${index}`] = "Missing Required Entry";
+            hasErrors = true;
+          }
+        });
         break;
 
       case "availability":
@@ -598,6 +661,51 @@ export default function AddStaffModal({
       )}
     </div>
   );
+  const addCertification = () => {
+    setFormData((prev) => ({
+      ...prev,
+      certifications: [
+        ...prev.certifications,
+        {
+          certificationType: "RBT",
+          certificationNumber: "",
+          npiNumber: "",
+          issueDate: "",
+          expiryDate: "",
+          status: "Active",
+        },
+      ],
+    }));
+  };
+
+  const removeCertification = (index) => {
+    setFormData((prev) => ({
+      ...prev,
+      certifications: prev.certifications.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleCertificationChange = (index, field, value) => {
+    setFormData((prev) => {
+      const updatedCerts = [...prev.certifications];
+      updatedCerts[index][field] = value;
+      return { ...prev, certifications: updatedCerts };
+    });
+  };
+
+  // Helper to compute read-only certification status from expiry date on the client (mirrors backend)
+  const computeCertStatus = (expiryDate) => {
+    if (!expiryDate) return "Active";
+    const today = new Date();
+    const todayOnly = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate()
+    );
+    const exp = new Date(expiryDate);
+    if (isNaN(exp.getTime())) return "Active";
+    return exp >= todayOnly ? "Active" : "Expired";
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -619,27 +727,23 @@ export default function AddStaffModal({
             onValueChange={setActiveTab}
             className="w-full"
           >
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="personal" className="flex items-center gap-2">
-                <Users className="h-4 w-4" /> Personal
+            <TabsList className="grid w-full grid-cols-5">
+              <TabsTrigger value="personal">
+                <Users className="h-4 w-4 mr-2" /> Personal
               </TabsTrigger>
-              <TabsTrigger
-                value="professional"
-                className="flex items-center gap-2"
-              >
-                <FileText className="h-4 w-4" /> Professional
+              <TabsTrigger value="professional">
+                <FileText className="h-4 w-4 mr-2" /> Professional
               </TabsTrigger>
-              <TabsTrigger
-                value="availability"
-                className="flex items-center gap-2"
-              >
-                <Clock className="h-4 w-4" /> Availability
+              <TabsTrigger value="certification">
+                <CheckCircle className="h-4 w-4 mr-2" /> Certification
               </TabsTrigger>
-              <TabsTrigger value="location" className="flex items-center gap-2">
-                <MapPin className="h-4 w-4" /> Location
+              <TabsTrigger value="availability">
+                <Clock className="h-4 w-4 mr-2" /> Availability
+              </TabsTrigger>
+              <TabsTrigger value="location">
+                <MapPin className="h-4 w-4 mr-2" /> Location
               </TabsTrigger>
             </TabsList>
-
             {/* Personal Information Tab */}
             <TabsContent value="personal" className="space-y-6">
               <Card>
@@ -759,32 +863,7 @@ export default function AddStaffModal({
                       "Select status"
                     )}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {renderInputWithError(
-                      "certificationNumber",
-                      `${formData.staffType} Certification Number *`,
-                      formData.certificationNumber,
-                      (e) =>
-                        handleInputChange(
-                          "certificationNumber",
-                          e.target.value
-                        ),
-                      { placeholder: "Enter certification number" }
-                    )}
-                    <div>
-                      <Label htmlFor="npiNumber">
-                        {formData.staffType} NPI Number
-                      </Label>
-                      <Input
-                        id="npiNumber"
-                        value={formData.npiNumber}
-                        onChange={(e) =>
-                          handleInputChange("npiNumber", e.target.value)
-                        }
-                        placeholder="Enter NPI number"
-                      />
-                    </div>
-                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {renderInputWithError(
                       "dateOfJoining",
@@ -838,6 +917,154 @@ export default function AddStaffModal({
                 </CardContent>
               </Card>
             </TabsContent>
+            {/* Certification Details */}
+            <TabsContent value="certification" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 justify-between">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-5 w-5 text-teal-600" />{" "}
+                      Certifications
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addCertification}
+                      className="flex items-center gap-2 bg-transparent"
+                    >
+                      <Plus className="h-4 w-4" /> Add Certification
+                    </Button>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {formData.certifications.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">
+                      No certifications added yet.
+                    </p>
+                  ) : (
+                    <div className="space-y-6">
+                      {formData.certifications.map((cert, index) => (
+                        <div
+                          key={index}
+                          className="border rounded-lg p-4 space-y-4"
+                        >
+                          <div className="flex items-center justify-between">
+                            <h4 className="font-semibold">
+                              Certification #{index + 1}
+                            </h4>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => removeCertification(index)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {renderSelectWithError(
+                              `cert_type_${index}`,
+                              "Certification Type",
+                              cert.certificationType,
+                              (value) =>
+                                handleCertificationChange(
+                                  index,
+                                  "certificationType",
+                                  value
+                                ),
+                              <>
+                                <SelectItem value="RBT">RBT</SelectItem>
+                                <SelectItem value="BCBA">BCBA</SelectItem>
+                                <SelectItem value="BCaBA">BCaBA</SelectItem>
+                              </>,
+                              "Select type"
+                            )}
+                            {renderInputWithError(
+                              `cert_number_${index}`,
+                              "Certification Number",
+                              cert.certificationNumber,
+                              (e) =>
+                                handleCertificationChange(
+                                  index,
+                                  "certificationNumber",
+                                  e.target.value
+                                ),
+                              { placeholder: "Enter certification number" }
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {renderInputWithError(
+                              `npi_number_${index}`,
+                              "NPI Number",
+                              cert.npiNumber,
+                              (e) =>
+                                handleCertificationChange(
+                                  index,
+                                  "npiNumber",
+                                  e.target.value
+                                ),
+                              { placeholder: "Enter NPI number" }
+                            )}
+                            {renderInputWithError(
+                              `issue_date_${index}`,
+                              "Issue Date",
+                              cert.issueDate,
+                              (e) =>
+                                handleCertificationChange(
+                                  index,
+                                  "issueDate",
+                                  e.target.value
+                                ),
+                              { type: "date" }
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {renderInputWithError(
+                              `expiry_date_${index}`,
+                              "Expiry Date",
+                              cert.expiryDate,
+                              (e) =>
+                                handleCertificationChange(
+                                  index,
+                                  "expiryDate",
+                                  e.target.value
+                                ),
+                              { type: "date" }
+                            )}
+                            <div>
+                              <Label htmlFor={`status_${index}`}>
+                                Status (auto)
+                              </Label>
+                              <div className="mt-2 text-sm">
+                                <div
+                                  className={
+                                    computeCertStatus(cert.expiryDate) ===
+                                    "Active"
+                                      ? "bg-green-100 text-green-800 px-2 py-1 rounded-full w-fit"
+                                      : "bg-red-100 text-red-800 px-2 py-1 rounded-full w-fit"
+                                  }
+                                >
+                                  {computeCertStatus(cert.expiryDate)}
+                                </div>
+                                <p className="text-xs text-slate-500 mt-1">
+                                  Status is computed from expiry date and cannot
+                                  be edited.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
 
             {/* Timing Availability Tab */}
             <TabsContent value="availability" className="space-y-6">
@@ -859,7 +1086,6 @@ export default function AddStaffModal({
                 </CardContent>
               </Card>
             </TabsContent>
-
             {/* Location Preferences Tab */}
             <TabsContent value="location" className="space-y-6">
               <Card>

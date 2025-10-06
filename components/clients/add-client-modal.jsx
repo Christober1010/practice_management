@@ -96,7 +96,7 @@ const initialClientState = {
   preferred_language: "",
   client_status: "New",
   wait_list_status: "No",
-  location:"",
+  location: "",
 
   // Contact
   phone: "",
@@ -195,6 +195,7 @@ export default function AddClientModal({
   onClose,
   onSave,
   editingClient,
+  filteredStaff,
 }) {
   const [formData, setFormData] = useState(initialClientState);
   const [errors, setErrors] = useState({});
@@ -334,8 +335,10 @@ export default function AddClientModal({
         (ins) =>
           ins.insurance_provider ||
           ins.insurance_id_number ||
-          ins.treatment_type
+          ins.treatment_type ||
+          ins.provider_staff_id // ✅ keep Rendering Provider even if other fields are blank
       ),
+
       authorizations: (formData.authorizations || [])
         .filter(
           (auth) =>
@@ -429,7 +432,7 @@ export default function AddClientModal({
       insurance_type: "Primary",
       insurance_provider: "",
       treatment_type: "",
-      rendering_provider: "",
+      provider_staff_id: "",
       start_date: "",
       end_date: "",
       insurance_id_number: "",
@@ -1147,8 +1150,7 @@ export default function AddClientModal({
                       "location",
                       "Location",
                       formData.location,
-                      (e) =>
-                        handleInputChange("location", e.target.value),
+                      (e) => handleInputChange("location", e.target.value),
                       { placeholder: "Enter your location" }
                     )}
                   </div>
@@ -1575,18 +1577,34 @@ export default function AddClientModal({
                                 ),
                               { placeholder: "Enter treatment type" }
                             )}
-                            {renderInputWithError(
-                              `insurance_rendering_provider_${index}`,
+                            {renderSelectWithError(
+                              `insurance_provider_staff_id_${index}`,
                               "Rendering Provider",
-                              insurance.rendering_provider,
-                              (e) =>
+                              insurance.provider_staff_id,
+                              (value) =>
                                 handleInsuranceChange(
                                   insurance.insurance_id,
-                                  "rendering_provider",
-                                  e.target.value
+                                  "provider_staff_id",
+                                  value
                                 ),
-                              { placeholder: "Enter rendering provider" }
+                              <>
+                                {filteredStaff.length === 0 ? (
+                                  <SelectItem value="">
+                                    No BCBA/BCaBA staff available
+                                  </SelectItem>
+                                ) : (
+                                  filteredStaff.map((staff) => (
+                                    <SelectItem key={staff.id} value={staff.id}>
+                                      {staff.firstName} {staff.lastName} (
+                                      {staff.staffType})
+                                    </SelectItem>
+                                  ))
+                                )}
+                              </>,
+                              "Select rendering provider"
                             )}
+
+                            {console.log(filteredStaff, "filtered")}
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {renderInputWithError(

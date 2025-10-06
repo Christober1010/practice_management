@@ -58,7 +58,6 @@ const formatDate = (dateStr) => {
   return `${month}/${day}/${year}`; // Outputs MM/DD/YYYY - customize as needed
 };
 
-
 export default function StaffView() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -109,7 +108,7 @@ export default function StaffView() {
     const matchesSearch =
       member.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       member.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      member.certificationNumber
+      (member.certificationNumber || "")
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
     const matchesStatus =
@@ -183,7 +182,9 @@ export default function StaffView() {
       status: member.status || "Active",
       availability: member.availability || {},
       locationPreferences: member.locationPreferences || {},
+      certifications: member.certifications || [], // <-- add this line
     };
+
     setEditingStaff(staffCopy);
     setIsAddModalOpen(true);
   };
@@ -690,11 +691,12 @@ export default function StaffView() {
                                 <Card className="border-slate-200">
                                   <CardHeader className="pb-3">
                                     <CardTitle className="flex items-center gap-2 text-base">
-                                      <Users className="h-4 w-4 text-teal-600" />{" "}
+                                      <Users className="h-4 w-4 text-teal-600" />
                                       Professional Information
                                     </CardTitle>
                                   </CardHeader>
                                   <CardContent className="space-y-3 text-sm">
+                                    {/* Top row: Staff Type, Status, Dates */}
                                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                       <div>
                                         <p className="text-slate-500 mb-1">
@@ -706,81 +708,202 @@ export default function StaffView() {
                                       </div>
                                       <div>
                                         <p className="text-slate-500 mb-1">
-                                          Certification #
+                                          Status
                                         </p>
                                         <p className="font-medium">
-                                          {member.certificationNumber || "N/A"}
+                                          {member.status || "N/A"}
                                         </p>
                                       </div>
                                       <div>
                                         <p className="text-slate-500 mb-1">
-                                          NPI Number
+                                          Date of Joining
                                         </p>
                                         <p className="font-medium">
-                                          {member.npiNumber || "N/A"}
+                                          {member.dateOfJoining
+                                            ? new Date(
+                                                member.dateOfJoining
+                                              ).toLocaleDateString()
+                                            : "N/A"}
                                         </p>
                                       </div>
                                     </div>
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Status
-                                      </p>
-                                      <p className="font-medium">
-                                        {member.status || "N/A"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-slate-500 mb-1 font-semibold">
-                                        Assigned Staff
-                                      </p>
-                                      {member.assignedStaffNames &&
-                                      member.assignedStaffNames.length > 0 ? (
-                                        <div className="flex flex-wrap gap-2">
-                                          {member.assignedStaffNames.map(
-                                            (item, index) => (
-                                              <span
-                                                key={index}
-                                                className="inline-block bg-teal-100 text-teal-800 text-sm font-medium px-3 py-1 rounded-full shadow-sm hover:bg-teal-200 transition-colors"
-                                              >
-                                                {item.length > 20
-                                                  ? `${item.slice(0, 17)}...`
-                                                  : item}{" "}
-                                              </span>
-                                            )
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <p className="italic text-gray-500">
-                                          No assigned staff.
+
+                                    {/* Bottom row: Date of Leaving */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                      <div>
+                                        <p className="text-slate-500 mb-1">
+                                          Date of Leaving
                                         </p>
-                                      )}
-                                    </div>
-                                    <div>
-                                      <p className="text-slate-500 mb-1 font-semibold">
-                                        Assigned Clients
-                                      </p>
-                                      {member.assignedClientNames &&
-                                      member.assignedClientNames.length > 0 ? (
-                                        <div className="flex flex-wrap gap-2">
-                                          {member.assignedClientNames.map(
-                                            (item, index) => (
-                                              <span
-                                                key={index}
-                                                className="inline-block bg-blue-100 text-blue-800 text-sm font-medium px-3 py-1 rounded-full shadow-sm hover:bg-blue-200 transition-colors"
-                                              >
-                                                {item.length > 20
-                                                  ? `${item.slice(0, 17)}...`
-                                                  : item}{" "}
-                                              </span>
-                                            )
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <p className="italic text-gray-500">
-                                          No assigned clients.
+                                        <p className="font-medium">
+                                          {member.dateOfLeaving
+                                            ? new Date(
+                                                member.dateOfLeaving
+                                              ).toLocaleDateString()
+                                            : "N/A"}
                                         </p>
-                                      )}
+                                      </div>
+
+                                      <div>
+                                        <p className="text-slate-500 mb-1 font-semibold">
+                                          Assigned Staff
+                                        </p>
+                                        {member.assignedStaffNames &&
+                                        member.assignedStaffNames.length > 0 ? (
+                                          <div className="flex flex-wrap gap-2">
+                                            {member.assignedStaffNames.map(
+                                              (item, index) => (
+                                                <span
+                                                  key={index}
+                                                  className="inline-block bg-teal-100 text-teal-800 text-sm font-medium px-3 py-1 rounded-full shadow-sm hover:bg-teal-200 transition-colors"
+                                                >
+                                                  {item.length > 20
+                                                    ? `${item.slice(0, 17)}...`
+                                                    : item}
+                                                </span>
+                                              )
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <p className="italic text-gray-500">
+                                            No assigned staff.
+                                          </p>
+                                        )}
+                                      </div>
+
+                                      <div>
+                                        <p className="text-slate-500 mb-1 font-semibold">
+                                          Assigned Clients
+                                        </p>
+                                        {member.assignedClientNames &&
+                                        member.assignedClientNames.length >
+                                          0 ? (
+                                          <div className="flex flex-wrap gap-2">
+                                            {member.assignedClientNames.map(
+                                              (item, index) => (
+                                                <span
+                                                  key={index}
+                                                  className="inline-block bg-blue-100 text-blue-800 text-sm font-medium px-3 py-1 rounded-full shadow-sm hover:bg-blue-200 transition-colors"
+                                                >
+                                                  {item.length > 20
+                                                    ? `${item.slice(0, 17)}...`
+                                                    : item}
+                                                </span>
+                                              )
+                                            )}
+                                          </div>
+                                        ) : (
+                                          <p className="italic text-gray-500">
+                                            No assigned clients.
+                                          </p>
+                                        )}
+                                      </div>
                                     </div>
+                                  </CardContent>
+                                </Card>
+
+                                {/* Certification Details Section */}
+                                {/* Certification Details Section */}
+                                <Card className="border-slate-200">
+                                  <CardHeader className="pb-3">
+                                    <CardTitle className="flex items-center gap-2 text-base">
+                                      <Users className="h-4 w-4 text-teal-600" />
+                                      Certification Details
+                                    </CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    {member.certifications &&
+                                    member.certifications.length > 0 ? (
+                                      <div className="space-y-4">
+                                        {member.certifications.map(
+                                          (cert, index) => (
+                                            <div
+                                              key={cert.id || index}
+                                              className="border rounded-lg p-4 bg-slate-50 shadow-sm"
+                                            >
+                                              <h4 className="font-semibold mb-3">
+                                                Certification #{index + 1}
+                                              </h4>
+
+                                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+                                                <div>
+                                                  <p className="text-slate-500 mb-1">
+                                                    Certification Type
+                                                  </p>
+                                                  <p className="font-medium">
+                                                    {cert.certification_type ||
+                                                      "N/A"}
+                                                  </p>
+                                                </div>
+                                                <div>
+                                                  <p className="text-slate-500 mb-1">
+                                                    Certification Number
+                                                  </p>
+                                                  <p className="font-medium">
+                                                    {cert.certification_number ||
+                                                      "N/A"}
+                                                  </p>
+                                                </div>
+                                                <div>
+                                                  <p className="text-slate-500 mb-1">
+                                                    NPI Number
+                                                  </p>
+                                                  <p className="font-medium">
+                                                    {cert.npi_number ||
+                                                      cert.npiNumber ||
+                                                      "N/A"}
+                                                  </p>
+                                                </div>
+                                                <div>
+                                                  <p className="text-slate-500 mb-1">
+                                                    Status
+                                                  </p>
+                                                  <Badge
+                                                    className={
+                                                      cert.status === "Active"
+                                                        ? "bg-green-100 text-green-800"
+                                                        : cert.status ===
+                                                          "Expired"
+                                                        ? "bg-red-100 text-red-800"
+                                                        : "bg-gray-100 text-gray-800"
+                                                    }
+                                                  >
+                                                    {cert.status || "N/A"}
+                                                  </Badge>
+                                                </div>
+                                                <div>
+                                                  <p className="text-slate-500 mb-1">
+                                                    Issue Date
+                                                  </p>
+                                                  <p className="font-medium">
+                                                    {cert.issue_date
+                                                      ? formatDate(
+                                                          cert.issue_date
+                                                        )
+                                                      : "N/A"}
+                                                  </p>
+                                                </div>
+                                                <div>
+                                                  <p className="text-slate-500 mb-1">
+                                                    Expiry Date
+                                                  </p>
+                                                  <p className="font-medium">
+                                                    {cert.expiry_date
+                                                      ? formatDate(
+                                                          cert.expiry_date
+                                                        )
+                                                      : "N/A"}
+                                                  </p>
+                                                </div>
+                                              </div>
+                                            </div>
+                                          )
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <p className="text-slate-600 text-base text-center italic">
+                                        No certifications found.
+                                      </p>
+                                    )}
                                   </CardContent>
                                 </Card>
 

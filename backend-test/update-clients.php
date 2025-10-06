@@ -18,14 +18,12 @@ try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Decode JSON input
     $input = json_decode(file_get_contents("php://input"), true);
 
-    // --- DEBUGGING: Log the received input data ---
+    // --- DEBUGGING ---
     error_log("Received input for update-clients.php: " . print_r($input, true));
-    // --- END DEBUGGING ---
+    // -----------------
 
-    // Validate required fields
     $required = ["client_id", "first_name", "last_name", "date_of_birth"];
     foreach ($required as $field) {
         if (empty($input[$field])) {
@@ -37,7 +35,6 @@ try {
 
     $clientId = $input["client_id"];
 
-    // Begin transaction for atomic operations
     $conn->beginTransaction();
 
     // Check if client exists
@@ -46,64 +43,54 @@ try {
     $exists = $stmtCheck->fetchColumn() > 0;
 
     if ($exists) {
-        // Update client
         $sql = "UPDATE clients SET
-            client_uuid = :client_uuid,
-            client_status = :client_status,
-            wait_list_status = :wait_list_status,
-            first_name = :first_name,
-            middle_name = :middle_name,
-            last_name = :last_name,
-            date_of_birth = :date_of_birth,
-            gender = :gender,
-            preferred_language = :preferred_language,
-            phone = :phone,
-            email = :email,
-            appointment_reminder = :appointment_reminder,
-            address_line_1 = :address_line_1,
-            address_line_2 = :address_line_2,
-            city = :city,
-            state = :state,
-            zipcode = :zipcode,
-            country = :country,
-            service_location = :service_location,
-            parent_first_name = :parent_first_name,
-            parent_last_name = :parent_last_name,
-            relationship_to_insured = :relationship_to_insured,
-            relation_other = :relation_other,
-            emergency_contact_name = :emergency_contact_name,
-            emg_relationship = :emg_relationship,
-            emg_phone = :emg_phone,
-            emg_email = :emg_email,
-            client_notes = :client_notes,
-            other_information = :other_information,
-            archived = :archived,
-            updated_at = CURRENT_TIMESTAMP
-            WHERE client_id = :client_id";
+        client_uuid = :client_uuid,
+        client_status = :client_status,
+        wait_list_status = :wait_list_status,
+        first_name = :first_name,
+        middle_name = :middle_name,
+        last_name = :last_name,
+        date_of_birth = :date_of_birth,
+        gender = :gender,
+        preferred_language = :preferred_language,
+        phone = :phone,
+        email = :email,
+        appointment_reminder = :appointment_reminder,
+        parent_first_name = :parent_first_name,
+        parent_last_name = :parent_last_name,
+        relationship_to_insured = :relationship_to_insured,
+        relation_other = :relation_other,
+        emergency_contact_name = :emergency_contact_name,
+        emg_relationship = :emg_relationship,
+        emg_phone = :emg_phone,
+        emg_email = :emg_email,
+        client_notes = :client_notes,
+        other_information = :other_information,
+        archived = :archived,
+        updated_at = CURRENT_TIMESTAMP
+        WHERE client_id = :client_id";
     } else {
-        // Insert new client
         $sql = "INSERT INTO clients (
-            client_id, client_uuid, client_status, wait_list_status,
-            first_name, middle_name, last_name, date_of_birth, gender,
-            preferred_language, phone, email, appointment_reminder,
-            address_line_1, address_line_2, city, state, zipcode, country, service_location,
-            parent_first_name, parent_last_name, relationship_to_insured, relation_other,
-            emergency_contact_name, emg_relationship, emg_phone, emg_email,
-            client_notes, other_information, archived
-        ) VALUES (
-            :client_id, :client_uuid, :client_status, :wait_list_status,
-            :first_name, :middle_name, :last_name, :date_of_birth, :gender,
-            :preferred_language, :phone, :email, :appointment_reminder,
-            :address_line_1, :address_line_2, :city, :state, :zipcode, :country, :service_location,
-            :parent_first_name, :parent_last_name, :relationship_to_insured, :relation_other,
-            :emergency_contact_name, :emg_relationship, :emg_phone, :emg_email,
-            :client_notes, :other_information, :archived
-        )";
+        client_id, client_uuid, client_status, wait_list_status,
+        first_name, middle_name, last_name, date_of_birth, gender,
+        preferred_language, phone, email, appointment_reminder,
+        parent_first_name, parent_last_name, relationship_to_insured, relation_other,
+        emergency_contact_name, emg_relationship, emg_phone, emg_email,
+        client_notes, other_information, archived
+    ) VALUES (
+        :client_id, :client_uuid, :client_status, :wait_list_status,
+        :first_name, :middle_name, :last_name, :date_of_birth, :gender,
+        :preferred_language, :phone, :email, :appointment_reminder,
+        :parent_first_name, :parent_last_name, :relationship_to_insured, :relation_other,
+        :emergency_contact_name, :emg_relationship, :emg_phone, :emg_email,
+        :client_notes, :other_information, :archived
+    )";
     }
+
+
 
     $stmt = $conn->prepare($sql);
 
-    // Prepare parameters for execution
     $params = [
         ":client_id" => $clientId,
         ":client_uuid" => $input["client_uuid"] ?? '',
@@ -118,13 +105,6 @@ try {
         ":phone" => $input["phone"] ?? '',
         ":email" => $input["email"] ?? '',
         ":appointment_reminder" => $input["appointment_reminder"] ?? '',
-        ":address_line_1" => $input["address_line_1"] ?? '',
-        ":address_line_2" => $input["address_line_2"] ?? '',
-        ":city" => $input["city"] ?? '',
-        ":state" => $input["state"] ?? '',
-        ":zipcode" => $input["zipcode"] ?? '',
-        ":country" => $input["country"] ?? 'USA',
-        ":service_location" => $input["service_location"] ?? 'Home',
         ":parent_first_name" => $input["parent_first_name"] ?? '',
         ":parent_last_name" => $input["parent_last_name"] ?? '',
         ":relationship_to_insured" => $input["relationship_to_insured"] ?? '',
@@ -138,42 +118,43 @@ try {
         ":archived" => $input["archived"] ?? 0
     ];
 
-    // --- DEBUGGING: Log parameters before execution ---
     error_log("Executing SQL with parameters: " . print_r($params, true));
-    // --- END DEBUGGING ---
-
     $stmt->execute($params);
+    // ------------------------
+    // Handle addresses in new table
+    // ------------------------
+    $conn->prepare("DELETE FROM client_addresses WHERE client_id = ?")->execute([$clientId]);
 
-    // Handle additional addresses (clear and recreate approach)
-    if (isset($input["addresses"]) && is_array($input["addresses"]) && count($input["addresses"]) > 1) {
-        // Clear existing additional addresses
-        $conn->prepare("DELETE FROM client_addresses WHERE client_id = ?")->execute([$clientId]);
-
-        // Insert additional addresses (skip first one as it's stored in main client table)
+    if (isset($input["addresses"]) && is_array($input["addresses"])) {
         $addressStmt = $conn->prepare("INSERT INTO client_addresses (
-            client_id, service_location, address_line_1, address_line_2, 
-            city, state, zipcode, country
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        client_id, service_location, location, address_line_1, address_line_2, city, state, zipcode, country
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-        for ($i = 1; $i < count($input["addresses"]); $i++) {
-            $addr = $input["addresses"][$i];
+        // Get the top-level location field (this is what you want to store)
+        $topLevelLocation = $input["location"] ?? null;
+
+        foreach ($input["addresses"] as $addr) {
             $addressStmt->execute([
                 $clientId,
                 $addr["service_location"] ?? 'Home',
+                $topLevelLocation,  // <-- Use the top-level location field
                 $addr["address_line_1"] ?? '',
                 $addr["address_line_2"] ?? '',
                 $addr["city"] ?? '',
                 $addr["state"] ?? '',
                 $addr["zipcode"] ?? '',
-                $addr["country"] === "Other" ? $addr["countryOther"] : ($addr["country"] ?? 'USA')
+                $addr["country"] === "Other" ? ($addr["countryOther"] ?? 'USA') : ($addr["country"] ?? 'USA')
             ]);
         }
     }
+    // ------------------------
 
+    // --- keep all your insurance, authorization, document, availability handling below unchanged ---
+    // (your code here for insurances, client_auth, documents, availability...)
     // Clear existing insurances & related data to prevent orphans
     $conn->prepare("DELETE FROM client_auth WHERE insurance_id IN (SELECT insurance_id FROM client_insurance WHERE client_id = ?)")->execute([$clientId]);
     $conn->prepare("DELETE FROM client_insurance WHERE client_id = ?")->execute([$clientId]);
-    
+
     // Clear documents (check if table exists first)
     try {
         $conn->prepare("DELETE FROM client_documents WHERE client_id = ?")->execute([$clientId]);
@@ -194,7 +175,7 @@ try {
             authorization_number, insurance_id_number, group_number, diagnosis_1, diagnosis_2, diagnosis_3, diagnosis_4, diagnosis_5,
             coinsurance, deductible, copay_per, copay_rate
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        
+
         foreach ($input["insurances"] as $ins) {
             $stmtIns->execute([
                 $clientId,
@@ -228,23 +209,23 @@ try {
             auth_uuid, insurance_id, authorization_number, billing_codes,
             units_approved_per_15_min, units_serviced, balance_units, start_date, end_date, status
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        
+
         foreach ($input["authorizations"] as $auth) {
             // Map insurance_id from frontend to actual database insurance_id
             $linkedInsuranceId = null;
-            
+
             if (isset($auth["insurance_id"]) && $auth["insurance_id"] !== "0" && $auth["insurance_id"] !== "") {
                 $insuranceIndex = intval($auth["insurance_id"]);
                 if ($insuranceIndex >= 0 && isset($insuranceIds[$insuranceIndex])) {
                     $linkedInsuranceId = $insuranceIds[$insuranceIndex];
                 }
             }
-            
+
             // If no valid insurance link and we have at least one insurance, use the first one
             if (!$linkedInsuranceId && !empty($insuranceIds)) {
                 $linkedInsuranceId = $insuranceIds[0];
             }
-            
+
             // Skip authorization if we can't link it to an insurance
             if (!$linkedInsuranceId) {
                 error_log("Skipping authorization - no valid insurance link: " . print_r($auth, true));
@@ -270,7 +251,7 @@ try {
     if (isset($input["documents"]) && is_array($input["documents"])) {
         $docTableExists = false;
         $docStmt = null;
-        
+
         // Try client_documents first
         try {
             $docStmt = $conn->prepare("INSERT INTO client_documents (
@@ -288,7 +269,7 @@ try {
                 error_log("No document table found: " . $e2->getMessage());
             }
         }
-        
+
         if ($docTableExists && $docStmt) {
             foreach ($input["documents"] as $doc) {
                 $docUuid = !empty($doc["doc_uuid"]) ? $doc["doc_uuid"] : uniqid("doc_", true);
@@ -319,13 +300,11 @@ try {
             ]);
         }
     }
-
     $conn->commit();
     echo json_encode([
         "success" => true,
         "message" => $exists ? "Client updated successfully" : "Client added successfully"
     ]);
-
 } catch (PDOException $e) {
     if ($conn && $conn->inTransaction()) {
         $conn->rollBack();
@@ -337,4 +316,3 @@ try {
         "message" => "Server error: " . $e->getMessage()
     ]);
 }
-?>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -11,14 +11,8 @@ import {
   ChevronRight,
   Edit,
   Eye,
-  EyeOff,
-  Calendar,
   Clock,
   List,
-  User,
-  MapPin,
-  FileText,
-  Users,
   Trash2,
 } from "lucide-react";
 import {
@@ -30,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import NewSessionFormModal from "./new-session-form-modal";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
+import ViewSessionModal from "./ViewSessionModal"; // import new modal for viewing session details in a popup
 import { toast } from "sonner";
 
 // =====================
@@ -102,14 +97,33 @@ function formatTime12hFromUTC(utcDateTimeString, userCurrentTimezone = "UTC") {
     return "";
   }
 }
+// function formatTime12hFromUTC(utcDateTimeString, userCurrentTimezone = "UTC") {
+//   if (!utcDateTimeString) return "";
+//   try {
+//     // Ensure proper UTC parsing
+//     const dateStr = utcDateTimeString.endsWith("Z")
+//       ? utcDateTimeString
+//       : utcDateTimeString.replace(" ", "T") + "Z";
+//     const utcDate = new Date(dateStr);
+//     if (isNaN(utcDate.getTime())) return "";
+//     const options = {
+//       hour: "numeric",
+//       minute: "2-digit",
+//       hour12: true,
+//       timeZone: userCurrentTimezone,
+//     };
+//     return utcDate.toLocaleTimeString("en-US", options);
+//   } catch (error) {
+//     console.error("Error formatting time:", error);
+//     return "";
+//   }
+// }
 function isUTCStringOnDate(utcDateTimeString, dateObj) {
   if (!utcDateTimeString) return false;
   try {
-    const utcDate = new Date(utcDateTimeString);
-    const localDate = new Date(
-      utcDate.getTime() - utcDate.getTimezoneOffset() * 60 * 1000
-    );
-    return sameDay(localDate, dateObj);
+    // new Date(utcString) is a timestamp; getFullYear/getMonth/getDate return local day.
+    const localFromUtc = new Date(utcDateTimeString);
+    return sameDay(localFromUtc, dateObj);
   } catch (error) {
     console.error("[v0] Error checking date:", error);
     return false;
@@ -138,13 +152,25 @@ function initials(name) {
     .map((p) => p[0]?.toUpperCase())
     .join("");
 }
+
+function minutesFromMidnight(timeStr) {
+  // timeStr like "9:00 AM"
+  return toMinutes12h(timeStr);
+}
+function clamp(val, min, max) {
+  return Math.max(min, Math.min(max, val));
+}
+
+// const EXPAND_EXTRA_PX = 1300; // old fixed value (no longer used)
+// const EXPAND_EXTRA_PX = 0 // keep defined but unused; expansion now measured dynamically
+
 export default function SchedulingView() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState("month");
   const [isNewSessionModalOpen, setIsNewSessionModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [editingSession, setEditingSession] = useState(null);
-  const [expandedSession, setExpandedSession] = useState(null);
+  // const [expandedSession, setExpandedSession] = useState(null) // REMOVED
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -154,8 +180,20 @@ export default function SchedulingView() {
   const [clientFilter, setClientFilter] = useState("");
   const [hoveredSession, setHoveredSession] = useState(null);
   const [hoverTimeout, setHoverTimeout] = useState(null);
+  // const [expandedExtraPx, setExpandedExtraPx] = useState(0) // REMOVED
+  // const itemRefs = useRef({}) // REMOVED
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
   const today = new Date();
+
+  // useRef for DOM measurement
+  // const timelineContainerRef = useRef(null) // REMOVED
+
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [viewedSession, setViewedSession] = useState(null);
+
+  const [deletingSessionId, setDeletingSessionId] = useState(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState(null);
 
   useEffect(() => {
     const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -220,7 +258,7 @@ export default function SchedulingView() {
       const matchesLocation =
         locationFilter === "All" ||
         !locationFilter ||
-        session.locationAddress === locationFilter;
+        session.location_address === locationFilter;
       const matchesStaff =
         staffFilter === "All" ||
         !staffFilter ||
@@ -322,7 +360,7 @@ export default function SchedulingView() {
           quickNote: row.quick_note || "",
           status: row.STATUS || row.status || "upcoming",
           createdAt: row.created_at,
-          updatedAt: row.updated_at,
+          updatedAt: row.updatedAt,
         };
       });
       const inRange = (dtStr) => {
@@ -348,6 +386,7 @@ export default function SchedulingView() {
   useEffect(() => {
     refreshSessions();
   }, [refreshSessions]);
+
   const handlePrevious = () => {
     switch (viewMode) {
       case "today":
@@ -361,6 +400,7 @@ export default function SchedulingView() {
         break;
     }
   };
+
   const handleNext = () => {
     switch (viewMode) {
       case "today":
@@ -409,54 +449,15 @@ export default function SchedulingView() {
       locationAddress: session.locationAddress,
       quickNote: session.quickNote,
     });
-    setExpandedSession(null);
+    // setExpandedSession(null) // removed
     setIsNewSessionModalOpen(true);
   };
+
   const handleViewSession = (session) => {
-    setExpandedSession(
-      expandedSession?.sessionId === session.sessionId ? null : { ...session }
-    );
-  };
-  const getCellSessions = (dateObj) => {
-    if (!dateObj) return [];
-    return filteredSessions
-      .filter(
-        (session) =>
-          session?.startDateTime &&
-          isUTCStringOnDate(session.startDateTime, dateObj)
-      )
-      .sort(
-        (a, b) =>
-          toMinutes12h(formatTime12hFromUTC(a.startDateTime, a.startTZ)) -
-          toMinutes12h(formatTime12hFromUTC(b.startDateTime, b.startTZ))
-      );
-  };
-  const handleAddNewSession = async () => {
-    setIsNewSessionModalOpen(false);
-    setEditingSession(null);
-    await refreshSessions();
-  };
-  const handleMouseEnterSession = (session) => {
-    if (hoverTimeout) clearTimeout(hoverTimeout);
-    setHoveredSession(session); // Show tooltip immediately
+    setViewedSession({ ...session });
+    setIsViewModalOpen(true);
   };
 
-  const handleMouseLeaveSession = () => {
-    if (hoverTimeout) clearTimeout(hoverTimeout);
-    setHoveredSession(null); // Hide tooltip immediately
-  };
-
-  const handleTouchStartSession = (session) => {
-    if (hoverTimeout) clearTimeout(hoverTimeout);
-    setHoveredSession(session); // Show tooltip on touch
-    // Remove the auto-close timeout to keep tooltip until another interaction
-  };
-  const isSupervisionRequired = ["rbt", "bt"].includes(
-    expandedSession?.staffType?.toLowerCase()
-  );
-  const [deletingSessionId, setDeletingSessionId] = useState(null);
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [sessionToDelete, setSessionToDelete] = useState(null);
   const handleDeleteSession = async (sessionData) => {
     setSessionToDelete(sessionData);
     setDeleteModalOpen(true);
@@ -492,9 +493,9 @@ export default function SchedulingView() {
       if (data.success) {
         setDeleteModalOpen(false);
         setSessionToDelete(null);
-        if (expandedSession?.sessionId === sessionToDelete.sessionId) {
-          setExpandedSession(null);
-        }
+        // if (expandedSession?.sessionId === sessionToDelete.sessionId) { // using modal: no inline expansion
+        //   setExpandedSession(null);
+        // }
         toast.success("Session cancelled successfully!");
         await refreshSessions();
       } else {
@@ -515,6 +516,48 @@ export default function SchedulingView() {
       setSessionToDelete(null);
     }
   };
+
+  const getCellSessions = (dateObj) => {
+    if (!dateObj) return [];
+    return filteredSessions
+      .filter(
+        (session) =>
+          session?.startDateTime &&
+          isUTCStringOnDate(session.startDateTime, dateObj)
+      )
+      .sort(
+        (a, b) =>
+          toMinutes12h(formatTime12hFromUTC(a.startDateTime, a.startTZ)) -
+          toMinutes12h(formatTime12hFromUTC(b.startDateTime, b.startTZ))
+      );
+  };
+  const handleAddNewSession = async () => {
+    setIsNewSessionModalOpen(false);
+    setEditingSession(null);
+    await refreshSessions();
+  };
+  const handleMouseEnterSession = (session) => {
+    if (hoverTimeout) clearTimeout(hoverTimeout);
+    setHoveredSession(session); // Show tooltip immediately
+  };
+
+  const handleMouseLeaveSession = () => {
+    if (hoverTimeout) clearTimeout(hoverTimeout);
+    setHoveredSession(null); // Hide tooltip immediately
+  };
+
+  const handleTouchStartSession = (session) => {
+    if (hoverTimeout) clearTimeout(hoverTimeout);
+    setHoveredSession(session); // Show tooltip on touch
+    // Remove the auto-close timeout to keep tooltip until another interaction
+  };
+  // const isSupervisionRequired = ["rbt", "bt"].includes(expandedSession?.staffType?.toLowerCase()) // REMOVED
+
+  const handleWeekSessionClick = (session, dateObj) => {
+    setCurrentDate(dateObj);
+    setViewMode("today");
+  };
+
   // Timeline generation for 8 AM to 8 PM
   const timelineHours = Array.from({ length: 13 }, (_, i) => {
     const hour = i + 8;
@@ -522,563 +565,592 @@ export default function SchedulingView() {
     const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
     return `${displayHour}:00 ${ampm}`;
   });
+
+  // Function to layout sessions for the timeline view
+  function layoutDaySessionsForTimeline(
+    sessions,
+    userTimezone,
+    expandedSessionId = null,
+    expandExtraPx = 0
+  ) {
+    const events = sessions.map((s) => {
+      const startStr = formatTime12hFromUTC(s.startDateTime, userTimezone);
+      const endStr = formatTime12hFromUTC(s.endDateTime, userTimezone);
+      let start = minutesFromMidnight(startStr);
+      let end = minutesFromMidnight(endStr);
+      if (!isFinite(start)) start = 8 * 60;
+      if (!isFinite(end)) end = start + 60;
+      if (end <= start) end = start + 30;
+      return { session: s, start, end, col: 0, clusterId: -1 };
+    });
+    events.sort((a, b) => a.start - b.start || a.end - b.end);
+
+    let clusterId = -1;
+    const active = [];
+    const byCluster = new Map();
+
+    for (const ev of events) {
+      for (let i = active.length - 1; i >= 0; i--) {
+        if (active[i].end <= ev.start) active.splice(i, 1);
+      }
+      if (active.length === 0) {
+        clusterId += 1;
+      }
+      ev.clusterId = clusterId;
+      const used = new Set(active.map((a) => a.col));
+      let col = 0;
+      while (used.has(col)) col += 1;
+      ev.col = col;
+      active.push(ev);
+
+      const entry = byCluster.get(clusterId) || { maxCol: 0 };
+      entry.maxCol = Math.max(entry.maxCol, col);
+      byCluster.set(clusterId, entry);
+    }
+
+    const pxPer15Min = 16;
+    const startOfDay = 8 * 60;
+    const endOfDay = 20 * 60;
+
+    const layouts = events.map((ev) => {
+      const totalCols = (byCluster.get(ev.clusterId)?.maxCol ?? 0) + 1;
+      const minutesFromStart = clamp(
+        ev.start - startOfDay,
+        0,
+        endOfDay - startOfDay
+      );
+      const duration = clamp(ev.end - ev.start, 15, endOfDay - startOfDay);
+      const topPx = (minutesFromStart / 15) * pxPer15Min;
+      const heightPx = Math.max((duration / 15) * pxPer15Min, 32);
+      const leftPct = (ev.col / totalCols) * 100;
+      const widthPct = 100 / totalCols;
+
+      return {
+        session: ev.session,
+        topPx,
+        heightPx,
+        leftPct,
+        widthPct,
+        totalCols,
+        col: ev.col,
+      };
+    });
+
+    let totalExtraPx = 0;
+    if (expandedSessionId && expandExtraPx > 0) {
+      const expandedItem = layouts.find(
+        (item) => item.session.sessionId === expandedSessionId
+      );
+      if (expandedItem) {
+        const originalEndPx = expandedItem.topPx + expandedItem.heightPx;
+        expandedItem.heightPx += expandExtraPx;
+        totalExtraPx += expandExtraPx;
+        layouts.forEach((item) => {
+          if (item.topPx >= originalEndPx) {
+            item.topPx += expandExtraPx;
+          }
+        });
+      }
+    }
+
+    const totalHeight = ((endOfDay - startOfDay) / 15) * pxPer15Min + 64;
+    return { layouts, totalHeight };
+  }
+
   const renderCalendarContent = () => {
     if (viewMode === "today") {
+      const daySessions = getCellSessions(currentDate);
+      const { layouts, totalHeight } = layoutDaySessionsForTimeline(
+        daySessions,
+        userTimezone,
+        null, // Pass null for expandedSessionId
+        0 // Pass 0 for expandExtraPx
+      );
+
+      const timeSlots = [];
+      for (let hour = 8; hour <= 20; hour++) {
+        const ampm = hour >= 12 ? "PM" : "AM";
+        const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+        timeSlots.push({
+          label: `${displayHour}:00 ${ampm}`,
+          minutes: hour * 60,
+          isHour: true,
+        });
+        timeSlots.push({
+          label: `${displayHour}:30 ${ampm}`,
+          minutes: hour * 60 + 30,
+          isHour: false,
+        });
+      }
+
+      const pixelsPerMinute = 2;
+      const startHour = 8;
+      const endHour = 21; // Extended to 9 PM (21:00) to show 8:30 PM fully
+      const totalMinutes = (endHour - startHour) * 60;
+      const timelineHeight = totalMinutes * pixelsPerMinute;
+
       return (
-        <div className="flex gap-4">
-          <div className="hidden md:block w-24 bg-gray-50 p-2 rounded-lg">
-            {timelineHours.map((time, idx) => (
-              <div key={idx} className="h-16 text-xs text-gray-600 text-center">
-                {time}
-              </div>
-            ))}
-          </div>
-          <div className="flex-1 space-y-4">
-            <div className="space-y-3">
-              {getCellSessions(currentDate).length === 0 ? (
-                <div className="text-center py-12">
-                  <Calendar className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                  <p className="text-slate-500">No sessions scheduled</p>
-                  <Button
-                    onClick={() => handleOpenAddSessionForDate(currentDate)}
-                    className="mt-4 bg-teal-600 hover:bg-teal-700 text-white"
+        <div className="flex border border-slate-300 rounded-md overflow-hidden bg-white">
+          {/* Time labels column */}
+          <div className="w-20 flex-shrink-0 border-r border-slate-300">
+            <div className="h-12 border-b border-slate-300 bg-slate-50" />
+            <div className="relative" style={{ height: `${timelineHeight}px` }}>
+              {timeSlots.map((slot, idx) => {
+                const offsetMinutes = slot.minutes - startHour * 60;
+                const topPosition = offsetMinutes * pixelsPerMinute;
+                const shouldShowLabel = slot.minutes < 21 * 60;
+                return (
+                  <div
+                    key={idx}
+                    className="absolute w-full text-right pr-2 border-t"
+                    style={{ top: `${topPosition}px` }}
                   >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Session
-                  </Button>
-                </div>
-              ) : (
-                getCellSessions(currentDate).map((session, idx) => {
-                  const isExpanded =
-                    expandedSession?.sessionId === session.sessionId;
-                  const startTime = formatTime12hFromUTC(
-                    session.startDateTime,
-                    userTimezone
-                  );
-                  const startMinutes = toMinutes12h(startTime);
-                  const startHour = Math.floor((startMinutes / 60 - 8) * 4); // 4 slots per hour (15-min intervals)
-                  console.log(
-                    `Session ${
-                      session.sessionId
-                    }: Start Time=${startTime}, Start Minutes=${startMinutes}, Start Hour=${startHour}, Top=${
-                      startHour * 16
-                    }px`
-                  );
-                  return (
+                    {shouldShowLabel && (
+                      <span
+                        className={`text-xs ${
+                          slot.isHour
+                            ? "text-gray-700 font-medium"
+                            : "text-gray-500"
+                        }`}
+                      >
+                        {slot.isHour ? slot.label : slot.label}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Timeline grid and sessions */}
+          <div className="flex-1 relative">
+            {/* Date header */}
+            <div className="h-12 border-b border-slate-300 bg-slate-50 flex items-center justify-between px-4">
+              <span className="font-semibold text-slate-700">
+                {formatDateLabel(currentDate)}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-teal-600 ring-teal-600 bg-transparent"
+                onClick={() => handleOpenAddSessionForDate(currentDate)}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add Session
+              </Button>
+            </div>
+
+            {/* Grid lines */}
+            <div className="relative" style={{ height: `${timelineHeight}px` }}>
+              {timeSlots.map((slot, idx) => {
+                const offsetMinutes = slot.minutes - startHour * 60;
+                const topPosition = offsetMinutes * pixelsPerMinute;
+                const shouldShowLine = slot.minutes < 21 * 60;
+                return shouldShowLine ? (
+                  <div
+                    key={idx}
+                    className="absolute w-full"
+                    style={{ top: `${topPosition}px` }}
+                  >
                     <div
-                      key={idx}
-                      className="relative"
-                      style={{
-                        top: `${startHour * 16}px`, // 16px per 15-min slot
-                        minHeight: "64px", // Minimum height for 1-hour session
-                      }}
-                    >
-                      <Card className="hover:shadow-md transition-shadow border-slate-200">
-                        <CardContent className="p-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-3 flex-1">
-                              <div className="bg-teal-100 p-2 rounded-lg flex-shrink-0">
-                                <Users className="h-4 w-4 text-teal-600" />
-                              </div>
-                              <div className="flex-1">
-                                <div className="font-semibold text-slate-800">
-                                  {session.clientName || "Unknown Client"}
-                                </div>
-                                <div className="text-sm text-slate-600">
-                                  {formatTime12hFromUTC(
-                                    session.startDateTime,
-                                    userTimezone
-                                  )}{" "}
-                                  -{" "}
-                                  {formatTime12hFromUTC(
-                                    session.endDateTime,
-                                    userTimezone
-                                  )}
-                                  <span className="text-xs text-slate-400 ml-1">
-                                    ({userTimezone})
-                                  </span>
-                                </div>
-                                <div className="text-sm text-slate-500 mt-1">
-                                  Provider: {session.provider_name} •{" "}
-                                  {session.authCode}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleViewSession(session)}
-                                className="border-slate-300"
-                              >
-                                {isExpanded ? (
-                                  <span title="Hide Details">
-                                    <EyeOff className="h-3 w-3 mr-1" />
-                                  </span>
-                                ) : (
-                                  <span title="View Details">
-                                    <Eye className="h-3 w-3 mr-1" />
-                                  </span>
-                                )}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleEditSession(session)}
-                                className="border-slate-300"
-                              >
-                                <Edit className="h-4 w-4 mr-2" />
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="border-red-300 text-red-600 hover:bg-red-50 bg-transparent"
-                                onClick={() => handleDeleteSession(session)}
-                                disabled={
-                                  deletingSessionId === session.sessionId
-                                }
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            </div>
+                      className={`w-full ${
+                        slot.isHour
+                          ? "border-t border-slate-300"
+                          : "border-t border-slate-300 border-dashed"
+                      }`}
+                    />
+                  </div>
+                ) : null;
+              })}
+
+              {/* Session blocks */}
+              {layouts.map((layout) => {
+                const s = layout.session;
+                const startLabel = formatTime12hFromUTC(
+                  s.startDateTime,
+                  userTimezone
+                );
+                const endLabel = formatTime12hFromUTC(
+                  s.endDateTime,
+                  userTimezone
+                );
+
+                const startMinutes = minutesFromMidnight(startLabel);
+                const endMinutes = minutesFromMidnight(endLabel);
+                const offsetFromStart = startMinutes - startHour * 60;
+                const durationMinutes = endMinutes - startMinutes;
+
+                const topPx = offsetFromStart * pixelsPerMinute;
+                const heightPx = Math.max(
+                  durationMinutes * pixelsPerMinute,
+                  30
+                );
+
+                const colorClass = "bg-teal-100";
+
+                return (
+                  <div
+                    key={s.sessionId || `${s.clientId}-${s.startDateTime}`}
+                    onClick={() => handleViewSession(s)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleViewSession(s);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    className={`absolute ${colorClass} text-teal-600 ml-0.5  shadow-md overflow-hidden transition-all hover:shadow-lg border-2 border-teal-500 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/60`}
+                    style={{
+                      top: `${topPx}px`,
+                      left: `${layout.leftPct}%`,
+                      width: `calc(${layout.widthPct}% - 4px)`,
+                      height: `${heightPx}px`,
+                      minHeight: `${heightPx}px`,
+                      zIndex: 1,
+                    }}
+                  >
+                    <div className="p-3 h-full flex flex-col">
+                      {/* Always visible info */}
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-sm truncate capitalize">
+                            {s.clientName || "Unknown Client"}
                           </div>
-                          {isExpanded && (
-                            <div className="mt-6 space-y-6 border-t pt-6">
-                              <Card className="border-slate-200">
-                                <CardHeader className="pb-3">
-                                  <CardTitle className="flex items-center gap-2 text-base">
-                                    <Calendar className="h-4 w-4 text-teal-600" />{" "}
-                                    Session Information
-                                  </CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-3 text-sm">
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Session ID
-                                      </p>
-                                      <p className="font-medium">
-                                        {expandedSession.sessionId || "N/A"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Client ID
-                                      </p>
-                                      <p className="font-medium">
-                                        {expandedSession.clientId || "N/A"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Status
-                                      </p>
-                                      <Badge className="bg-green-100 text-green-800 capitalize">
-                                        {expandedSession.status || "Upcoming"}
-                                      </Badge>
-                                    </div>
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Start Time
-                                      </p>
-                                      <p className="font-medium">
-                                        {formatTime12hFromUTC(
-                                          expandedSession.startDateTime,
-                                          userTimezone
-                                        ) || "N/A"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        End Time
-                                      </p>
-                                      <p className="font-medium">
-                                        {formatTime12hFromUTC(
-                                          expandedSession.endDateTime,
-                                          userTimezone
-                                        ) || "N/A"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Recurring
-                                      </p>
-                                      <p className="font-medium">
-                                        {expandedSession.recurring &&
-                                        expandedSession.recurring.frequency &&
-                                        expandedSession.recurring.frequency !==
-                                          "No" &&
-                                        expandedSession.recurring.frequency !==
-                                          "Never" ? (
-                                          <div className="space-y-1">
-                                            <div className="flex items-center gap-2">
-                                              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
-                                                {
-                                                  expandedSession.recurring
-                                                    .frequency
-                                                }
-                                              </span>
-                                            </div>
-                                            {expandedSession.recurring
-                                              .frequency === "Weekly" &&
-                                              expandedSession.recurring.days
-                                                ?.length > 0 && (
-                                                <div className="flex flex-wrap gap-1">
-                                                  {expandedSession.recurring.days.map(
-                                                    (day, idx) => (
-                                                      <span
-                                                        key={idx}
-                                                        className="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs"
-                                                      >
-                                                        {day}
-                                                      </span>
-                                                    )
-                                                  )}
-                                                </div>
-                                              )}
-                                            {expandedSession.recurring.ends && (
-                                              <div className="text-xs text-gray-600">
-                                                {expandedSession.recurring.ends
-                                                  .type === "On" &&
-                                                  expandedSession.recurring.ends
-                                                    .date && (
-                                                    <span>
-                                                      Ends:{" "}
-                                                      {
-                                                        expandedSession
-                                                          .recurring.ends.date
-                                                      }
-                                                    </span>
-                                                  )}
-                                                {expandedSession.recurring.ends
-                                                  .type === "After" &&
-                                                  expandedSession.recurring.ends
-                                                    .occurrences && (
-                                                    <span>
-                                                      Total:{" "}
-                                                      {
-                                                        expandedSession
-                                                          .recurring.ends
-                                                          .occurrences
-                                                      }{" "}
-                                                      sessions
-                                                    </span>
-                                                  )}
-                                              </div>
-                                            )}
-                                          </div>
-                                        ) : (
-                                          <span className="text-gray-500">
-                                            No
-                                          </span>
-                                        )}
-                                      </p>
-                                    </div>
-                                  </div>
-                                </CardContent>
-                              </Card>
-                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <Card className="border-slate-200">
-                                  <CardHeader className="pb-3">
-                                    <CardTitle className="flex items-center gap-2 text-base">
-                                      <User className="h-4 w-4 text-teal-600" />{" "}
-                                      Provider Information
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent className="space-y-3 text-sm">
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Provider Name
-                                      </p>
-                                      <p className="font-medium">
-                                        {expandedSession.provider_name ||
-                                          "Not specified"}
-                                      </p>
-                                    </div>
-                                    {expandedSession.supervising_provider_name && (
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Supervising Provider Name
-                                        </p>
-                                        <p className="font-medium">
-                                          {expandedSession.supervising_provider_name ||
-                                            "Not specified"}
-                                        </p>
-                                      </div>
-                                    )}
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Authorization Code
-                                      </p>
-                                      <p className="font-medium">
-                                        {expandedSession.authCode ||
-                                          "Not specified"}
-                                      </p>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                                <Card className="border-slate-200">
-                                  <CardHeader className="pb-3">
-                                    <CardTitle className="flex items-center gap-2 text-base">
-                                      <Users className="h-4 w-4 text-teal-600" />{" "}
-                                      Client Information
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent className="space-y-3 text-sm">
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Client Name
-                                      </p>
-                                      <p className="font-medium">
-                                        {expandedSession.clientName ||
-                                          "Unknown Client"}
-                                      </p>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                              </div>
-                              <Card className="border-slate-200">
-                                <CardHeader className="pb-3">
-                                  <CardTitle className="flex items-center gap-2 text-base">
-                                    <MapPin className="h-4 w-4 text-teal-600" />{" "}
-                                    Location Information
-                                  </CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-3 text-sm">
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Place of Service
-                                      </p>
-                                      <p className="font-medium">
-                                        {expandedSession.placeOfService ||
-                                          "Not specified"}
-                                      </p>
-                                    </div>
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Time Zone
-                                      </p>
-                                      <p className="font-medium">
-                                        {expandedSession.startTZ || "UTC"}
-                                      </p>
-                                    </div>
-                                  </div>
-                                  {expandedSession.locationAddress && (
-                                    <div>
-                                      <p className="text-slate-500 mb-1">
-                                        Location Address
-                                      </p>
-                                      <p className="bg-slate-50 p-3 rounded-lg">
-                                        {expandedSession.locationAddress}
-                                      </p>
-                                    </div>
-                                  )}
-                                </CardContent>
-                              </Card>
-                              {expandedSession.quickNote && (
-                                <Card className="border-slate-200">
-                                  <CardHeader className="pb-3">
-                                    <CardTitle className="flex items-center gap-2 text-base">
-                                      <FileText className="h-4 w-4 text-teal-600" />{" "}
-                                      Session Notes
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent className="text-sm">
-                                    <div>
-                                      <p className="text-slate-500 mb-2 font-medium">
-                                        Quick Notes
-                                      </p>
-                                      <p className="bg-slate-50 p-3 rounded-lg">
-                                        {expandedSession.quickNote}
-                                      </p>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                              )}
-                              <div className="flex gap-2 pt-2">
-                                <Button
-                                  variant="outline"
-                                  onClick={() =>
-                                    handleEditSession(expandedSession)
-                                  }
-                                  className="flex-1 border-slate-300"
-                                >
-                                  <Edit className="h-4 w-4 mr-2" />
-                                  Edit Session
-                                </Button>
-                              </div>
-                            </div>
+                          <div className="text-xs opacity-90 truncate">
+                            {startLabel} - {endLabel}
+                          </div>
+                          {s.provider_name && (
+                            <p className="text-xs text-gray-600">
+                              Provider: {s.provider_name}
+                            </p>
                           )}
-                        </CardContent>
-                      </Card>
+
+                          {s.supervising_provider_name && (
+                            <p className="text-xs text-gray-500">
+                              Supervisor: {s.supervising_provider_name}
+                            </p>
+                          )}
+                          {s.locationAddress && (
+                            <p className="text-xs text-gray-500">
+                              Location: {s.locationAddress}
+                            </p>
+                          )}
+                          {s.authCode && (
+                            <p className="text-xs text-gray-500">
+                              Auth Code: {s.authCode}
+                            </p>
+                          )}
+                          {s.quickNote && (
+                            <p className="text-xs text-gray-500 italic border-t pt-2 mt-1">
+                              Note: {s.quickNote}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex gap-1 mt-auto pt-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewSession(s);
+                            }}
+                            className="bg-white/90 hover:bg-white border-slate-300 text-slate-700 h-7 text-xs px-2"
+                          >
+                            <Eye className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditSession(s);
+                            }}
+                            className="bg-white/90 hover:bg-white border-slate-300 text-slate-700 h-7 text-xs px-2"
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSession(s);
+                            }}
+                            disabled={deletingSessionId === s.sessionId}
+                            className="bg-red-50 hover:bg-red-100 border-slate-300 text-red-500 hover:text-red-700 h-7 text-xs px-2"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
                     </div>
-                  );
-                })
-              )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
       );
     } else if (viewMode === "week") {
-      return (
-        <div className="space-y-4">
-          <div className="hidden md:grid grid-cols-8 gap-2 mb-4 border-b border-gray-200">
-            <div className="w-24"></div>{" "}
-            {/* Empty cell for timeline alignment */}
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-              <div
-                key={day}
-                className="text-center font-medium text-muted-foreground py-2 bg-muted rounded-lg"
-              >
-                {day}
-              </div>
-            ))}
-          </div>
-          <div className="flex gap-4">
-            <div className="hidden md:block w-24 bg-gray-50 p-2 rounded-lg relative">
-              {timelineHours.map((time, idx) => (
-                <div
-                  key={idx}
-                  className="h-16 text-xs text-gray-600 text-center flex items-center justify-center"
-                >
-                  {time}
-                </div>
-              ))}
-            </div>
-            <div className="flex-1 relative overflow-visible">
-              <div className="grid grid-cols-1 md:grid-cols-7 gap-2">
-                {/* Grid lines for hourly divisions */}
-                <div
-                  className="hidden md:block absolute top-0 left-0 w-full"
-                  style={{ height: `${13 * 64}px` }} // 13 hours * 64px
-                >
-                  {timelineHours.map((_, idx) => (
-                    <div
-                      key={idx}
-                      className="absolute w-full border-t border-gray-200"
-                      style={{ top: `${idx * 64}px`, zIndex: 0 }} // 64px per hour
-                    />
-                  ))}
-                </div>
-                {calendarData.days.map((dateObj, idx) => {
-                  if (!dateObj) return <div key={idx} className="invisible" />;
-                  const isToday = dateObj && sameDay(dateObj, today);
-                  const daySessions = getCellSessions(dateObj);
-                  return (
-                    <Card
-                      key={idx}
-                      className={`min-h-[832px] cursor-pointer hover:shadow-md transition-shadow relative group border border-gray-200 overflow-visible ${
-                        selectedDate && sameDay(selectedDate, dateObj)
-                          ? "ring-2 ring-teal-500"
-                          : ""
-                      }`} // 832px = 13 hours * 64px
-                      onClick={() => handleDayClick(dateObj)}
-                    >
-                      <CardContent className="p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <span
-                            className={`text-sm font-medium ${
-                              isToday ? "text-teal-600" : "text-foreground"
-                            }`}
-                          >
-                            {dateObj.getDate()}{" "}
-                            {isToday ? (
-                              <Badge className="text-[10px] py-0.5 px-2 lg:ml-2 ml-0">
-                                Today
-                              </Badge>
-                            ) : (
-                              ""
-                            )}
-                          </span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenAddSessionForDate(dateObj);
-                            }}
-                          >
-                            <Plus className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <div
-                          className="relative"
-                          style={{ minHeight: "780px" }}
-                        >
-                          {daySessions.map((session, i) => {
-                            const startTime = formatTime12hFromUTC(
-                              session.startDateTime,
-                              userTimezone
-                            );
-                            const startMinutes = toMinutes12h(startTime);
-                            const startHour = Math.floor(
-                              (startMinutes / 60 - 8) * 4
-                            ); // 4 slots per hour (15-min intervals)
+      const weekStart = startOfWeek(currentDate);
+      const days = [];
+      for (let i = 0; i < 7; i++) days.push(addDays(weekStart, i));
 
-                            return (
-                              <div
-                                key={i}
-                                className="absolute w-[calc(100%-1.5rem)] z-10"
-                                style={{
-                                  top: `${startHour * 16}px`, // 16px per 15-min slot
-                                  minHeight: "64px", // Minimum height for 1-hour session
-                                }}
-                                onMouseEnter={() =>
-                                  handleMouseEnterSession(session)
-                                }
-                                onMouseLeave={handleMouseLeaveSession}
-                                onTouchStart={() =>
-                                  handleTouchStartSession(session)
-                                }
-                              >
-                                <div className="text-xs p-1 bg-teal-100 text-teal-800 rounded truncate relative pointer-events-auto">
-                                  {initials(session.clientName)}{" "}
-                                  {startTime
-                                    .replace(":00 ", "")
-                                    .replace(" UTC", "")}
-                                  {hoveredSession?.sessionId ===
-                                    session.sessionId && (
-                                    <div className="absolute z-[1000] bg-white shadow-lg p-4 rounded-lg border top-full left-0 mt-2 w-64 max-w-[90vw] pointer-events-auto">
-                                      <p className="font-semibold">
-                                        {session.clientName}
-                                      </p>
-                                      <p className="text-sm text-gray-600">
-                                        {formatTime12hFromUTC(
-                                          session.startDateTime,
-                                          userTimezone
-                                        )}{" "}
-                                        -{" "}
-                                        {formatTime12hFromUTC(
-                                          session.endDateTime,
-                                          userTimezone
-                                        )}
-                                      </p>
-                                      <p className="text-sm text-gray-600">
-                                        Provider: {session.provider_name}
-                                      </p>
-                                      <p className="text-sm text-gray-600">
-                                        Location: {session.locationAddress}
-                                      </p>
-                                      {session.quickNote && (
-                                        <p className="text-sm text-gray-600">
-                                          Note: {session.quickNote}
-                                        </p>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
+      const timeSlots = [];
+      for (let hour = 8; hour <= 20; hour++) {
+        const ampm = hour >= 12 ? "PM" : "AM";
+        const displayHour = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+        timeSlots.push({
+          label: `${displayHour}:00 ${ampm}`,
+          minutes: hour * 60,
+          isHour: true,
+        });
+        timeSlots.push({
+          label: `${displayHour}:30 ${ampm}`,
+          minutes: hour * 60 + 30,
+          isHour: false,
+        });
+      }
+
+      const pixelsPerMinute = 2;
+      const startHour = 8;
+      const endHour = 21;
+      const totalMinutes = (endHour - startHour) * 60;
+      const timelineHeight = totalMinutes * pixelsPerMinute;
+
+      return (
+        <div className="flex border border-slate-300 rounded-md overflow-hidden bg-white">
+          {/* Time labels column */}
+          <div className="w-20 flex-shrink-0 border-r border-slate-300">
+            <div className="h-12 border-b border-slate-300 bg-slate-50" />
+            <div className="relative" style={{ height: `${timelineHeight}px` }}>
+              {timeSlots.map((slot, idx) => {
+                const offsetMinutes = slot.minutes - startHour * 60;
+                const topPosition = offsetMinutes * pixelsPerMinute;
+                const shouldShowLabel = slot.minutes < 21 * 60;
+                return (
+                  <div
+                    key={idx}
+                    className="absolute w-full text-right pr-2 border-t"
+                    style={{ top: `${topPosition}px` }}
+                  >
+                    {shouldShowLabel && (
+                      <span
+                        className={`text-xs ${
+                          slot.isHour
+                            ? "text-gray-700 font-medium"
+                            : "text-gray-500"
+                        }`}
+                      >
+                        {slot.isHour ? slot.label : slot.label}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+          </div>
+
+          {/* Week days columns */}
+          <div className="flex-1 flex">
+            {days.map((dateObj, dayIdx) => {
+              const isToday = sameDay(dateObj, today);
+              const daySessions = getCellSessions(dateObj);
+              const { layouts } = layoutDaySessionsForTimeline(
+                daySessions,
+                userTimezone,
+                null,
+                0
+              );
+
+              const dayName = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][
+                dateObj.getDay()
+              ];
+
+              return (
+                <div
+                  key={dayIdx}
+                  className="flex-1 border-r border-slate-300 last:border-r-0"
+                >
+                  {/* Day header */}
+                  <div
+                    className={`h-12 border-b border-slate-300 flex flex-col items-center justify-center ${
+                      isToday ? "bg-teal-100" : "bg-slate-50"
+                    }`}
+                  >
+                    <span className="text-xs text-slate-600 font-medium">
+                      {dayName}
+                    </span>
+                    <span
+                      className={`text-sm font-semibold ${
+                        isToday ? "text-teal-600" : "text-slate-700"
+                      }`}
+                    >
+                      {dateObj.getDate()}
+                    </span>
+                  </div>
+
+                  {/* Timeline grid and sessions */}
+                  <div
+                    className="relative"
+                    style={{ height: `${timelineHeight}px` }}
+                  >
+                    {/* Grid lines */}
+                    {timeSlots.map((slot, idx) => {
+                      const offsetMinutes = slot.minutes - startHour * 60;
+                      const topPosition = offsetMinutes * pixelsPerMinute;
+                      const shouldShowLine = slot.minutes < 21 * 60;
+                      return shouldShowLine ? (
+                        <div
+                          key={idx}
+                          className="absolute w-full"
+                          style={{ top: `${topPosition}px` }}
+                        >
+                          <div
+                            className={`w-full ${
+                              slot.isHour
+                                ? "border-t border-slate-300"
+                                : "border-t border-slate-300 border-dashed"
+                            }`}
+                          />
+                        </div>
+                      ) : null;
+                    })}
+
+                    {/* Session blocks */}
+                    {layouts.map((layout) => {
+                      const s = layout.session;
+                      const startLabel = formatTime12hFromUTC(
+                        s.startDateTime,
+                        userTimezone
+                      );
+                      const endLabel = formatTime12hFromUTC(
+                        s.endDateTime,
+                        userTimezone
+                      );
+
+                      const startMinutes = minutesFromMidnight(startLabel);
+                      const endMinutes = minutesFromMidnight(endLabel);
+                      const offsetFromStart = startMinutes - startHour * 60;
+                      const durationMinutes = endMinutes - startMinutes;
+
+                      const topPx = offsetFromStart * pixelsPerMinute;
+                      const heightPx = Math.max(
+                        durationMinutes * pixelsPerMinute,
+                        30
+                      );
+
+                      return (
+                        <div
+                          key={
+                            s.sessionId || `${s.clientId}-${s.startDateTime}`
+                          }
+                          onClick={() => handleWeekSessionClick(s, dateObj)}
+                          onMouseEnter={(e) => {
+                            e.stopPropagation();
+                            handleMouseEnterSession(s);
+                          }}
+                          onMouseLeave={handleMouseLeaveSession}
+                          onTouchStart={(e) => {
+                            e.stopPropagation();
+                            handleTouchStartSession(s);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              handleWeekSessionClick(s, dateObj);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          className="absolute bg-teal-100 text-teal-600 ml-0.5 shadow-md overflow-visible transition-all hover:shadow-lg border-2 border-teal-500 cursor-pointer focus:outline-none focus:ring-2 focus:ring-white/60"
+                          style={{
+                            top: `${topPx}px`,
+                            left: `${layout.leftPct}%`,
+                            width: `calc(${layout.widthPct}% - 4px)`,
+                            height: `${heightPx}px`,
+                            minHeight: `${heightPx}px`,
+                            zIndex:
+                              hoveredSession?.sessionId === s.sessionId
+                                ? 9999
+                                : 1,
+                          }}
+                        >
+                          <div className="p-2 h-full flex flex-col text-xs">
+                            <div className="font-semibold truncate capitalize">
+                              {s.clientName || "Unknown"}
+                            </div>
+                            <div className="text-[10px] opacity-90 truncate">
+                              {formatTime12hFromUTC(
+                                s.startDateTime,
+                                userTimezone
+                              )}{" "}
+                              -{" "}
+                              {formatTime12hFromUTC(
+                                s.endDateTime,
+                                userTimezone
+                              )}{" "}
+                            </div>
+                            <div className="text-[10px] opacity-90 truncate">
+                              {s.provider_name}
+                            </div>
+                          </div>
+                          {hoveredSession?.sessionId === s.sessionId && (
+                            <div className="absolute top-1/2 z-[9999999] bg-white shadow-lg p-3 rounded-lg border left-0 right-0 mt-2 pointer-events-auto w-64">
+                              <div className="flex flex-col gap-2">
+                                <p className="font-semibold text-gray-800 capitalize text-sm">
+                                  {s.clientName}
+                                </p>
+                                <div className="flex items-center gap-2 text-sm text-gray-600">
+                                  <Clock className="h-3 w-3" />
+                                  <span>
+                                    {formatTime12hFromUTC(
+                                      s.startDateTime,
+                                      userTimezone
+                                    )}{" "}
+                                    -{" "}
+                                    {formatTime12hFromUTC(
+                                      s.endDateTime,
+                                      userTimezone
+                                    )}
+                                  </span>
+                                </div>
+                                <p className="text-sm text-gray-600">
+                                  Provider: {s.provider_name}
+                                </p>
+                                {s.supervising_provider_name && (
+                                  <p className="text-xs text-gray-500">
+                                    Supervisor: {s.supervising_provider_name}
+                                  </p>
+                                )}
+                                {s.locationAddress && (
+                                  <p className="text-xs text-gray-500">
+                                    Location: {s.locationAddress}
+                                  </p>
+                                )}
+                                {s.authCode && (
+                                  <p className="text-xs text-gray-500">
+                                    Auth Code: {s.authCode}
+                                  </p>
+                                )}
+                                {s.quickNote && (
+                                  <p className="text-xs text-gray-500 italic border-t pt-2 mt-1">
+                                    Note: {s.quickNote}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       );
@@ -1108,123 +1180,26 @@ export default function SchedulingView() {
               </div>
             ))}
           </div>
-          <div className="md:hidden space-y-2">
-            {arr.map((dateObj, idx) => {
-              if (!dateObj) return null;
-              const isToday = sameDay(dateObj, today);
-              const isSelected = selectedDate && sameDay(dateObj, selectedDate);
-              const isPast = isBeforeDay(dateObj, today);
-              const daySessions = getCellSessions(dateObj);
-              return (
-                <Card
-                  key={idx}
-                  className={`p-3 cursor-pointer transition-all border border-gray-200 overflow-visible ${
-                    isPast ? "opacity-60" : ""
-                  } ${isSelected ? "ring-2 ring-teal-500" : ""} ${
-                    isToday ? "bg-teal-100" : ""
-                  }`}
-                  onClick={() => handleDayClick(dateObj)}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span
-                      className={`font-semibold ${
-                        isToday
-                          ? "text-teal-600"
-                          : isPast
-                          ? "text-muted-foreground"
-                          : "text-foreground"
-                      }`}
-                    >
-                      {dateObj.toDateString()}
-                      {isToday && (
-                        <Badge className="ml-2 text-[10px] py-0.5 px-2">
-                          Today
-                        </Badge>
-                      )}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0 text-teal-700"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenAddSessionForDate(dateObj);
-                      }}
-                    >
-                      <Plus className="h-3 w-3" />
-                    </Button>
-                  </div>
-                  <div className="space-y-1 relative">
-                    {daySessions.length > 0 ? (
-                      daySessions.map((session, i) => (
-                        <div
-                          key={i}
-                          className="text-xs p-1 bg-teal-100 text-teal-800 rounded truncate relative pointer-events-auto"
-                          onMouseEnter={() => handleMouseEnterSession(session)}
-                          // onMouseLeave={handleMouseLeaveSession}
-                          onTouchStart={() => handleTouchStartSession(session)}
-                        >
-                          {initials(session.clientName)}{" "}
-                          {formatTime12hFromUTC(
-                            session.startDateTime,
-                            userTimezone
-                          )
-                            .replace(":00 ", "")
-                            .replace(" UTC", "")}
-                          {hoveredSession?.sessionId === session.sessionId && (
-                            <div className="absolute z-[9999] bg-white shadow-xl p-4 rounded-lg border left-full top-0 ml-2 w-64 max-w-[90vw] pointer-events-none">
-                              {" "}
-                              <p className="font-semibold">
-                                {session.clientName}
-                              </p>
-                              <p className="text-sm text-gray-600">
-                                {formatTime12hFromUTC(
-                                  session.startDateTime,
-                                  userTimezone
-                                )}{" "}
-                                -{" "}
-                                {formatTime12hFromUTC(
-                                  session.endDateTime,
-                                  userTimezone
-                                )}
-                              </p>
-                              <p className="text-sm text-gray-600">
-                                Provider: {session.provider_name}
-                              </p>
-                              <p className="text-sm text-gray-600">
-                                Location: {session.locationAddress}
-                              </p>
-                              {session.quickNote && (
-                                <p className="text-sm text-gray-600">
-                                  Note: {session.quickNote}
-                                </p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-muted-foreground">
-                        No sessions
-                      </p>
-                    )}
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-          <div className="hidden md:grid grid-cols-7 gap-2">
+          <div className="hidden md:grid md:grid-cols-7 gap-2">
             {arr.map((dateObj, idx) => {
               if (!dateObj) return <div key={idx} className="invisible" />;
               const isToday = sameDay(dateObj, today);
-              const isSelected = selectedDate && sameDay(dateObj, selectedDate);
+              const isSelected = selectedDate && sameDay(selectedDate, dateObj);
               const isPast = isBeforeDay(dateObj, today);
               const daySessions = getCellSessions(dateObj);
+              const sortedSessions = daySessions.sort(
+                (a, b) =>
+                  toMinutes12h(
+                    formatTime12hFromUTC(a.startDateTime, userTimezone)
+                  ) -
+                  toMinutes12h(
+                    formatTime12hFromUTC(b.startDateTime, userTimezone)
+                  )
+              );
               return (
                 <Card
                   key={idx}
                   className={`group relative cursor-pointer transition-all min-h-[150px] px-3 py-6 border border-gray-200 overflow-visible
-                    ${isPast ? "" : ""}
                     ${isSelected ? "ring-2 ring-teal-500" : ""}
                     ${isToday ? "bg-teal-100" : ""}`}
                   onClick={() => handleDayClick(dateObj)}
@@ -1260,67 +1235,192 @@ export default function SchedulingView() {
                       </Button>
                     </div>
                     <div className="space-y-1 relative">
-                      {daySessions.slice(0, 2).map((session, i) => (
-                        <div
-                          key={i}
-                          className="text-xs p-1 bg-teal-100 text-teal-800 rounded truncate pointer-events-auto"
-                          onMouseEnter={(e) => {
-                            e.stopPropagation();
-                            handleMouseEnterSession(session);
-                          }}
-                          onMouseLeave={(e) => {
-                            // e.stopPropagation();
-                            handleMouseLeaveSession();
-                          }}
-                          onTouchStart={(e) => {
-                            e.stopPropagation();
-                            handleTouchStartSession(session);
-                          }}
-                        >
-                          {initials(session.clientName)}{" "}
-                          {formatTime12hFromUTC(
+                      {sortedSessions.length > 0 ? (
+                        sortedSessions.map((session) => {
+                          const startLabel = formatTime12hFromUTC(
                             session.startDateTime,
                             userTimezone
                           )
                             .replace(":00 ", "")
-                            .replace(" UTC", "")}
-                          {hoveredSession?.sessionId === session.sessionId && (
-                            <div className=" z-[99999999999] bg-teal-50 shadow p-4 rounded-lg border w-64 max-w-[90vw] pointer-events-auto absolute text-black ">
-                              {" "}
-                              <p className="text-sm font-semibold text-gray-600 capitalize">
-                                {session.clientName}
-                              </p>
-                              <p className="text-sm text-gray-600">
-                                {formatTime12hFromUTC(
-                                  session.startDateTime,
-                                  userTimezone
-                                )}{" "}
-                                -{" "}
-                                {formatTime12hFromUTC(
-                                  session.endDateTime,
-                                  userTimezone
-                                )}
-                              </p>
-                              <p className="text-sm text-gray-600">
-                                Provider: {session.provider_name || "N/A"}
-                              </p>
-                              <p className="text-sm truncate text-gray-600">
-                                Location: {session.locationAddress || "N/A"}
-                              </p>
-                              <p className="text-sm truncate text-gray-600">
-                                Notes: {session.quickNote || "N/A"}
-                              </p>{" "}
+                            .replace(" UTC", "");
+                          return (
+                            <div
+                              key={
+                                session.sessionId ||
+                                `${session.clientId}-${session.startDateTime}`
+                              }
+                              className="text-xs p-1 border bg-teal-200 border-teal-600 text-teal-800 rounded relative pointer-events-auto w-full"
+                              onMouseEnter={(e) => {
+                                e.stopPropagation();
+                                handleMouseEnterSession(session);
+                              }}
+                              onMouseLeave={handleMouseLeaveSession}
+                              onTouchStart={(e) => {
+                                e.stopPropagation();
+                                handleTouchStartSession(session);
+                              }}
+                            >
+                              <span className="truncate inline-block max-w-full align-top capitalize">
+                                {session.clientName} {startLabel}
+                              </span>
+                              {hoveredSession?.sessionId ===
+                                session.sessionId && (
+                                <div className="absolute z-[1000] bg-white shadow-lg p-3 rounded-lg border top-full left-0 right-0 mt-2 pointer-events-auto w-64">
+                                  <div className="flex flex-col gap-1">
+                                    <p className="text-sm font-semibold text-gray-800 capitalize">
+                                      {session.clientName}
+                                    </p>
+                                    <p className="text-sm text-gray-600">
+                                      {formatTime12hFromUTC(
+                                        session.startDateTime,
+                                        userTimezone
+                                      )}{" "}
+                                      -{" "}
+                                      {formatTime12hFromUTC(
+                                        session.endDateTime,
+                                        userTimezone
+                                      )}
+                                    </p>
+                                    <p className="text-sm text-gray-600">
+                                      {session.provider_name}
+                                    </p>
+                                    {session.locationAddress && (
+                                      <p className="text-xs text-gray-500">
+                                        {session.locationAddress}
+                                      </p>
+                                    )}
+                                    {session.quickNote && (
+                                      <p className="text-xs text-gray-500 italic">
+                                        {session.quickNote}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      ))}
-                      {daySessions.length > 2 && (
-                        <div className="text-xs text-muted-foreground">
-                          +{daySessions.length - 2}
-                        </div>
+                          );
+                        })
+                      ) : (
+                        <p className="text-xs text-muted-foreground"></p>
                       )}
                     </div>
                   </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+          {/* Mobile month view */}
+          <div className="md:hidden space-y-2">
+            {arr.map((dateObj, idx) => {
+              if (!dateObj) return null;
+              const isToday = sameDay(dateObj, today);
+              const isSelected = selectedDate && sameDay(dateObj, dateObj);
+              const isPast = isBeforeDay(dateObj, today);
+              const daySessions = getCellSessions(dateObj);
+              const sortedSessions = daySessions.sort(
+                (a, b) =>
+                  toMinutes12h(
+                    formatTime12hFromUTC(a.startDateTime, userTimezone)
+                  ) -
+                  toMinutes12h(
+                    formatTime12hFromUTC(b.startDateTime, userTimezone)
+                  )
+              );
+
+              return (
+                <Card
+                  key={idx}
+                  className={`p-3 cursor-pointer transition-all border border-gray-200 overflow-visible ${
+                    isPast ? "opacity-60" : ""
+                  } ${isSelected ? "ring-2 ring-teal-500" : ""} ${
+                    isToday ? "bg-teal-100" : ""
+                  }`}
+                  onClick={() => handleDayClick(dateObj)}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span
+                      className={`font-semibold ${
+                        isToday
+                          ? "text-teal-600"
+                          : isPast
+                          ? "text-muted-foreground"
+                          : "text-foreground"
+                      }`}
+                    >
+                      {dateObj.getDate()}
+                      {isToday && (
+                        <Badge className="ml-2 text-[10px] py-0.5 px-2">
+                          Today
+                        </Badge>
+                      )}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 w-6 p-0 text-teal-700"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleOpenAddSessionForDate(dateObj);
+                      }}
+                    >
+                      <Plus className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <div className="space-y-1 relative">
+                    {sortedSessions.length > 0 ? (
+                      sortedSessions.map((session) => {
+                        const startLabel = formatTime12hFromUTC(
+                          session.startDateTime,
+                          userTimezone
+                        )
+                          .replace(":00 ", "")
+                          .replace(" UTC", "");
+                        return (
+                          <div
+                            key={
+                              session.sessionId ||
+                              `${session.clientId}-${session.startDateTime}`
+                            }
+                            className="text-xs p-1 bg-teal-100 text-teal-800 rounded relative pointer-events-auto w-full"
+                            onMouseEnter={() =>
+                              handleMouseEnterSession(session)
+                            }
+                            onMouseLeave={handleMouseLeaveSession}
+                            onTouchStart={() =>
+                              handleTouchStartSession(session)
+                            }
+                          >
+                            <span className="truncate inline-block max-w-full capitalize">
+                              {initials(session.clientName)} {startLabel}
+                            </span>
+                            {hoveredSession?.sessionId ===
+                              session.sessionId && (
+                              <div className="absolute z-[9999] bg-white shadow-xl p-3 rounded-lg border left-0 right-0 top-full mt-2 pointer-events-none">
+                                <div className="flex flex-col gap-1">
+                                  <p className="font-semibold text-gray-800 capitalize">
+                                    {session.clientName}
+                                  </p>
+                                  <p className="text-sm text-gray-600">
+                                    {formatTime12hFromUTC(
+                                      session.startDateTime,
+                                      userTimezone
+                                    )}{" "}
+                                    -{" "}
+                                    {formatTime12hFromUTC(
+                                      session.endDateTime,
+                                      userTimezone
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-xs text-muted-foreground"></p>
+                    )}
+                  </div>
                 </Card>
               );
             })}
@@ -1330,7 +1430,7 @@ export default function SchedulingView() {
     }
   };
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-foreground">Scheduling</h2>
@@ -1477,8 +1577,7 @@ export default function SchedulingView() {
         }}
         onSave={handleAddNewSession}
         selectedDate={selectedDate}
-        editingSession={editingSession} 
-        
+        editingSession={editingSession}
       />
       <DeleteConfirmationModal
         isOpen={deleteModalOpen}
@@ -1486,6 +1585,25 @@ export default function SchedulingView() {
         onConfirm={confirmDeleteSession}
         sessionData={sessionToDelete}
         loading={!!deletingSessionId}
+      />
+      {/* add the ViewSessionModal instance near other modals at the bottom */}
+      <ViewSessionModal
+        isOpen={isViewModalOpen}
+        onClose={() => {
+          setIsViewModalOpen(false);
+          setViewedSession(null);
+        }}
+        session={viewedSession}
+        onEdit={(sess) => {
+          setIsViewModalOpen(false);
+          setViewedSession(null);
+          handleEditSession(sess);
+        }}
+        onDelete={(sess) => {
+          setIsViewModalOpen(false);
+          setViewedSession(null);
+          handleDeleteSession(sess);
+        }}
       />
     </div>
   );

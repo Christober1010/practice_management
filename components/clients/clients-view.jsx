@@ -82,13 +82,13 @@ export default function ClientsView() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [expandedClient, setExpandedClient] = useState(null);
+  const [staffList, setStaffList] = useState([]); // Initialize as empty array
 
   // Redux
   const dispatch = useAppDispatch();
   // clients-view.jsx
   const clients = useSelector((state) => state.clients.items); // items = API response
   // const clients = clientsResponse?.clients ?? [] // safe fallback to []
-  console.log(clients, "clients");
   const loading = useAppSelector((s) => s.clients.loading);
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
@@ -170,7 +170,7 @@ export default function ClientsView() {
       if (result.success) {
         dispatch(updateClientAction(clientData));
         setEditingClient(clientData);
-        fetchClients();
+        dispatch(fetchClients());
         toast.success("Client updated successfully!");
       } else {
         toast.error(
@@ -267,6 +267,31 @@ export default function ClientsView() {
     dispatch(fetchClients());
   }, [dispatch]);
 
+  useEffect(() => {
+    const fetchStaff = async () => {
+      try {
+        const response = await fetch(`${baseUrl}/staff.php`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const result = await response.json();
+        if (result.success) {
+          setStaffList(result.staff_records);
+        } else {
+          toast.error(`Failed to fetch staff: ${result.message}`);
+        }
+      } catch (error) {
+        console.error("Error fetching staff:", error);
+        toast.error("Failed to load staff data.");
+      }
+    };
+
+    fetchStaff();
+  }, [baseUrl]);
+
+  const filteredStaff = staffList.filter(
+    (staff) => staff.staffType === "BCBA" || staff.staffType === "BCaBA"
+  );
   const toggleExpanded = (clientId) => {
     setExpandedClient((prev) => (prev === clientId ? null : clientId));
   };
@@ -281,7 +306,7 @@ export default function ClientsView() {
       .padStart(2, "0")} ${ampm}`;
   };
   return (
-    <div className="space-y-8 px-2 sm:px-0 md:px-6">
+    <div className="space-y-8">
       <Toaster />
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row lg:justify-between sm:justify-center sm:items-center ">
@@ -610,7 +635,7 @@ export default function ClientsView() {
                                           years
                                         </p>
                                       </div>
-                                      
+
                                       <div>
                                         <p className="text-slate-500 mb-1">
                                           Preferred Language
@@ -919,6 +944,15 @@ export default function ClientsView() {
                                                     </p>
                                                     <p className="font-medium">
                                                       {insurance.insurance_provider ||
+                                                        "Not specified"}
+                                                    </p>
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-slate-500 mb-1">
+                                                      Rendering provider
+                                                    </p>
+                                                    <p className="font-medium">
+                                                      {insurance.provider_name ||
                                                         "Not specified"}
                                                     </p>
                                                   </div>
@@ -1316,6 +1350,7 @@ export default function ClientsView() {
         }}
         onSave={editingClient ? handleEditClient : handleAddClient}
         editingClient={editingClient}
+        filteredStaff={filteredStaff}
       />
     </div>
   );
