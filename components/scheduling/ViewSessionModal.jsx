@@ -227,6 +227,32 @@ export default function ViewSessionModal({
               )}
             </CardContent>
           </Card>
+          <Card className="border-slate-200">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <MapPin className="h-4 w-4 text-teal-600" />
+                Rendered Details
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-3 text-sm">
+              <div>
+                <p className="text-slate-500 mb-1">Authorized Hours</p>
+                <p className="font-medium">
+                  {session.authorizedHours || "0.00"}
+                </p>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-1">Scheduled Hours</p>
+                <p className="font-medium">
+                  {session.scheduledHours || "0.00"}
+                </p>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-1">Rendered Hours</p>
+                <p className="font-medium">{session.renderedHours || "0.00"}</p>
+              </div>
+            </CardContent>
+          </Card>
 
           {session.quickNote && (
             <Card className="border-slate-200">

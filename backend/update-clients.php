@@ -144,136 +144,165 @@ try {
 
     $stmt->execute($params);
 
-    // Handle additional addresses without deletion
+    // Handle additional addresses (clear and recreate approach)
     if (isset($input["addresses"]) && is_array($input["addresses"]) && count($input["addresses"]) > 1) {
-        // Fetch existing additional addresses
-        $existingAddressesStmt = $conn->prepare("SELECT id, service_location, address_line_1, address_line_2, city, state, zipcode, country FROM client_addresses WHERE client_id = ?");
-        $existingAddressesStmt->execute([$clientId]);
-        $existingAddresses = $existingAddressesStmt->fetchAll(PDO::FETCH_ASSOC);
+        // Clear existing additional addresses
+        $conn->prepare("DELETE FROM client_addresses WHERE client_id = ?")->execute([$clientId]);
 
-        // Prepare statements for insert/update
-        $insertAddressStmt = $conn->prepare("INSERT INTO client_addresses (
+        // Insert additional addresses (skip first one as it's stored in main client table)
+        $addressStmt = $conn->prepare("INSERT INTO client_addresses (
             client_id, service_location, address_line_1, address_line_2, 
             city, state, zipcode, country
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $updateAddressStmt = $conn->prepare("UPDATE client_addresses SET
-            service_location = ?, address_line_1 = ?, address_line_2 = ?, 
-            city = ?, state = ?, zipcode = ?, country = ?
-            WHERE id = ? AND client_id = ?");
 
-        // Process input addresses starting from index 1
         for ($i = 1; $i < count($input["addresses"]); $i++) {
             $addr = $input["addresses"][$i];
-            $country = $addr["country"] === "Other" ? $addr["countryOther"] : ($addr["country"] ?? 'USA');
-
-            if (isset($addr["id"]) && !empty($addr["id"])) {
-                // Update existing
-                $updateAddressStmt->execute([
-                    $addr["service_location"] ?? 'Home',
-                    $addr["address_line_1"] ?? '',
-                    $addr["address_line_2"] ?? '',
-                    $addr["city"] ?? '',
-                    $addr["state"] ?? '',
-                    $addr["zipcode"] ?? '',
-                    $country,
-                    $addr["id"],
-                    $clientId
-                ]);
-            } else {
-                // Insert new
-                $insertAddressStmt->execute([
-                    $clientId,
-                    $addr["service_location"] ?? 'Home',
-                    $addr["address_line_1"] ?? '',
-                    $addr["address_line_2"] ?? '',
-                    $addr["city"] ?? '',
-                    $addr["state"] ?? '',
-                    $addr["zipcode"] ?? '',
-                    $country
-                ]);
-            }
+            $addressStmt->execute([
+                $clientId,
+                $addr["service_location"] ?? 'Home',
+                $addr["address_line_1"] ?? '',
+                $addr["address_line_2"] ?? '',
+                $addr["city"] ?? '',
+                $addr["state"] ?? '',
+                $addr["zipcode"] ?? '',
+                $addr["country"] === "Other" ? $addr["countryOther"] : ($addr["country"] ?? 'USA')
+            ]);
         }
     }
 
-    // Handle insurances without deletion
-    if (isset($input["insurances"]) && is_array($input["insurances"])) {
-        // Fetch existing insurances
-        $existingInsStmt = $conn->prepare("SELECT insurance_id, insurance_type, insurance_provider FROM client_insurance WHERE client_id = ?");
-        $existingInsStmt->execute([$clientId]);
-        $existingIns = $existingInsStmt->fetchAll(PDO::FETCH_ASSOC);
-        $existingInsMap = [];
-        foreach ($existingIns as $ins) {
-            $key = $ins['insurance_type'] . '|' . $ins['insurance_provider']; // Simple key for matching
-            $existingInsMap[$key] = $ins['insurance_id'];
+    // Clear existing insurances & related data to prevent orphans
+    $conn->prepare("DELETE FROM client_auth WHERE insurance_id IN (SELECT insurance_id FROM client_insurance WHERE client_id = ?)")->execute([$clientId]);
+    $conn->prepare("DELETE FROM client_insurance WHERE client_id = ?")->execute([$clientId]);
+    
+    // Clear documents (check if table exists first)
+    try {
+        $conn->prepare("DELETE FROM client_documents WHERE client_id = ?")->execute([$clientId]);
+    } catch (PDOException $e) {
+        // Table might not exist, try client_doc instead
+        try {
+            $conn->prepare("DELETE FROM client_doc WHERE client_id = ?")->execute([$clientId]);
+        } catch (PDOException $e2) {
+            error_log("Neither client_documents nor client_doc table exists: " . $e2->getMessage());
         }
+    }
 
-        $insertInsStmt = $conn->prepare("INSERT INTO client_insurance (
+    $insuranceIds = [];
+    // Insert insurances and record their IDs
+    if (isset($input["insurances"]) && is_array($input["insurances"])) {
+        $stmtIns = $conn->prepare("INSERT INTO client_insurance (
             client_id, description, insurance_type, insurance_provider, treatment_type, rendering_provider, start_date, end_date,
             authorization_number, insurance_id_number, group_number, diagnosis_1, diagnosis_2, diagnosis_3, diagnosis_4, diagnosis_5,
             coinsurance, deductible, copay_per, copay_rate
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $updateInsStmt = $conn->prepare("UPDATE client_insurance SET
-            description = ?, treatment_type = ?, rendering_provider = ?, start_date = ?, end_date = ?,
-            authorization_number = ?, insurance_id_number = ?, group_number = ?, diagnosis_1 = ?, diagnosis_2 = ?,
-            diagnosis_3 = ?, diagnosis_4 = ?, diagnosis_5 = ?, coinsurance = ?, deductible = ?, copay_per = ?, copay_rate = ?
-            WHERE insurance_id = ? AND client_id = ?");
-
-        $processedKeys = [];
+        
         foreach ($input["insurances"] as $ins) {
-            $key = ($ins["insurance_type"] ?? 'Primary') . '|' . ($ins["insurance_provider"] ?? '');
-
-            if (isset($existingInsMap[$key])) {
-                // Update existing
-                $insId = $existingInsMap[$key];
-                $updateInsStmt->execute([
-                    $ins["description"] ?? '',
-                    $ins["treatment_type"] ?? '',
-                    $ins["rendering_provider"] ?? '',
-                    empty($ins["start_date"]) ? null : $ins["start_date"],
-                    empty($ins["end_date"]) ? null : $ins["end_date"],
-                    $ins["authorization_number"] ?? '',
-                    $ins["insurance_id_number"] ?? '',
-                    $ins["group_number"] ?? '',
-                    $ins["diagnosis_1"] ?? '', $ins["diagnosis_2"] ?? '', $ins["diagnosis_3"] ?? '', $ins["diagnosis_4"] ?? '', $ins["diagnosis_5"] ?? '',
-                    $ins["coinsurance"] ?? '',
-                    $ins["deductible"] ?? '',
-                    $ins["copay_per"] ?? 'hr',
-                    empty($ins["copay_rate"]) ? null : $ins["copay_rate"],
-                    $insId,
-                    $clientId
-                ]);
-                $insuranceIds[] = $insId;
-            } else {
-                // Insert new
-                $insertInsStmt->execute([
-                    $clientId,
-                    $ins["description"] ?? '',
-                    $ins["insurance_type"] ?? 'Primary',
-                    $ins["insurance_provider"] ?? '',
-                    $ins["treatment_type"] ?? '',
-                    $ins["rendering_provider"] ?? '',
-                    empty($ins["start_date"]) ? null : $ins["start_date"],
-                    empty($ins["end_date"]) ? null : $ins["end_date"],
-                    $ins["authorization_number"] ?? '',
-                    $ins["insurance_id_number"] ?? '',
-                    $ins["group_number"] ?? '',
-                    $ins["diagnosis_1"] ?? '', $ins["diagnosis_2"] ?? '', $ins["diagnosis_3"] ?? '', $ins["diagnosis_4"] ?? '', $ins["diagnosis_5"] ?? '',
-                    $ins["coinsurance"] ?? '',
-                    $ins["deductible"] ?? '',
-                    $ins["copay_per"] ?? 'hr',
-                    empty($ins["copay_rate"]) ? null : $ins["copay_rate"],
-                ]);
-                $insuranceIds[] = $conn->lastInsertId();
-            }
-            $processedKeys[] = $key;
+            $stmtIns->execute([
+                $clientId,
+                $ins["description"] ?? '',
+                $ins["insurance_type"] ?? 'Primary',
+                $ins["insurance_provider"] ?? '',
+                $ins["treatment_type"] ?? '',
+                $ins["rendering_provider"] ?? '',
+                empty($ins["start_date"]) ? null : $ins["start_date"],
+                empty($ins["end_date"]) ? null : $ins["end_date"],
+                $ins["authorization_number"] ?? '',
+                $ins["insurance_id_number"] ?? '',
+                $ins["group_number"] ?? '',
+                $ins["diagnosis_1"] ?? '',
+                $ins["diagnosis_2"] ?? '',
+                $ins["diagnosis_3"] ?? '',
+                $ins["diagnosis_4"] ?? '',
+                $ins["diagnosis_5"] ?? '',
+                $ins["coinsurance"] ?? '',
+                $ins["deductible"] ?? '',
+                $ins["copay_per"] ?? 'hr',
+                empty($ins["copay_rate"]) ? null : $ins["copay_rate"]
+            ]);
+            $insuranceIds[] = $conn->lastInsertId();
         }
-
-        // Optionally, delete insurances not in processedKeys if desired, but skipping per user request
     }
 
-    // Similar handling for authorizations, documents, etc., but adapted to update/insert without delete
+    // Insert authorizations linked to their insurances
+    if (isset($input["authorizations"]) && is_array($input["authorizations"])) {
+        $authStmt = $conn->prepare("INSERT INTO client_auth (
+            auth_uuid, insurance_id, authorization_number, billing_codes,
+            units_approved_per_15_min, units_serviced, balance_units, start_date, end_date, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        
+        foreach ($input["authorizations"] as $auth) {
+            // Map insurance_id from frontend to actual database insurance_id
+            $linkedInsuranceId = null;
+            
+            if (isset($auth["insurance_id"]) && $auth["insurance_id"] !== "0" && $auth["insurance_id"] !== "") {
+                $insuranceIndex = intval($auth["insurance_id"]);
+                if ($insuranceIndex >= 0 && isset($insuranceIds[$insuranceIndex])) {
+                    $linkedInsuranceId = $insuranceIds[$insuranceIndex];
+                }
+            }
+            
+            // If no valid insurance link and we have at least one insurance, use the first one
+            if (!$linkedInsuranceId && !empty($insuranceIds)) {
+                $linkedInsuranceId = $insuranceIds[0];
+            }
+            
+            // Skip authorization if we can't link it to an insurance
+            if (!$linkedInsuranceId) {
+                error_log("Skipping authorization - no valid insurance link: " . print_r($auth, true));
+                continue;
+            }
 
-    // Handle availability without deletion
+            $authStmt->execute([
+                $auth["auth_uuid"] ?? uniqid("auth_", true),
+                $linkedInsuranceId,
+                $auth["authorization_number"] ?? '',
+                $auth["billing_codes"] ?? '',
+                !empty($auth["units_approved_per_15_min"]) ? $auth["units_approved_per_15_min"] : null,
+                !empty($auth["units_serviced"]) ? $auth["units_serviced"] : null,
+                !empty($auth["balance_units"]) ? $auth["balance_units"] : null,
+                !empty($auth["start_date"]) ? $auth["start_date"] : null,
+                !empty($auth["end_date"]) ? $auth["end_date"] : null,
+                $auth["status"] ?? 'Active'
+            ]);
+        }
+    }
+
+    // Insert documents (try both table names)
+    if (isset($input["documents"]) && is_array($input["documents"])) {
+        $docTableExists = false;
+        $docStmt = null;
+        
+        // Try client_documents first
+        try {
+            $docStmt = $conn->prepare("INSERT INTO client_documents (
+                client_id, doc_uuid, document_type, file_url
+            ) VALUES (?, ?, ?, ?)");
+            $docTableExists = true;
+        } catch (PDOException $e) {
+            // Try client_doc instead
+            try {
+                $docStmt = $conn->prepare("INSERT INTO client_doc (
+                    client_id, doc_uuid, document_type, document_path
+                ) VALUES (?, ?, ?, ?)");
+                $docTableExists = true;
+            } catch (PDOException $e2) {
+                error_log("No document table found: " . $e2->getMessage());
+            }
+        }
+        
+        if ($docTableExists && $docStmt) {
+            foreach ($input["documents"] as $doc) {
+                $docUuid = !empty($doc["doc_uuid"]) ? $doc["doc_uuid"] : uniqid("doc_", true);
+                $docStmt->execute([
+                    $clientId,
+                    $docUuid,
+                    $doc["document_type"] ?? 'misc',
+                    $doc["file_url"] ?? $doc["document_path"] ?? ''
+                ]);
+            }
+        }
+    }
+
+    // Handle availability
     if (isset($input["availability"]) && is_array($input["availability"])) {
         $availStmt = $conn->prepare("
             INSERT INTO client_availability (client_id, day, available, start_time, end_time)

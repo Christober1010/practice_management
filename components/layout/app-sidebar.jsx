@@ -87,13 +87,13 @@ export default function AppSidebar({
       // },
       {
         id: "scheduling",
-        label: "Manage Scheduling",
+        label: "Scheduling",
         icon: Calendar,
         color: "text-blue-600",
       },
       {
         id: "clients",
-        label: "Manage Clients",
+        label: "Clients",
         icon: Users,
         color: "text-indigo-600",
       },
@@ -109,7 +109,7 @@ export default function AppSidebar({
       baseItems.push(
         {
           id: "staff",
-          label: "Manage Staff",
+          label: "Staff",
           icon: UserCheck,
           color: "text-orange-600",
         }
@@ -143,25 +143,25 @@ export default function AppSidebar({
       return [
         {
           id: "scheduling",
-          label: "Manage Scheduling",
+          label: "Scheduling",
           icon: Calendar,
           color: "text-blue-600",
         },
         {
           id: "clients",
-          label: "Manage Clients",
+          label: "Clients",
           icon: Users,
           color: "text-indigo-600",
         },
         {
           id: "staff",
-          label: "Manage Staff",
+          label: "Staff",
           icon: UserCheck,
           color: "text-orange-600",
         },
         {
           id: "users",
-          label: "Manage Users",
+          label: "Users",
           icon: UserCog,
           color: "text-orange-600",
         },

@@ -1,31 +1,19 @@
-"use client";
+"use client"
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import toast from "react-hot-toast";
-import { Users, Clock, FileText, Repeat } from "lucide-react";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useDispatch, useSelector } from "react-redux";
-import { fetchClients } from "@/app/store/clientSlice";
+import { useEffect, useMemo, useState } from "react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import toast from "react-hot-toast"
+import { Users, Clock, FileText, Repeat } from "lucide-react"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { useDispatch, useSelector } from "react-redux"
+import { fetchClients } from "@/app/store/clientSlice"
 
 // --- Constants ---
 const TIME_ZONES = [
@@ -47,7 +35,7 @@ const TIME_ZONES = [
   "Australia/Sydney",
   "Australia/Melbourne",
   "Pacific/Auckland",
-];
+]
 
 const initialForm = {
   clientId: "",
@@ -69,136 +57,105 @@ const initialForm = {
   endDateTime: "",
   endTZ: "",
   authCode: "",
-};
-
-const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+  authorizedHours: "", // numeric string; default empty (we'll default to scheduled if empty)
+  scheduledHours: "", // computed from start/end
+  renderedHours: "0", // starts at 0 when creating a schedule
+}
 
 // --- Helper Functions ---
-const getLocalTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-// const convertToUserTimezone = (utcDateString, userTimezone) => {
-//   if (!utcDateString || !userTimezone) return "";
-//   try {
-//     const utcDate = new Date(utcDateString + " UTC");
-//     const userDate = new Date(
-//       utcDate.toLocaleString("en-US", { timeZone: userTimezone })
-//     );
-//     const year = userDate.getFullYear();
-//     const month = String(userDate.getMonth() + 1).padStart(2, "0");
-//     const day = String(userDate.getDate()).padStart(2, "0");
-//     const hours = String(userDate.getHours()).padStart(2, "0");
-//     const minutes = String(userDate.getMinutes()).padStart(2, "0");
-//     return `${year}-${month}-${day}T${hours}:${minutes}`;
-//   } catch (error) {
-//     console.error("Error converting UTC to user timezone:", error);
-//     return "";
-//   }
-// };
+const getLocalTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
 
 const convertToUserTimezone = (utcDateString, userTimezone) => {
-  if (!utcDateString || !userTimezone) return "";
+  if (!utcDateString || !userTimezone) return ""
   try {
     // Ensure the date is parsed as UTC, even if 'Z' is missing
-    const dateStr = utcDateString.endsWith("Z")
-      ? utcDateString
-      : utcDateString.replace(" ", "T") + "Z";
-    const utcDate = new Date(dateStr);
+    const dateStr = utcDateString.endsWith("Z") ? utcDateString : utcDateString.replace(" ", "T") + "Z"
+    const utcDate = new Date(dateStr)
 
     if (isNaN(utcDate)) {
       // Handle invalid date strings gracefully
-      console.error("Invalid UTC date string provided:", utcDateString);
-      return "";
+      console.error("Invalid UTC date string provided:", utcDateString)
+      return ""
     }
 
-    const year = utcDate.getFullYear();
-    const month = String(utcDate.getMonth() + 1).padStart(2, "0");
-    const day = String(utcDate.getDate()).padStart(2, "0");
-    const hours = String(utcDate.getHours()).padStart(2, "0");
-    const minutes = String(utcDate.getMinutes()).padStart(2, "0");
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
+    const year = utcDate.getFullYear()
+    const month = String(utcDate.getMonth() + 1).padStart(2, "0")
+    const day = String(utcDate.getDate()).padStart(2, "0")
+    const hours = String(utcDate.getHours()).padStart(2, "0")
+    const minutes = String(utcDate.getMinutes()).padStart(2, "0")
+    return `${year}-${month}-${day}T${hours}:${minutes}`
   } catch (error) {
-    console.error("Error converting UTC to user timezone:", error);
-    return "";
+    console.error("Error converting UTC to user timezone:", error)
+    return ""
   }
-};
+}
 
 const convertToUTC = (localDateTimeString, userTimezone) => {
-  if (!localDateTimeString || !userTimezone) return "";
+  if (!localDateTimeString || !userTimezone) return ""
   try {
-    const localDate = new Date(localDateTimeString);
-    const tempDate = new Date(
-      localDate.toLocaleString("en-US", { timeZone: userTimezone })
-    );
-    const utcDate = new Date(
-      localDate.getTime() + (localDate.getTime() - tempDate.getTime())
-    );
-    const year = utcDate.getUTCFullYear();
-    const month = String(utcDate.getUTCMonth() + 1).padStart(2, "0");
-    const day = String(utcDate.getUTCDate()).padStart(2, "0");
-    const hours = String(utcDate.getUTCHours()).padStart(2, "0");
-    const minutes = String(utcDate.getUTCMinutes()).padStart(2, "0");
-    const seconds = String(utcDate.getUTCSeconds()).padStart(2, "0");
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    const localDate = new Date(localDateTimeString)
+    const tempDate = new Date(localDate.toLocaleString("en-US", { timeZone: userTimezone }))
+    const utcDate = new Date(localDate.getTime() + (localDate.getTime() - tempDate.getTime()))
+    const year = utcDate.getUTCFullYear()
+    const month = String(utcDate.getUTCMonth() + 1).padStart(2, "0")
+    const day = String(utcDate.getUTCDate()).padStart(2, "0")
+    const hours = String(utcDate.getUTCHours()).padStart(2, "0")
+    const minutes = String(utcDate.getUTCMinutes()).padStart(2, "0")
+    const seconds = String(utcDate.getUTCSeconds()).padStart(2, "0")
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
   } catch (error) {
-    console.error("Error converting to UTC:", error);
-    return localDateTimeString;
+    console.error("Error converting to UTC:", error)
+    return localDateTimeString
   }
-};
+}
 
 // --- Main Component ---
-export default function NewSessionFormModal({
-  isOpen,
-  onClose,
-  onSave,
-  editingSession = null,
-  selectedDate = null,
-}) {
-  const [form, setForm] = useState(initialForm);
-  const [errors, setErrors] = useState({});
-  const [activeTab, setActiveTab] = useState("scheduling");
-  const [staff, setStaff] = useState([]);
-  const [loadingStaff, setLoadingStaff] = useState(false);
-  const [userTimezone, setUserTimezone] = useState("");
-  const dispatch = useDispatch();
+export default function NewSessionFormModal({ isOpen, onClose, onSave, editingSession = null, selectedDate = null }) {
+  const [form, setForm] = useState(initialForm)
+  const [errors, setErrors] = useState({})
+  const [activeTab, setActiveTab] = useState("scheduling")
+  const [staff, setStaff] = useState([])
+  const [loadingStaff, setLoadingStaff] = useState(false)
+  const [userTimezone, setUserTimezone] = useState("")
+  const dispatch = useDispatch()
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL // Declare the baseUrl variable
 
   useEffect(() => {
-    dispatch(fetchClients());
-  }, [dispatch]);
-  const clients = useSelector((state) => state.clients?.items || []);
+    dispatch(fetchClients())
+  }, [dispatch])
+  const clients = useSelector((state) => state.clients?.items || [])
 
-  const selectedProvider = staff.find((s) => s.id === form.provider);
+  const selectedProvider = staff.find((s) => s.id === form.provider)
   // const isSupervisionRequired = ["rbt", "bt"].includes(
   //   selectedProvider?.staffType?.toLowerCase()
   // );
 
-  const tabOrder = ["scheduling", "notes"];
+  const tabOrder = ["scheduling", "notes"]
 
   useEffect(() => {
-    const detectedTimezone = getLocalTimezone();
-    setUserTimezone(detectedTimezone);
-  }, []);
+    const detectedTimezone = getLocalTimezone()
+    setUserTimezone(detectedTimezone)
+  }, [])
 
   useEffect(() => {
-    if (!isOpen || staff.length > 0) return;
+    if (!isOpen || staff.length > 0) return
     const fetchStaff = async () => {
-      setLoadingStaff(true);
+      setLoadingStaff(true)
       try {
-        const res = await fetch(`${baseUrl}/staff.php`);
-        const data = await res.json();
+        const res = await fetch(`${baseUrl}/staff.php`)
+        const data = await res.json()
         if (data.staff_records && Array.isArray(data.staff_records)) {
-          const activeStaff = data.staff_records.filter(
-            (s) => s.status === "Active" && s.archived !== "1"
-          );
-          setStaff(activeStaff);
+          const activeStaff = data.staff_records.filter((s) => s.status === "Active" && s.archived !== "1")
+          setStaff(activeStaff)
         }
       } catch (err) {
-        toast.error("Failed to load providers");
+        toast.error("Failed to load providers")
       } finally {
-        setLoadingStaff(false);
+        setLoadingStaff(false)
       }
-    };
-    fetchStaff();
-  }, [isOpen, baseUrl]);
+    }
+    fetchStaff()
+  }, [isOpen, baseUrl])
 
   useEffect(() => {
     if (isOpen && userTimezone) {
@@ -206,105 +163,28 @@ export default function NewSessionFormModal({
         ...prev,
         startTZ: prev.startTZ || userTimezone,
         endTZ: prev.endTZ || userTimezone,
-      }));
+      }))
     }
-  }, [isOpen, userTimezone]);
-
-  // useEffect(() => {
-  //   if (!isOpen) return;
-
-  //   if (editingSession) {
-  //     setForm({
-  //       ...initialForm,
-  //       ...editingSession,
-  //       clientId: editingSession.clientId || "",
-  //       provider: editingSession.providerId || "",
-  //       supervisingProvider: editingSession.supervisingProviderId || "",
-  //       recurring:
-  //         editingSession.recurring?.frequency &&
-  //         editingSession.recurring.frequency !== "No"
-  //           ? "Repeats"
-  //           : "No",
-  //       repeatFrequency: editingSession.recurring?.frequency || "Daily",
-  //       repeatOn: editingSession.recurring?.days || [],
-  //       ends: editingSession.recurring?.ends?.type || "Never",
-  //       endDate: editingSession.recurring?.ends?.date || "",
-  //       endAfterOccurrences: editingSession.recurring?.ends?.occurrences || 1,
-  //       startDateTime: convertToUserTimezone(
-  //         editingSession.startDateTime,
-  //         userTimezone
-  //       ),
-  //       endDateTime: convertToUserTimezone(
-  //         editingSession.endDateTime,
-  //         userTimezone
-  //       ),
-  //       startTZ: userTimezone,
-  //       endTZ: userTimezone,
-  //     });
-  //   } else if (selectedDate && userTimezone) {
-  //     const y = selectedDate.getFullYear();
-  //     const m = String(selectedDate.getMonth() + 1).padStart(2, "0");
-  //     const d = String(selectedDate.getDate()).padStart(2, "0");
-  //     setForm((prev) => ({
-  //       ...initialForm,
-  //       startDateTime: `${y}-${m}-${d}T09:00`,
-  //       endDateTime: `${y}-${m}-${d}T10:00`,
-  //       startTZ: userTimezone,
-  //       endTZ: userTimezone,
-  //     }));
-  //   }
-  //   setActiveTab("scheduling");
-  // }, [isOpen, editingSession, selectedDate, userTimezone]);
-
-  // useEffect(() => {
-  //   if (!isOpen) return;
-
-  //   // Check for userTimezone to prevent race conditions
-  //   if (editingSession && userTimezone) {
-  //     setForm({
-  //       ...initialForm,
-  //       ...editingSession,
-  //       clientId: editingSession.clientId || "",
-  //       provider: editingSession.providerId || "",
-  //       supervisingProvider: editingSession.supervisingProviderId || "",
-  //       recurring:
-  //         editingSession.recurring?.frequency &&
-  //         editingSession.recurring.frequency !== "No"
-  //           ? "Repeats"
-  //           : "No",
-  //       repeatFrequency: editingSession.recurring?.frequency || "Daily",
-  //       repeatOn: editingSession.recurring?.days || [],
-  //       ends: editingSession.recurring?.ends?.type || "Never",
-  //       endDate: editingSession.recurring?.ends?.date || "",
-  //       endAfterOccurrences: editingSession.recurring?.ends?.occurrences || 1,
-  //       startDateTime: convertToUserTimezone(
-  //         editingSession.startDateTime,
-  //         userTimezone
-  //       ),
-  //       endDateTime: convertToUserTimezone(
-  //         editingSession.endDateTime,
-  //         userTimezone
-  //       ),
-  //       startTZ: userTimezone,
-  //       endTZ: userTimezone,
-  //     });
-  //   } else if (selectedDate && userTimezone) {
-  //     const y = selectedDate.getFullYear();
-  //     const m = String(selectedDate.getMonth() + 1).padStart(2, "0");
-  //     const d = String(selectedDate.getDate()).padStart(2, "0");
-  //     setForm((prev) => ({
-  //       ...initialForm,
-  //       startDateTime: `${y}-${m}-${d}T09:00`,
-  //       endDateTime: `${y}-${m}-${d}T10:00`,
-  //       startTZ: userTimezone,
-  //       endTZ: userTimezone,
-  //     }));
-  //   }
-  //   setActiveTab("scheduling");
-  // }, [isOpen, editingSession, selectedDate, userTimezone]);
+  }, [isOpen, userTimezone])
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!form.startDateTime || !form.endDateTime) {
+      setForm((prev) => ({ ...prev, scheduledHours: "" }))
+      return
+    }
+    const start = new Date(form.startDateTime)
+    const end = new Date(form.endDateTime)
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
+      setForm((prev) => ({ ...prev, scheduledHours: "" }))
+      return
+    }
+    const diffMs = end.getTime() - start.getTime()
+    const hours = diffMs / (1000 * 60 * 60)
+    setForm((prev) => ({ ...prev, scheduledHours: hours.toFixed(2) }))
+  }, [form.startDateTime, form.endDateTime])
+
+  useEffect(() => {
+    if (!isOpen) return
 
     if (editingSession && userTimezone) {
       setForm({
@@ -314,68 +194,51 @@ export default function NewSessionFormModal({
         provider: editingSession.providerId || "",
         supervisingProvider: editingSession.supervisingProviderId || "",
         recurring:
-          editingSession.recurring?.frequency &&
-          editingSession.recurring.frequency !== "No"
-            ? "Repeats"
-            : "No",
+          editingSession.recurring?.frequency && editingSession.recurring.frequency !== "No" ? "Repeats" : "No",
         repeatFrequency: editingSession.recurring?.frequency || "Daily",
         repeatOn: editingSession.recurring?.days || [],
         ends: editingSession.recurring?.ends?.type || "Never",
         endDate: editingSession.recurring?.ends?.date || "",
         endAfterOccurrences: editingSession.recurring?.ends?.occurrences || 1,
-        startDateTime: convertToUserTimezone(
-          editingSession.startDateTime,
-          editingSession.startTZ || userTimezone
-        ),
-        endDateTime: convertToUserTimezone(
-          editingSession.endDateTime,
-          editingSession.endTZ || userTimezone
-        ),
+        startDateTime: convertToUserTimezone(editingSession.startDateTime, editingSession.startTZ || userTimezone),
+        endDateTime: convertToUserTimezone(editingSession.endDateTime, editingSession.endTZ || userTimezone),
         // Preserve the timezone from the session or default to user's timezone
         startTZ: editingSession.startTZ || userTimezone,
         endTZ: editingSession.endTZ || userTimezone,
-      });
+        authorizedHours: (editingSession.authorizedHours ?? editingSession.authorized_hours ?? "")?.toString() || "",
+        scheduledHours: (editingSession.scheduledHours ?? editingSession.scheduled_hours ?? "")?.toString() || "",
+        renderedHours: (editingSession.renderedHours ?? editingSession.rendered_hours ?? "0")?.toString() || "0",
+      })
     } else if (selectedDate && userTimezone) {
-      const y = selectedDate.getFullYear();
-      const m = String(selectedDate.getMonth() + 1).padStart(2, "0");
-      const d = String(selectedDate.getDate()).padStart(2, "0");
+      const y = selectedDate.getFullYear()
+      const m = String(selectedDate.getMonth() + 1).padStart(2, "0")
+      const d = String(selectedDate.getDate()).padStart(2, "0")
       setForm((prev) => ({
         ...initialForm,
         startDateTime: `${y}-${m}-${d}T09:00`,
         endDateTime: `${y}-${m}-${d}T10:00`,
         startTZ: userTimezone,
         endTZ: userTimezone,
-      }));
+      }))
     }
-    setActiveTab("scheduling");
-  }, [isOpen, editingSession, selectedDate, userTimezone]);
+    setActiveTab("scheduling")
+  }, [isOpen, editingSession, selectedDate, userTimezone])
 
   const clientOptions = useMemo(
     () =>
       clients.map((c) => ({
         id: c.client_id,
-        name: [c.first_name, c.middle_name, c.last_name]
-          .filter(Boolean)
-          .join(" "),
+        name: [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(" "),
         authorizations: Array.isArray(c.authorizations) ? c.authorizations : [],
-        address: [
-          c.address_line_1,
-          c.address_line_2,
-          c.city,
-          c.state,
-          c.zipcode,
-          c.country,
-        ]
-          .filter(Boolean)
-          .join(", "),
+        address: [c.address_line_1, c.address_line_2, c.city, c.state, c.zipcode, c.country].filter(Boolean).join(", "),
       })),
-    [clients]
-  );
+    [clients],
+  )
 
   const selectedClient = useMemo(
     () => clientOptions.find((c) => c.id === form.clientId) || null,
-    [clientOptions, form.clientId]
-  );
+    [clientOptions, form.clientId],
+  )
 
   // useEffect(() => {
   //   if (!isSupervisionRequired && form.supervisingProvider) {
@@ -384,9 +247,9 @@ export default function NewSessionFormModal({
   // }, [form.provider, isSupervisionRequired]);
 
   const setField = (key, value) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
-    if (errors[key]) setErrors((prev) => ({ ...prev, [key]: null }));
-  };
+    setForm((prev) => ({ ...prev, [key]: value }))
+    if (errors[key]) setErrors((prev) => ({ ...prev, [key]: null }))
+  }
 
   const handleRepeatFrequencyChange = (value) => {
     if (value === "Every Weekday") {
@@ -394,133 +257,93 @@ export default function NewSessionFormModal({
         ...prev,
         repeatFrequency: "Weekly", // API expects "Weekly"
         repeatOn: ["Mon", "Tue", "Wed", "Thu", "Fri"],
-      }));
+      }))
     } else {
       setForm((prev) => ({
         ...prev,
         repeatFrequency: value,
         repeatOn: value !== "Weekly" ? [] : prev.repeatOn,
-      }));
+      }))
     }
-  };
-
-  // const validateSchedulingTab = () => {
-  //   const e = {};
-  //   if (!form.clientId) e.clientId = "Required";
-  //   if (!form.provider) e.provider = "Required";
-  //   if (!form.placeOfService) e.placeOfService = "Required";
-  //   if (!form.locationAddress.trim()) e.locationAddress = "Required";
-  //   if (!form.startDateTime) e.startDateTime = "Required";
-  //   if (!form.endDateTime) e.endDateTime = "Required";
-  //   if (
-  //     form.startDateTime &&
-  //     form.endDateTime &&
-  //     new Date(form.endDateTime) <= new Date(form.startDateTime)
-  //   ) {
-  //     e.endDateTime = "End must be after Start";
-  //   }
-  //   if (isSupervisionRequired && !form.supervisingProvider) {
-  //     e.supervisingProvider = `Required for ${selectedProvider?.staffType} provider`;
-  //   }
-  //   if (!form.authCode) e.authCode = "Required";
-
-  //   if (form.recurring === "Repeats") {
-  //     if (form.repeatFrequency === "Weekly" && form.repeatOn.length === 0) {
-  //       e.repeatOn = "Select at least one day";
-  //     }
-  //     if (form.ends === "On" && !form.endDate) e.endDate = "Required";
-  //     if (
-  //       form.ends === "After" &&
-  //       (!form.endAfterOccurrences || form.endAfterOccurrences < 1)
-  //     ) {
-  //       e.endAfterOccurrences = "Must be > 0";
-  //     }
-  //   }
-  //   setErrors(e);
-  //   return Object.keys(e).length > 0;
-  // };
+  }
 
   const validateSchedulingTab = () => {
-    const e = {};
-    if (!form.clientId) e.clientId = "Required";
-    if (!form.provider) e.provider = "Required";
-    if (!form.placeOfService) e.placeOfService = "Required";
-    if (!form.locationAddress.trim()) e.locationAddress = "Required";
-    if (!form.startDateTime) e.startDateTime = "Required";
-    if (!form.endDateTime) e.endDateTime = "Required";
-    
+    const e = {}
+    if (!form.clientId) e.clientId = "Required"
+    if (!form.provider) e.provider = "Required"
+    if (!form.placeOfService) e.placeOfService = "Required"
+    if (!form.locationAddress.trim()) e.locationAddress = "Required"
+    if (!form.startDateTime) e.startDateTime = "Required"
+    if (!form.endDateTime) e.endDateTime = "Required"
+
     // Validate time is within 8 AM - 8 PM
     if (form.startDateTime) {
-      const startDate = new Date(form.startDateTime);
-      const startHour = startDate.getHours();
-      const startMinute = startDate.getMinutes();
-      const startInMinutes = startHour * 60 + startMinute;
-      
+      const startDate = new Date(form.startDateTime)
+      const startHour = startDate.getHours()
+      const startMinute = startDate.getMinutes()
+      const startInMinutes = startHour * 60 + startMinute
+
       if (startInMinutes < 8 * 60 || startInMinutes >= 20 * 60) {
-        e.startDateTime = "Start time must be between 8:00 AM and 8:00 PM";
+        e.startDateTime = "Start time must be between 8:00 AM and 8:00 PM"
       }
     }
-    
+
     if (form.endDateTime) {
-      const endDate = new Date(form.endDateTime);
-      const endHour = endDate.getHours();
-      const endMinute = endDate.getMinutes();
-      const endInMinutes = endHour * 60 + endMinute;
-      
+      const endDate = new Date(form.endDateTime)
+      const endHour = endDate.getHours()
+      const endMinute = endDate.getMinutes()
+      const endInMinutes = endHour * 60 + endMinute
+
       if (endInMinutes < 8 * 60 || endInMinutes > 20 * 60) {
-        e.endDateTime = "End time must be between 8:00 AM and 8:00 PM";
+        e.endDateTime = "End time must be between 8:00 AM and 8:00 PM"
       }
     }
-    
-    if (
-      form.startDateTime &&
-      form.endDateTime &&
-      new Date(form.endDateTime) <= new Date(form.startDateTime)
-    ) {
-      e.endDateTime = "End must be after Start";
+
+    if (form.startDateTime && form.endDateTime && new Date(form.endDateTime) <= new Date(form.startDateTime)) {
+      e.endDateTime = "End must be after Start"
     }
     // if (isSupervisionRequired && !form.supervisingProvider) {
     //   e.supervisingProvider = `Required for ${selectedProvider?.staffType} provider`;
     // }
-    if (!form.authCode) e.authCode = "Required";
+    if (!form.authCode) e.authCode = "Required"
 
     if (form.recurring === "Repeats") {
       if (form.repeatFrequency === "Weekly" && form.repeatOn.length === 0) {
-        e.repeatOn = "Select at least one day";
+        e.repeatOn = "Select at least one day"
       }
-      if (form.ends === "On" && !form.endDate) e.endDate = "Required";
-      if (
-        form.ends === "After" &&
-        (!form.endAfterOccurrences || form.endAfterOccurrences < 1)
-      ) {
-        e.endAfterOccurrences = "Must be > 0";
+      if (form.ends === "On" && !form.endDate) e.endDate = "Required"
+      if (form.ends === "After" && (!form.endAfterOccurrences || form.endAfterOccurrences < 1)) {
+        e.endAfterOccurrences = "Must be > 0"
       }
     }
-    setErrors(e);
-    return Object.keys(e).length > 0;
-  };
+    setErrors(e)
+    return Object.keys(e).length > 0
+  }
   const handleNextClick = (e) => {
-    e.preventDefault();
+    e.preventDefault()
     if (!validateSchedulingTab()) {
-      setActiveTab("notes");
+      setActiveTab("notes")
     } else {
-      toast.error("Please fix errors before proceeding.");
+      toast.error("Please fix errors before proceeding.")
     }
-  };
+  }
 
   const handleSubmit = async (e) => {
-    e?.preventDefault();
+    e?.preventDefault()
     if (validateSchedulingTab()) {
-      toast.error("Please fix errors before submitting.");
-      return;
+      toast.error("Please fix errors before submitting.")
+      return
     }
+
+    const scheduledHoursNum = Number.parseFloat(form.scheduledHours) || 0
+    const authorizedHoursNum = Number.parseFloat(form.authorizedHours) || scheduledHoursNum
+    const renderedHoursNum = Number.parseFloat(form.renderedHours) || 0
 
     const payload = {
       clientId: form.clientId,
       clientName: selectedClient?.name || "Unknown",
       provider: form.provider,
       providerName: form.providerName || "",
-
       startDateTime: convertToUTC(form.startDateTime, form.startTZ),
       endDateTime: convertToUTC(form.endDateTime, form.endTZ),
       startTZ: form.startTZ,
@@ -536,70 +359,51 @@ export default function NewSessionFormModal({
         ends: {
           type: form.recurring === "Repeats" ? form.ends : "Never",
           date: form.ends === "On" ? form.endDate : null,
-          occurrences:
-            form.ends === "After"
-              ? Number.parseInt(form.endAfterOccurrences, 10)
-              : null,
+          occurrences: form.ends === "After" ? Number.parseInt(form.endAfterOccurrences, 10) : null,
         },
       },
-      // recurring:"No"
-    };
+      authorized_hours: authorizedHoursNum,
+      scheduled_hours: scheduledHoursNum,
+      rendered_hours: renderedHoursNum,
+    }
 
     if (form.supervisingProvider) {
-      payload.supervisingProvider = form.supervisingProvider;
-      payload.supervisingProviderName = form.supervisingProviderName || "";
+      payload.supervisingProvider = form.supervisingProvider
+      payload.supervisingProviderName = form.supervisingProviderName || ""
     }
-    if (editingSession?.sessionId)
-      payload.session_id = editingSession.sessionId;
+    if (editingSession?.sessionId) payload.session_id = editingSession.sessionId
 
     try {
       const res = await fetch(`${baseUrl}/add-session.php`, {
         method: editingSession?.sessionId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
-      });
-      const data = await res.json();
+      })
+      const data = await res.json()
       if (res.ok && data.success) {
-        toast.success(
-          editingSession ? "Session updated!" : "Session scheduled!"
-        );
+        toast.success(editingSession ? "Session updated!" : "Session scheduled!")
         onSave?.({
           ...payload,
           sessionId: data.session_id || editingSession?.sessionId,
-        });
-        handleClose();
+        })
+        handleClose()
       } else {
-        toast.error(
-          data.error || `Failed to save session. ${data.message || ""}`
-        );
+        toast.error(data.error || `Failed to save session. ${data.message || ""}`)
       }
     } catch (err) {
-      toast.error("A server error occurred during submission.");
+      toast.error("A server error occurred during submission.")
     }
-  };
+  }
 
   const renderInputWithError = (id, label, value, onChange, props = {}) => (
     <div className="space-y-1">
       <Label htmlFor={id}>{label}</Label>
-      <Input
-        id={id}
-        value={value}
-        onChange={onChange}
-        className={errors[id] ? "border-red-500" : ""}
-        {...props}
-      />
+      <Input id={id} value={value} onChange={onChange} className={errors[id] ? "border-red-500" : ""} {...props} />
       {errors[id] && <p className="text-red-500 text-sm">{errors[id]}</p>}
     </div>
-  );
+  )
 
-  const renderSelectWithError = (
-    id,
-    label,
-    value,
-    onValueChange,
-    items,
-    placeholder = "Select..."
-  ) => (
+  const renderSelectWithError = (id, label, value, onValueChange, items, placeholder = "Select...") => (
     <div className="space-y-1">
       <Label>{label}</Label>
       <Select value={value} onValueChange={onValueChange}>
@@ -610,34 +414,28 @@ export default function NewSessionFormModal({
       </Select>
       {errors[id] && <p className="text-red-500 text-sm">{errors[id]}</p>}
     </div>
-  );
+  )
 
   const handleClose = () => {
-    setForm(initialForm);
-    setErrors({});
-    onClose?.();
-  };
+    setForm(initialForm)
+    setErrors({})
+    onClose?.()
+  }
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            {editingSession ? "Edit Session" : "Add New Session"}
-          </DialogTitle>
+          <DialogTitle>{editingSession ? "Edit Session" : "Add New Session"}</DialogTitle>
           <DialogDescription>
-            Fill in the details for the therapy session. Times are shown in your
-            local timezone ({userTimezone}).
+            Fill in the details for the therapy session. Times are shown in your local timezone ({userTimezone}).
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList className="grid grid-cols-2">
-              <TabsTrigger
-                value="scheduling"
-                className="flex items-center gap-2"
-              >
+              <TabsTrigger value="scheduling" className="flex items-center gap-2">
                 <Users className="h-4 w-4" />
                 Scheduling
               </TabsTrigger>
@@ -667,26 +465,23 @@ export default function NewSessionFormModal({
                           {c.name}
                         </SelectItem>
                       )),
-                      "Select client"
+                      "Select client",
                     )}
                     {renderSelectWithError(
                       "provider",
                       "Provider *",
                       form.provider, // still keeps the ID
                       (id) => {
-                        const selected = staff.find((s) => s.id === id);
-                        setField("provider", id); // store ID
-                        setField(
-                          "providerName",
-                          selected ? selected.fullName : ""
-                        ); // store Name
+                        const selected = staff.find((s) => s.id === id)
+                        setField("provider", id) // store ID
+                        setField("providerName", selected ? selected.fullName : "") // store Name
                       },
                       staff.map((s) => (
                         <SelectItem key={s.id} value={s.id}>
                           {s.fullName} ({s.staffType})
                         </SelectItem>
                       )),
-                      "Select provider"
+                      "Select provider",
                     )}
                   </div>
                   {renderSelectWithError(
@@ -694,42 +489,32 @@ export default function NewSessionFormModal({
                     `Supervising Provider`,
                     form.supervisingProvider,
                     (id) => {
-                      const selected = staff.find((s) => s.id === id);
-                      setField("supervisingProvider", id);
-                      setField(
-                        "supervisingProviderName",
-                        selected ? selected.fullName : ""
-                      );
+                      const selected = staff.find((s) => s.id === id)
+                      setField("supervisingProvider", id)
+                      setField("supervisingProviderName", selected ? selected.fullName : "")
                     },
                     (() => {
                       // Simple filter: All other active staff excluding the selected provider
                       const availableSupervisors = staff.filter(
-                        (s) =>
-                          s.id !== form.provider &&
-                          s.status === "Active" &&
-                          s.archived !== "1"
-                      );
+                        (s) => s.id !== form.provider && s.status === "Active" && s.archived !== "1",
+                      )
 
                       // If no options, show a message
                       if (availableSupervisors.length === 0) {
                         return [
-                          <SelectItem
-                            key="not-available"
-                            value="not-available"
-                            disabled
-                          >
+                          <SelectItem key="not-available" value="not-available" disabled>
                             No other staff available
                           </SelectItem>,
-                        ];
+                        ]
                       }
 
                       return availableSupervisors.map((s) => (
                         <SelectItem key={s.id} value={s.id}>
                           {s.fullName} ({s.staffType})
                         </SelectItem>
-                      ));
+                      ))
                     })(),
-                    "Select supervising provider"
+                    "Select supervising provider",
                   )}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {renderInputWithError(
@@ -737,7 +522,7 @@ export default function NewSessionFormModal({
                       `Start Date & Time *`,
                       form.startDateTime,
                       (e) => setField("startDateTime", e.target.value),
-                      { type: "datetime-local" }
+                      { type: "datetime-local" },
                     )}
                     {renderSelectWithError(
                       "startTZ",
@@ -748,7 +533,7 @@ export default function NewSessionFormModal({
                         <SelectItem key={tz} value={tz}>
                           {tz} {tz === userTimezone ? "(You)" : ""}
                         </SelectItem>
-                      ))
+                      )),
                     )}
                   </div>
 
@@ -758,7 +543,7 @@ export default function NewSessionFormModal({
                       `End Date & Time *`,
                       form.endDateTime,
                       (e) => setField("endDateTime", e.target.value),
-                      { type: "datetime-local" }
+                      { type: "datetime-local" },
                     )}
                     {renderSelectWithError(
                       "endTZ",
@@ -769,7 +554,7 @@ export default function NewSessionFormModal({
                         <SelectItem key={tz} value={tz}>
                           {tz} {tz === userTimezone ? "(You)" : ""}
                         </SelectItem>
-                      ))
+                      )),
                     )}
                   </div>
                   {/* Commenting this for prod */}
@@ -781,28 +566,21 @@ export default function NewSessionFormModal({
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                      {renderSelectWithError(
-                        "recurring",
-                        "Repeats",
-                        form.recurring,
-                        (v) => setField("recurring", v),
-                        [
-                          <SelectItem key="no" value="No">
-                            Does Not Repeat
-                          </SelectItem>,
-                          <SelectItem key="yes" value="Repeats">
-                            Repeats
-                          </SelectItem>,
-                        ]
-                      )}
+                      {renderSelectWithError("recurring", "Repeats", form.recurring, (v) => setField("recurring", v), [
+                        <SelectItem key="no" value="No">
+                          Does Not Repeat
+                        </SelectItem>,
+                        <SelectItem key="yes" value="Repeats">
+                          Repeats
+                        </SelectItem>,
+                      ])}
 
                       {form.recurring === "Repeats" && (
                         <div className="space-y-4 pl-4 border-l-2 border-teal-200">
                           {renderSelectWithError(
                             "repeatFrequency",
                             "Repeat Frequency",
-                            form.repeatFrequency === "Weekly" &&
-                              form.repeatOn.toString() === "Mon,Tue,Wed,Thu,Fri"
+                            form.repeatFrequency === "Weekly" && form.repeatOn.toString() === "Mon,Tue,Wed,Thu,Fri"
                               ? "Every Weekday"
                               : form.repeatFrequency,
                             handleRepeatFrequencyChange,
@@ -822,7 +600,7 @@ export default function NewSessionFormModal({
                               <SelectItem key="monthly" value="Monthly">
                                 Monthly
                               </SelectItem>,
-                            ]
+                            ],
                           )}
 
                           {form.repeatFrequency === "Weekly" && (
@@ -834,15 +612,7 @@ export default function NewSessionFormModal({
                                 onValueChange={(v) => setField("repeatOn", v)}
                                 className="justify-start gap-1"
                               >
-                                {[
-                                  "Sun",
-                                  "Mon",
-                                  "Tue",
-                                  "Wed",
-                                  "Thu",
-                                  "Fri",
-                                  "Sat",
-                                ].map((day, i) => (
+                                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day, i) => (
                                   <ToggleGroupItem
                                     key={`${day}-${i}`}
                                     value={day}
@@ -853,32 +623,22 @@ export default function NewSessionFormModal({
                                   </ToggleGroupItem>
                                 ))}
                               </ToggleGroup>
-                              {errors.repeatOn && (
-                                <p className="text-red-500 text-sm">
-                                  {errors.repeatOn}
-                                </p>
-                              )}
+                              {errors.repeatOn && <p className="text-red-500 text-sm">{errors.repeatOn}</p>}
                             </div>
                           )}
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
-                            {renderSelectWithError(
-                              "ends",
-                              "Ends",
-                              form.ends,
-                              (v) => setField("ends", v),
-                              [
-                                <SelectItem key="never" value="Never">
-                                  Never
-                                </SelectItem>,
-                                <SelectItem key="on" value="On">
-                                  On a specific date
-                                </SelectItem>,
-                                <SelectItem key="after" value="After">
-                                  After a number of occurrences
-                                </SelectItem>,
-                              ]
-                            )}
+                            {renderSelectWithError("ends", "Ends", form.ends, (v) => setField("ends", v), [
+                              <SelectItem key="never" value="Never">
+                                Never
+                              </SelectItem>,
+                              <SelectItem key="on" value="On">
+                                On a specific date
+                              </SelectItem>,
+                              <SelectItem key="after" value="After">
+                                After a number of occurrences
+                              </SelectItem>,
+                            ])}
 
                             {form.ends === "On" &&
                               renderInputWithError(
@@ -886,19 +646,15 @@ export default function NewSessionFormModal({
                                 "End Date",
                                 form.endDate,
                                 (e) => setField("endDate", e.target.value),
-                                { type: "date" }
+                                { type: "date" },
                               )}
                             {form.ends === "After" &&
                               renderInputWithError(
                                 "endAfterOccurrences",
                                 "Occurrences",
                                 form.endAfterOccurrences,
-                                (e) =>
-                                  setField(
-                                    "endAfterOccurrences",
-                                    e.target.value
-                                  ),
-                                { type: "number", min: 1 }
+                                (e) => setField("endAfterOccurrences", e.target.value),
+                                { type: "number", min: 1 },
                               )}
                           </div>
                         </div>
@@ -913,23 +669,19 @@ export default function NewSessionFormModal({
                     (v) => setField("authCode", v),
                     selectedClient?.authorizations?.length
                       ? selectedClient.authorizations.map((a, i) => {
-                          const code =
-                            a.billing_codes?.trim() ||
-                            a.authorization_number?.trim();
+                          const code = a.billing_codes?.trim() || a.authorization_number?.trim()
                           return (
                             <SelectItem key={`${code}-${i}`} value={code}>
                               {code}
                             </SelectItem>
-                          );
+                          )
                         })
                       : [
                           <SelectItem key="no-auth" value="no-auth" disabled>
                             No Billing code for this client
                           </SelectItem>,
                         ],
-                    selectedClient
-                      ? "Select Billing code"
-                      : "Select client first"
+                    selectedClient ? "Select Billing code" : "Select client first",
                   )}
 
                   {renderSelectWithError(
@@ -939,16 +691,61 @@ export default function NewSessionFormModal({
                     (v) => setField("locationAddress", v),
                     selectedClient
                       ? [
-                          <SelectItem
-                            key={selectedClient.id}
-                            value={selectedClient.address}
-                          >
+                          <SelectItem key={selectedClient.id} value={selectedClient.address}>
                             {selectedClient.address}
                           </SelectItem>,
                         ]
                       : [],
-                    selectedClient ? "Select location" : "Select client first"
+                    selectedClient ? "Select location" : "Select client first",
                   )}
+
+                  <Card className="bg-slate-50/50">
+                    <CardHeader className="pb-4">
+                      <CardTitle className="text-base">Hours</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-1">
+                          <Label htmlFor="authorizedHours">Authorized Hours</Label>
+                          <Input
+                            id="authorizedHours"
+                            type="number"
+                            step="0.25"
+                            min="0"
+                            value={form.authorizedHours}
+                            onChange={(e) => setField("authorizedHours", e.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground">If left blank, we'll use Scheduled Hours.</p>
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="scheduledHours">Scheduled Hours</Label>
+                          <Input
+                            id="scheduledHours"
+                            type="number"
+                            step="0.25"
+                            min="0"
+                            value={form.scheduledHours}
+                            readOnly
+                          />
+                          <p className="text-xs text-muted-foreground">Auto-calculated from Start/End.</p>
+                        </div>
+                        <div className="space-y-1">
+                          <Label htmlFor="renderedHours">Rendered Hours</Label>
+                          <Input
+                            id="renderedHours"
+                            type="number"
+                            step="0.25"
+                            min="0"
+                            value={form.renderedHours}
+                            onChange={(e) => setField("renderedHours", e.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Hours that are fully rendered (notes complete + client signed).
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -963,11 +760,7 @@ export default function NewSessionFormModal({
                 </CardHeader>
                 <CardContent>
                   <Label>Quick Note</Label>
-                  <Textarea
-                    rows={5}
-                    value={form.quickNote}
-                    onChange={(e) => setField("quickNote", e.target.value)}
-                  />
+                  <Textarea rows={5} value={form.quickNote} onChange={(e) => setField("quickNote", e.target.value)} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -982,11 +775,7 @@ export default function NewSessionFormModal({
                 {editingSession ? "Update Session" : "Add Session"}
               </Button>
             ) : (
-              <Button
-                type="button"
-                className="bg-teal-600 hover:bg-teal-700"
-                onClick={handleNextClick}
-              >
+              <Button type="button" className="bg-teal-600 hover:bg-teal-700" onClick={handleNextClick}>
                 Next
               </Button>
             )}
@@ -994,5 +783,5 @@ export default function NewSessionFormModal({
         </form>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

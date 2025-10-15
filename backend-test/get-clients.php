@@ -56,14 +56,21 @@ try {
         $clientsData[$client['client_id']] = $client;
     }
 
-    // 2. Fetch all insurances and group by client_id
-    $stmtInsurances = $conn->query("SELECT * FROM client_insurance");
+    // 2. Fetch all insurances with joined provider name and group by client_id
+    $stmtInsurances = $conn->query("
+    SELECT ci.*, 
+           ci.provider_staff_id, 
+           CONCAT(s.firstName, ' ', s.lastName) AS provider_name
+    FROM client_insurance ci 
+    LEFT JOIN staff s ON ci.provider_staff_id = s.id
+");
     $insurancesByClient = [];
     $insuranceIdToClient = []; // Map insurance_id to client_id
     while ($insurance = $stmtInsurances->fetch(PDO::FETCH_ASSOC)) {
         $insurancesByClient[$insurance['client_id']][] = $insurance;
         $insuranceIdToClient[$insurance['insurance_id']] = $insurance['client_id'];
     }
+
 
     // 3. Fetch ALL authorizations and try to link them
     $authorizationsByClient = [];
