@@ -186,7 +186,6 @@ export default function SchedulingView() {
   const [clientFilter, setClientFilter] = useState("")
   const [hoveredSession, setHoveredSession] = useState(null)
   const [hoverTimeout, setHoverTimeout] = useState(null)
-  const [currentTime, setCurrentTime] = useState(new Date())
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
   const today = new Date()
 
@@ -200,13 +199,6 @@ export default function SchedulingView() {
   useEffect(() => {
     const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
     setUserTimezone(detectedTimezone)
-  }, [])
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date())
-    }, 60000) // Update every minute
-    return () => clearInterval(timer)
   }, [])
 
   const dateRange = useMemo(() => {
@@ -561,83 +553,6 @@ export default function SchedulingView() {
     return `${displayHour}:00 ${ampm}`
   })
 
-  // function layoutDaySessionsForTimeline(sessions, userTimezone, expandedSessionId = null, expandExtraPx = 0) {
-  //   const events = sessions.map((s) => {
-  //     const startStr = formatTime12hFromUTC(s.startDateTime, userTimezone)
-  //     const endStr = formatTime12hFromUTC(s.endDateTime, userTimezone)
-
-  //     let start = minutesFromMidnight(startStr)
-  //     let end = minutesFromMidnight(endStr)
-
-  //     const minMinutes = 0 // 12 AM
-  //     const maxMinutes = 24 * 60 // 12 AM next day (1440 minutes)
-
-  //     if (!isFinite(start) || start < minMinutes || start > maxMinutes) {
-  //       start = minMinutes
-  //     }
-  //     if (!isFinite(end) || end < minMinutes || end > maxMinutes) {
-  //       end = Math.min(start + 60, maxMinutes)
-  //     }
-  //     if (end <= start) {
-  //       end = Math.min(start + 60, maxMinutes)
-  //     }
-
-  //     return { session: s, start, end, col: 0, clusterId: -1 }
-  //   })
-
-  //   events.sort((a, b) => a.start - b.start || a.end - b.end)
-
-  //   let clusterId = -1
-  //   const active = []
-  //   const byCluster = new Map()
-
-  //   for (const ev of events) {
-  //     for (let i = active.length - 1; i >= 0; i--) {
-  //       if (active[i].end <= ev.start) active.splice(i, 1)
-  //     }
-  //     if (active.length === 0) {
-  //       clusterId += 1
-  //     }
-  //     ev.clusterId = clusterId
-  //     const used = new Set(active.map((a) => a.col))
-  //     let col = 0
-  //     while (used.has(col)) col += 1
-  //     ev.col = col
-  //     active.push(ev)
-
-  //     const entry = byCluster.get(clusterId) || { maxCol: 0 }
-  //     entry.maxCol = Math.max(entry.maxCol, col)
-  //     byCluster.set(clusterId, entry)
-  //   }
-
-  //   const pxPer15Min = 16
-  //   const startOfDay = 0 // 12 AM
-  //   const endOfDay = 24 * 60 // 12 AM next day
-
-  //   const layouts = events.map((ev) => {
-  //     const totalCols = (byCluster.get(ev.clusterId)?.maxCol ?? 0) + 1
-  //     const minutesFromStart = clamp(ev.start - startOfDay, 0, endOfDay - startOfDay)
-  //     const duration = clamp(ev.end - ev.start, 15, endOfDay - startOfDay)
-  //     const topPx = (minutesFromStart / 15) * pxPer15Min
-  //     const heightPx = Math.max((duration / 15) * pxPer15Min, 32)
-  //     const leftPct = (ev.col / totalCols) * 100
-  //     const widthPct = 100 / totalCols
-
-  //     return {
-  //       session: ev.session,
-  //       topPx,
-  //       heightPx,
-  //       leftPct,
-  //       widthPct,
-  //       totalCols,
-  //       col: ev.col,
-  //     }
-  //   })
-
-  //   const totalHeight = ((endOfDay - startOfDay) / 15) * pxPer15Min + 64
-  //   return { layouts, totalHeight }
-  // }
-
   function layoutDaySessionsForTimeline(sessions, userTimezone, expandedSessionId = null, expandExtraPx = 0) {
     const events = sessions.map((s) => {
       const startStr = formatTime12hFromUTC(s.startDateTime, userTimezone)
@@ -714,13 +629,14 @@ export default function SchedulingView() {
     const totalHeight = ((endOfDay - startOfDay) / 15) * pxPer15Min + 64
     return { layouts, totalHeight }
   }
+
   const renderCalendarContent = () => {
     if (viewMode === "today") {
       const daySessions = getCellSessions(currentDate)
       const { layouts, totalHeight } = layoutDaySessionsForTimeline(daySessions, userTimezone, null, 0)
 
       const timeSlots = []
-      for (let hour = 8; hour <= 21; hour++) {
+      for (let hour = 0; hour <= 24; hour++) {
         const ampm = hour >= 12 ? "PM" : "AM"
         const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
         timeSlots.push({
@@ -728,7 +644,7 @@ export default function SchedulingView() {
           minutes: hour * 60,
           isHour: true,
         })
-        if (hour < 21) {
+        if (hour < 24) {
           timeSlots.push({
             label: `${displayHour}:30 ${ampm}`,
             minutes: hour * 60 + 30,
@@ -738,17 +654,10 @@ export default function SchedulingView() {
       }
 
       const pixelsPerMinute = 2
-      const startHour = 8
-      const endHour = 21
+      const startHour = 0
+      const endHour = 24
       const totalMinutes = (endHour - startHour) * 60
       const timelineHeight = totalMinutes * pixelsPerMinute
-
-      const now = new Date()
-      const currentHour = now.getHours()
-      const currentMinute = now.getMinutes()
-      const currentTotalMinutes = currentHour * 60 + currentMinute
-      const isTimeInRange = currentTotalMinutes >= startHour * 60 && currentTotalMinutes <= endHour * 60
-      const liveTimelinePosition = isTimeInRange ? (currentTotalMinutes - startHour * 60) * pixelsPerMinute : null
 
       return (
         <div className="flex border border-slate-300 rounded-md overflow-hidden bg-white">
@@ -759,7 +668,7 @@ export default function SchedulingView() {
               {timeSlots.map((slot, idx) => {
                 const offsetMinutes = slot.minutes - startHour * 60
                 const topPosition = offsetMinutes * pixelsPerMinute
-                const shouldShowLabel = slot.minutes >= startHour * 60 && slot.minutes <= endHour * 60
+                const shouldShowLabel = slot.minutes <= 24 * 60
                 return (
                   <div
                     key={idx}
@@ -793,12 +702,12 @@ export default function SchedulingView() {
               </Button>
             </div>
 
-            {/* Grid lines and live timeline */}
+            {/* Grid lines */}
             <div className="relative" style={{ height: `${timelineHeight}px` }}>
               {timeSlots.map((slot, idx) => {
                 const offsetMinutes = slot.minutes - startHour * 60
                 const topPosition = offsetMinutes * pixelsPerMinute
-                const shouldShowLine = slot.minutes >= startHour * 60 && slot.minutes <= endHour * 60
+                const shouldShowLine = slot.minutes <= 24 * 60
                 return shouldShowLine ? (
                   <div key={idx} className="absolute w-full" style={{ top: `${topPosition}px` }}>
                     <div
@@ -809,15 +718,6 @@ export default function SchedulingView() {
                   </div>
                 ) : null
               })}
-
-              {liveTimelinePosition !== null && (
-                <div
-                  className="absolute w-full h-0.5 bg-red-500 z-10 pointer-events-none"
-                  style={{ top: `${liveTimelinePosition}px` }}
-                >
-                  <div className="absolute -left-2 -top-1.5 w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-md" />
-                </div>
-              )}
 
               {/* Session blocks */}
               {layouts.map((layout) => {
@@ -927,7 +827,7 @@ export default function SchedulingView() {
       for (let i = 0; i < 7; i++) days.push(addDays(weekStart, i))
 
       const timeSlots = []
-      for (let hour = 8; hour <= 21; hour++) {
+      for (let hour = 0; hour <= 24; hour++) {
         const ampm = hour >= 12 ? "PM" : "AM"
         const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
         timeSlots.push({
@@ -935,7 +835,7 @@ export default function SchedulingView() {
           minutes: hour * 60,
           isHour: true,
         })
-        if (hour < 21) {
+        if (hour < 24) {
           timeSlots.push({
             label: `${displayHour}:30 ${ampm}`,
             minutes: hour * 60 + 30,
@@ -945,17 +845,10 @@ export default function SchedulingView() {
       }
 
       const pixelsPerMinute = 2
-      const startHour = 8
-      const endHour = 21
+      const startHour = 0
+      const endHour = 24
       const totalMinutes = (endHour - startHour) * 60
       const timelineHeight = totalMinutes * pixelsPerMinute
-
-      const now = new Date()
-      const currentHour = now.getHours()
-      const currentMinute = now.getMinutes()
-      const currentTotalMinutes = currentHour * 60 + currentMinute
-      const isTimeInRange = currentTotalMinutes >= startHour * 60 && currentTotalMinutes <= endHour * 60
-      const liveTimelinePosition = isTimeInRange ? (currentTotalMinutes - startHour * 60) * pixelsPerMinute : null
 
       return (
         <div className="flex border border-slate-300 rounded-md overflow-hidden bg-white">
@@ -966,7 +859,7 @@ export default function SchedulingView() {
               {timeSlots.map((slot, idx) => {
                 const offsetMinutes = slot.minutes - startHour * 60
                 const topPosition = offsetMinutes * pixelsPerMinute
-                const shouldShowLabel = slot.minutes >= startHour * 60 && slot.minutes <= endHour * 60
+                const shouldShowLabel = slot.minutes <= 24 * 60
                 return (
                   <div
                     key={idx}
@@ -1013,7 +906,7 @@ export default function SchedulingView() {
                     {timeSlots.map((slot, idx) => {
                       const offsetMinutes = slot.minutes - startHour * 60
                       const topPosition = offsetMinutes * pixelsPerMinute
-                      const shouldShowLine = slot.minutes >= startHour * 60 && slot.minutes <= endHour * 60
+                      const shouldShowLine = slot.minutes <= 24 * 60
                       return shouldShowLine ? (
                         <div key={idx} className="absolute w-full" style={{ top: `${topPosition}px` }}>
                           <div
@@ -1024,15 +917,6 @@ export default function SchedulingView() {
                         </div>
                       ) : null
                     })}
-
-                    {isToday && liveTimelinePosition !== null && (
-                      <div
-                        className="absolute w-full h-0.5 bg-red-500 z-10 pointer-events-none"
-                        style={{ top: `${liveTimelinePosition}px` }}
-                      >
-                        <div className="absolute -left-2 -top-1.5 w-4 h-4 bg-red-500 rounded-full border-2 border-white shadow-md" />
-                      </div>
-                    )}
 
                     {/* Session blocks */}
                     {layouts.map((layout) => {

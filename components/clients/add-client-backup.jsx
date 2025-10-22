@@ -785,7 +785,6 @@ export default function AddClientModal({
     }
 
     const dataToSave = prepareDataForSave();
-    console.log("Data being sent to API:", dataToSave);
     await onSave(dataToSave);
     setSaving(false);
   };

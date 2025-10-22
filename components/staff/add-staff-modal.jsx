@@ -33,6 +33,7 @@ import {
   Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils"; // Ensure you have this utility (from Shadcn/UI)
+import { useSelector } from "react-redux";
 
 const initialStaffState = {
   // Personal Information
@@ -121,6 +122,7 @@ const formatTimeForDropdown = (time24hr) => {
 };
 
 // Custom MultiSelect component
+// Custom MultiSelect component - FIXED
 const MultiSelect = ({ options, selected, onChange, placeholder }) => {
   const [open, setOpen] = useState(false);
 
@@ -135,11 +137,16 @@ const MultiSelect = ({ options, selected, onChange, placeholder }) => {
   return (
     <div>
       <Button
+        type="button"  // ADD THIS - prevents form submission
         variant="outline"
         role="combobox"
         aria-expanded={open}
         className="w-full justify-between bg-transparent"
-        onClick={() => setOpen(!open)}
+        onClick={(e) => {
+          e.preventDefault();  // ADD THIS
+          e.stopPropagation(); // ADD THIS
+          setOpen(!open);
+        }}
       >
         {selected.length > 0 ? `${selected.length} selected` : placeholder}
         <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -153,8 +160,12 @@ const MultiSelect = ({ options, selected, onChange, placeholder }) => {
             {options.map((option) => (
               <div
                 key={option.value}
-                className="p-2 flex items-center space-x-2 cursor-pointer hover:bg-slate-100"
-                onClick={() => handleSelect(option.value)}
+                className="p-2 flex items-center space-x-2 cursor-pointer hover:bg-slate-100 text-sm"
+                onClick={(e) => {
+                  e.preventDefault();    // ADD THIS
+                  e.stopPropagation();   // ADD THIS
+                  handleSelect(option.value);
+                }}
               >
                 <CheckIcon
                   className={cn(
@@ -194,7 +205,7 @@ export default function AddStaffModal({
   ];
 
   // Local placeholder; integrate with a clients API later if needed
-  const clients = [];
+   const clients = useSelector((state) => state.clients.items); 
 
   useEffect(() => {
     if (editingStaff) {
@@ -502,7 +513,6 @@ export default function AddStaffModal({
     }
 
     const dataToSave = prepareDataForSave();
-    console.log("Data being sent to API:", dataToSave);
     await onSave(dataToSave);
     setSaving(false);
   };

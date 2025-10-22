@@ -165,6 +165,12 @@ export default function AppSidebar({
           icon: UserCog,
           color: "text-orange-600",
         },
+        {
+          id: "masterData",
+          label: "Master Data",
+          icon: UserCog,
+          color: "text-orange-600",
+        },
       ];
     }
 

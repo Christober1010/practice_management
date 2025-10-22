@@ -789,7 +789,6 @@ export default function AddClientModal({
     }
 
     const dataToSave = prepareDataForSave();
-    console.log("Data being sent to API:", dataToSave);
     await onSave(dataToSave);
     setSaving(false);
   };
@@ -1604,7 +1603,6 @@ export default function AddClientModal({
                               "Select rendering provider"
                             )}
 
-                            {console.log(filteredStaff, "filtered")}
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {renderInputWithError(

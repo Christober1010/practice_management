@@ -1,6 +1,8 @@
-import React from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useState } from "react";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { AlertTriangle, X } from "lucide-react";
 
 const DeleteConfirmationModal = ({
@@ -10,17 +12,29 @@ const DeleteConfirmationModal = ({
   sessionData,
   isDeleting = false,
 }) => {
+  const [cancelledBy, setCancelledBy] = useState("Staff");
+  const [cancelledReason, setCancelledReason] = useState("");
+  const [editMode, setEditMode] = useState("single");
+
   if (!isOpen) return null;
 
   const handleConfirm = () => {
-    onConfirm();
+    // Validate inputs
+    if (!cancelledBy) {
+      alert("Please select who cancelled the session.");
+      return;
+    }
+    if (!cancelledReason.trim()) {
+      alert("Please provide a cancellation reason.");
+      return;
+    }
+    onConfirm(cancelledBy, cancelledReason, editMode);
   };
 
   const handleCancel = () => {
     onClose();
   };
 
-  // Handle backdrop click
   const handleBackdropClick = (e) => {
     if (e.target === e.currentTarget) {
       onClose();
@@ -54,8 +68,7 @@ const DeleteConfirmationModal = ({
         <CardContent className="space-y-4">
           <div className="text-gray-700">
             <p className="mb-3">
-              Are you sure you want to cancel this session? This action cannot
-              be undone.
+              Are you sure you want to cancel this session? This action cannot be undone.
             </p>
 
             {sessionData && (
@@ -76,17 +89,69 @@ const DeleteConfirmationModal = ({
                   </p>
                   <p>
                     <strong>Time:</strong>{" "}
-                    {new Date(sessionData.startDateTime).toLocaleTimeString(
-                      [],
-                      {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      }
-                    )}
+                    {new Date(sessionData.startDateTime).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
                   </p>
                 </div>
               </div>
             )}
+          </div>
+
+          {/* Input Fields */}
+          <div className="space-y-4">
+            {sessionData?.recurring && sessionData.recurring !== "No" && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Apply cancellation to
+                </label>
+                <Select
+                  value={editMode}
+                  onValueChange={setEditMode}
+                  disabled={isDeleting}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select scope" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="single">This session</SelectItem>
+                    <SelectItem value="recurring">All recurring sessions</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Cancelled By
+              </label>
+              <Select
+                value={cancelledBy}
+                onValueChange={setCancelledBy}
+                disabled={isDeleting}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select who cancelled" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Client">Client</SelectItem>
+                  <SelectItem value="Staff">Staff</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Cancellation Reason
+              </label>
+              <Input
+                type="text"
+                value={cancelledReason}
+                onChange={(e) => setCancelledReason(e.target.value)}
+                placeholder="Enter cancellation reason"
+                disabled={isDeleting}
+                className="w-full"
+              />
+            </div>
           </div>
 
           <div className="flex gap-3 pt-4">

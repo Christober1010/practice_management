@@ -88,7 +88,6 @@ export default function ClientsView() {
   // clients-view.jsx
   const clients = useSelector((state) => state.clients.items); // items = API response
   // const clients = clientsResponse?.clients ?? [] // safe fallback to []
-  console.log(clients, "clients");
   const loading = useAppSelector((s) => s.clients.loading);
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;

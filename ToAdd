@@ -1,4 +1,17 @@
-* Focus on Day view in schedule, include the time dividers for half an hour also
-* Move the changes to prod too, make sure old db table values aren't lost
+-- Add new columns to sessions table for recurring sessions and cancellation tracking
+ALTER TABLE `sessions` ADD COLUMN `recurring_id` BIGINT UNSIGNED DEFAULT NULL COMMENT 'Links recurring sessions together' AFTER `recurring_days`;
 
-* Role based component segregation in UI nd DB
+ALTER TABLE `sessions` ADD COLUMN `auth_id` INT DEFAULT NULL COMMENT 'Links to client_auth table' AFTER `recurring_id`;
+
+ALTER TABLE `sessions` ADD COLUMN `cancelled_by` VARCHAR(255) DEFAULT NULL COMMENT 'Name/ID of person who cancelled' AFTER `rendered_hours`;
+
+ALTER TABLE `sessions` ADD COLUMN `cancelled_reason` TEXT DEFAULT NULL COMMENT 'Reason for cancellation' AFTER `cancelled_by`;
+
+-- Add foreign key constraint for auth_id
+ALTER TABLE `sessions` ADD CONSTRAINT `fk_sessions_auth_id` FOREIGN KEY (`auth_id`) REFERENCES `client_auth` (`auth_id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Create index for recurring_id for faster lookups
+CREATE INDEX `idx_sessions_recurring_id` ON `sessions` (`recurring_id`);
+
+-- Create index for auth_id for faster lookups
+CREATE INDEX `idx_sessions_auth_id` ON `sessions` (`auth_id`);

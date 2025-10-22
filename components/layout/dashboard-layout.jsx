@@ -13,6 +13,7 @@ import BillingView from "@/components/billing/billing-view";
 import ParentPortal from "@/components/portal/parent-portal";
 import StaffView from "@/components/staff/staff-view";
 import UsersView from "@/components/users/users-view";
+import ProgramsView from "@/components/master-data/ProgramsView";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import AppSidebar from "@/components/layout/app-sidebar";
 
@@ -48,6 +49,8 @@ export default function DashboardLayout({ userRole, onLogout }) {
         return <ParentPortal />;
       case "users":
         return <UsersView />;
+      case "masterData":
+        return <ProgramsView />;
       default:
         return <AdminDashboard />;
     }
