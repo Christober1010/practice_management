@@ -1,18 +1,22 @@
 "use client";
 
 import {
-  Heart,
   LayoutDashboard,
   Calendar,
   Users,
-  FileText,
-  CreditCard,
-  Baby,
-  Settings,
   LogOut,
   UserCheck,
-  Users2,
   UserCog,
+  Database,
+  ChevronRight,
+  MessageSquare,
+  ListChecks,
+  Target,
+  Layers,
+  FolderKanban,
+  SquareTerminal,
+  Contact,
+  UserPlus,
 } from "lucide-react";
 import {
   Sidebar,
@@ -37,7 +41,9 @@ export default function AppSidebar({
   onLogout,
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [showMasterDataMenu, setShowMasterDataMenu] = useState(false);
   const lastScrollY = useRef(0);
+  const masterDataTimeoutRef = useRef(null);
 
   useEffect(() => {
     // On mount, restore last tab
@@ -46,6 +52,7 @@ export default function AppSidebar({
       setCurrentView(savedView);
     }
   }, [setCurrentView]);
+
   useEffect(() => {
     const handleScroll = () => {
       // Only run on mobile view (adjust breakpoint as needed)
@@ -72,19 +79,61 @@ export default function AppSidebar({
 
   const handleMenuSelect = (id) => {
     setCurrentView(id);
-    localStorage.setItem("currentView", id); // ✅ persist selection
-
-    setCollapsed(true); // Collapse sidebar after selection
+    localStorage.setItem("currentView", id);
+    const isMasterDataSubitem = masterDataSubItems.some(
+      (item) => item.id === id
+    );
+    if (!isMasterDataSubitem) {
+      setCollapsed(true);
+    }
+    setShowMasterDataMenu(false);
   };
+
+  const handleMasterDataHover = (isEntering) => {
+    if (masterDataTimeoutRef.current) {
+      clearTimeout(masterDataTimeoutRef.current);
+    }
+
+    if (isEntering) {
+      setCollapsed(false);
+      setShowMasterDataMenu(true);
+    } else {
+      masterDataTimeoutRef.current = setTimeout(() => {
+        setShowMasterDataMenu(false);
+      }, 200);
+    }
+  };
+
+  const masterDataSubItems = [
+    {
+      id: "modules",
+      label: "Modules",
+      icon: FolderKanban,
+      color: "text-blue-600",
+    },
+    { id: "domains", label: "Domains", icon: Layers, color: "text-indigo-600" },
+    {
+      id: "programs",
+      label: "Programs",
+      icon: ListChecks,
+      color: "text-teal-600",
+    },
+    {
+      id: "targets",
+      label: "Targets",
+      icon: Target,
+      color: "text-orange-600",
+    },
+    {
+      id: "prompts",
+      label: "Prompts",
+      icon: SquareTerminal,
+      color: "text-rose-600",
+    },
+  ];
 
   const getMenuItems = () => {
     const baseItems = [
-      // {
-      //   id: "dashboard",
-      //   label: "Dashboard",
-      //   icon: LayoutDashboard,
-      //   color: "text-teal-600",
-      // },
       {
         id: "scheduling",
         label: "Scheduling",
@@ -97,29 +146,15 @@ export default function AppSidebar({
         icon: Users,
         color: "text-indigo-600",
       },
-      // {
-      //   id: "sessions",
-      //   label: "Sessions",
-      //   icon: FileText,
-      //   color: "text-purple-600",
-      // },
     ];
 
     if (userRole.role === "admin" || userRole.role === "bcba") {
-      baseItems.push(
-        {
-          id: "staff",
-          label: "Staff",
-          icon: UserCheck,
-          color: "text-orange-600",
-        }
-        // {
-        //   id: "billing",
-        //   label: "Billing",
-        //   icon: CreditCard,
-        //   color: "text-emerald-600",
-        // }
-      );
+      baseItems.push({
+        id: "staff",
+        label: "Staff",
+        icon: UserCheck,
+        color: "text-orange-600",
+      });
     }
 
     if (userRole.role === "parent") {
@@ -130,13 +165,6 @@ export default function AppSidebar({
           icon: LayoutDashboard,
           color: "text-teal-600",
         },
-        // { id: "portal", label: "My Child", icon: Baby, color: "text-pink-600" },
-        // {
-        //   id: "billing",
-        //   label: "Billing",
-        //   icon: CreditCard,
-        //   color: "text-emerald-600",
-        // },
       ];
     }
     if (userRole.role === "admin") {
@@ -156,19 +184,26 @@ export default function AppSidebar({
         {
           id: "staff",
           label: "Staff",
-          icon: UserCheck,
+          icon: Contact,
           color: "text-orange-600",
         },
         {
           id: "users",
           label: "Users",
-          icon: UserCog,
+          icon: UserPlus,
           color: "text-orange-600",
         },
         {
           id: "masterData",
           label: "Master Data",
-          icon: UserCog,
+          icon: Database,
+          color: "text-orange-600",
+          hasSubmenu: true,
+        },
+        {
+          id: "reports",
+          label: "Reports",
+          icon: UserPlus,
           color: "text-orange-600",
         },
       ];
@@ -203,7 +238,11 @@ export default function AppSidebar({
       <SidebarHeader className="bg-slate-50">
         <div className="flex items-center space-x-3">
           <div className={`${getRoleColor()} p-0.5 rounded-full shadow-md`}>
-            <Image src={img} className="h-16 w-16 rounded-full" alt="logo" />
+            <Image
+              src={img || "/placeholder.svg"}
+              className="h-16 w-16 rounded-full"
+              alt="logo"
+            />
           </div>
           <span className="text-xl font-bold text-slate-800 group-data-[state=collapsed]/sidebar-wrapper:hidden">
             Mahaverse
@@ -218,6 +257,77 @@ export default function AppSidebar({
             {getMenuItems().map((item) => {
               const Icon = item.icon;
               const isActive = currentView === item.id;
+
+              if (item.hasSubmenu) {
+                return (
+                  <SidebarMenuItem key={item.id} className="relative">
+                    <div
+                      onMouseEnter={() => handleMasterDataHover(true)}
+                      onMouseLeave={() => handleMasterDataHover(false)}
+                    >
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isActive}
+                        tooltip={item.label}
+                      >
+                        <a
+                          href="#"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleMenuSelect(item.id);
+                          }}
+                          className={`flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
+                            isActive
+                              ? "bg-teal-50 text-teal-700"
+                              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                          }`}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <Icon
+                              className={`h-4 w-4 mr-2 ${
+                                isActive ? "text-teal-600" : item.color
+                              }`}
+                            />
+                            <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">
+                              {item.label}
+                            </span>
+                          </div>
+                          <ChevronRight className="h-4 w-4 group-data-[state=collapsed]/sidebar-wrapper:hidden" />
+                        </a>
+                      </SidebarMenuButton>
+
+                      {/* Submenu */}
+                      {showMasterDataMenu && (
+                        <div className="absolute ml-2 pl-2 w-56 bg-white rounded-lg shadow-lg border border-slate-200 py-2 z-50">
+                          {masterDataSubItems.map((subItem) => {
+                            const SubIcon = subItem.icon;
+                            return (
+                              <button
+                                key={subItem.id}
+                                onClick={() => handleMenuSelect(subItem.id)}
+                                className={`w-full flex items-center px-4 py-2 text-sm transition-colors ${
+                                  currentView === subItem.id
+                                    ? "bg-teal-50 text-teal-700"
+                                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                }`}
+                              >
+                                <SubIcon
+                                  className={`h-4 w-4 mr-3 ${
+                                    currentView === subItem.id
+                                      ? "text-teal-600"
+                                      : subItem.color
+                                  }`}
+                                />
+                                {subItem.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </SidebarMenuItem>
+                );
+              }
 
               return (
                 <SidebarMenuItem key={item.id}>
@@ -258,23 +368,6 @@ export default function AppSidebar({
       {/* Bottom Actions */}
       <SidebarFooter>
         <SidebarMenu>
-          {/* <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Settings">
-              <a
-                href="#"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setCurrentView("settings");
-                }}
-                className="flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              >
-                <Settings className="h-5 w-5" />
-                <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">
-                  Settings
-                </span>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem> */}
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Sign Out">
               <button

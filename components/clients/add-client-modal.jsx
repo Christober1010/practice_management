@@ -215,64 +215,113 @@ export default function AddClientModal({
   ];
 
   useEffect(() => {
-    if (editingClient) {
-      const addresses = editingClient.addresses?.length
-        ? editingClient.addresses
-        : [
-            {
-              id: Date.now(),
-              service_location: "Home",
-              address_line_1: editingClient.address_line_1 || "",
-              address_line_2: editingClient.address_line_2 || "",
-              city: editingClient.city || "",
-              state: editingClient.state || "",
-              zipcode: editingClient.zipcode || "",
-              country: editingClient.country || "USA",
-              countryOther: editingClient.countryOther || "",
-            },
-          ];
+  if (editingClient) {
+    const addresses = editingClient.addresses?.length
+      ? editingClient.addresses.map((addr) => ({
+          ...addr,
+          id: addr.id || Date.now(),
+        }))
+      : [
+          {
+            id: Date.now(),
+            service_location: editingClient.service_location || "Home",
+            address_line_1: editingClient.address_line_1 || "",
+            address_line_2: editingClient.address_line_2 || "",
+            city: editingClient.city || "",
+            state: editingClient.state || "",
+            zipcode: editingClient.zipcode || "",
+            country: editingClient.country || "USA",
+            countryOther: editingClient.countryOther || "",
+          },
+        ];
 
-      setFormData({
-        ...initialClientState,
-        ...editingClient,
-        addresses,
-        insurances: editingClient.insurances || [],
-        authorizations: editingClient.authorizations || [],
-        documents: editingClient.documents || [],
-        date_of_birth: editingClient.date_of_birth?.slice(0, 10) || "",
-        // Flatten availability for form fields
-        mondayAvailable: editingClient.availability?.monday?.available || false,
-        mondayStart: editingClient.availability?.monday?.start || "",
-        mondayEnd: editingClient.availability?.monday?.end || "",
-        tuesdayAvailable:
-          editingClient.availability?.tuesday?.available || false,
-        tuesdayStart: editingClient.availability?.tuesday?.start || "",
-        tuesdayEnd: editingClient.availability?.tuesday?.end || "",
-        wednesdayAvailable:
-          editingClient.availability?.wednesday?.available || false,
-        wednesdayStart: editingClient.availability?.wednesday?.start || "",
-        wednesdayEnd: editingClient.availability?.wednesday?.end || "",
-        thursdayAvailable:
-          editingClient.availability?.thursday?.available || false,
-        thursdayStart: editingClient.availability?.thursday?.start || "",
-        thursdayEnd: editingClient.availability?.thursday?.end || "",
-        fridayAvailable: editingClient.availability?.friday?.available || false,
-        fridayStart: editingClient.availability?.friday?.start || "",
-        fridayEnd: editingClient.availability?.friday?.end || "",
-        saturdayAvailable:
-          editingClient.availability?.saturday?.available || false,
-        saturdayStart: editingClient.availability?.saturday?.start || "",
-        saturdayEnd: editingClient.availability?.saturday?.end || "",
-        sundayAvailable: editingClient.availability?.sunday?.available || false,
-        sundayStart: editingClient.availability?.sunday?.start || "",
-        sundayEnd: editingClient.availability?.sunday?.end || "",
-      });
-    } else {
-      setFormData(initialClientState);
-    }
-    setErrors({});
-    setActiveTab("personal");
-  }, [editingClient, isOpen]);
+    const insurances = editingClient.insurances?.length
+      ? editingClient.insurances.map((ins, index) => ({
+          insurance_id: ins.insurance_id || `temp_${index}_${Date.now()}`,
+          insurance_type: ins.insurance_type || "Primary",
+          insurance_provider: ins.insurance_provider || "",
+          treatment_type: ins.treatment_type || "Behavioral therapy",
+          provider_staff_id: ins.provider_staff_id || "",
+          rendering_provider: ins.rendering_provider || "",
+          start_date: ins.start_date?.slice(0, 10) || "",
+          end_date: ins.end_date?.slice(0, 10) || "",
+          authorization_number: ins.authorization_number || "",
+          insurance_id_number: ins.insurance_id_number || "",
+          group_number: ins.group_number || "",
+          diagnosis_1: ins.diagnosis_1 || "",
+          diagnosis_2: ins.diagnosis_2 || "",
+          diagnosis_3: ins.diagnosis_3 || "",
+          diagnosis_4: ins.diagnosis_4 || "",
+          diagnosis_5: ins.diagnosis_5 || "",
+          coinsurance: ins.coinsurance || "",
+          deductible: ins.deductible || "",
+          copay_per: ins.copay_per || "hr",
+          copay_rate: ins.copay_rate || "",
+        }))
+      : [];
+
+    const authorizations = editingClient.authorizations?.length
+      ? editingClient.authorizations.map((auth, index) => {
+          const insuranceIndex = editingClient.insurances
+            ? editingClient.insurances.findIndex(
+                (ins) => ins.insurance_id === auth.insurance_id
+              )
+            : -1;
+          return {
+            auth_uuid: auth.auth_uuid || `auth_${Date.now()}_${index}`,
+            insurance_id: insuranceIndex >= 0 ? String(insuranceIndex) : "",
+            authorization_number: auth.authorization_number || "",
+            billing_codes: auth.billing_codes || "",
+            units_approved_per_15_min: auth.units_approved_per_15_min || "",
+            units_serviced: auth.units_serviced || "",
+            balance_units: auth.balance_units || "",
+            start_date: auth.start_date?.slice(0, 10) || "",
+            end_date: auth.end_date?.slice(0, 10) || "",
+            status: auth.status || "Active",
+          };
+        })
+      : [];
+
+    setFormData({
+      ...initialClientState,
+      ...editingClient,
+      addresses,
+      insurances,
+      authorizations,
+      documents: editingClient.documents?.map((doc) => ({
+        doc_uuid: doc.doc_uuid || `doc_${Date.now()}`,
+        document_type: doc.document_type || "",
+        file_url: doc.file_url || doc.document_path || "",
+      })) || [],
+      date_of_birth: editingClient.date_of_birth?.slice(0, 10) || "",
+      mondayAvailable: editingClient.availability?.monday?.available || false,
+      mondayStart: editingClient.availability?.monday?.start || "",
+      mondayEnd: editingClient.availability?.monday?.end || "",
+      tuesdayAvailable: editingClient.availability?.tuesday?.available || false,
+      tuesdayStart: editingClient.availability?.tuesday?.start || "",
+      tuesdayEnd: editingClient.availability?.tuesday?.end || "",
+      wednesdayAvailable: editingClient.availability?.wednesday?.available || false,
+      wednesdayStart: editingClient.availability?.wednesday?.start || "",
+      wednesdayEnd: editingClient.availability?.wednesday?.end || "",
+      thursdayAvailable: editingClient.availability?.thursday?.available || false,
+      thursdayStart: editingClient.availability?.thursday?.start || "",
+      thursdayEnd: editingClient.availability?.thursday?.end || "",
+      fridayAvailable: editingClient.availability?.friday?.available || false,
+      fridayStart: editingClient.availability?.friday?.start || "",
+      fridayEnd: editingClient.availability?.friday?.end || "",
+      saturdayAvailable: editingClient.availability?.saturday?.available || false,
+      saturdayStart: editingClient.availability?.saturday?.start || "",
+      saturdayEnd: editingClient.availability?.saturday?.end || "",
+      sundayAvailable: editingClient.availability?.sunday?.available || false,
+      sundayStart: editingClient.availability?.sunday?.start || "",
+      sundayEnd: editingClient.availability?.sunday?.end || "",
+    });
+  } else {
+    setFormData(initialClientState);
+  }
+  setErrors({});
+  setActiveTab("personal");
+}, [editingClient, isOpen]);
 
   const prepareDataForSave = () => {
     const firstAddress = formData.addresses[0] || {};
@@ -328,17 +377,19 @@ export default function AddClientModal({
           ? firstAddress.countryOther
           : firstAddress.country || "USA",
       service_location: firstAddress.service_location || "Home",
-
       addresses: formData.addresses,
-
-      insurances: formData.insurances.filter(
-        (ins) =>
-          ins.insurance_provider ||
-          ins.insurance_id_number ||
-          ins.treatment_type ||
-          ins.provider_staff_id // ✅ keep Rendering Provider even if other fields are blank
-      ),
-
+      insurances: formData.insurances
+        .filter(
+          (ins) =>
+            ins.insurance_provider ||
+            ins.insurance_id_number ||
+            ins.treatment_type ||
+            ins.provider_staff_id
+        )
+        .map((ins, index) => ({
+          ...ins,
+          insurance_index: index, // Add index to help backend map authorizations
+        })),
       authorizations: (formData.authorizations || [])
         .filter(
           (auth) =>
@@ -346,13 +397,13 @@ export default function AddClientModal({
             auth.billing_codes ||
             auth.units_approved_per_15_min
         )
-        .map((auth) => {
+        .map((auth, index) => {
           const approved =
             Number.parseFloat(auth.units_approved_per_15_min) || 0;
           const serviced = Number.parseFloat(auth.units_serviced) || 0;
           return {
             ...auth,
-            insurance_id: auth.insurance_id || "",
+            insurance_index: auth.insurance_id, // Send the index or temporary ID
             status: auth.status || "Active",
             units_serviced: serviced.toString(),
             balance_units: (approved - serviced).toString(),
@@ -428,7 +479,7 @@ export default function AddClientModal({
 
   const addInsurance = () => {
     const newInsurance = {
-      insurance_id: Date.now(),
+      insurance_id: `temp_${Date.now()}`, // Use a prefixed temporary ID
       insurance_type: "Primary",
       insurance_provider: "",
       treatment_type: "",
@@ -1602,7 +1653,6 @@ export default function AddClientModal({
                               </>,
                               "Select rendering provider"
                             )}
-
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {renderInputWithError(

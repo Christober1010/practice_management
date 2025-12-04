@@ -167,6 +167,7 @@ function sendEmail($toEmail, $toName, $subject, $body, $icsContent = null)
     return $emailSent;
 }
 
+
 function getEmailRecipients($conn, $clientId, $providerId = null, $supervisingProviderId = null)
 {
     file_put_contents('debug.log', "getEmailRecipients called with clientId: $clientId, providerId: $providerId, supervisingProviderId: $supervisingProviderId\n", FILE_APPEND);
@@ -186,9 +187,12 @@ function getEmailRecipients($conn, $clientId, $providerId = null, $supervisingPr
     }
 
     $clientName = trim(($client['first_name'] ?? '') . ' ' . ($client['last_name'] ?? ''));
-    file_put_contents('debug.log', "Client found: $clientName, appointment_reminder: " . ($client['appointment_reminder'] ?? 'null') . "\n", FILE_APPEND);
+    $appointmentReminder = strtolower(trim($client['appointment_reminder'] ?? ''));
 
-    if (strtolower($client['appointment_reminder'] ?? '') !== 'none' && $client['email']) {
+    file_put_contents('debug.log', "Client found: $clientName, appointment_reminder: '{$appointmentReminder}'\n", FILE_APPEND);
+
+    // Only send email if appointment_reminder is explicitly set to 'email'
+    if ($appointmentReminder === 'email' && $client['email']) {
         $recipients[] = [
             'email' => $client['email'],
             'name' => $clientName,
@@ -196,7 +200,7 @@ function getEmailRecipients($conn, $clientId, $providerId = null, $supervisingPr
         ];
         file_put_contents('debug.log', "Added client email: {$client['email']}\n", FILE_APPEND);
     } else {
-        file_put_contents('debug.log', "Client email skipped - either appointment_reminder is 'none' or no email address\n", FILE_APPEND);
+        file_put_contents('debug.log', "Client email skipped - appointment_reminder is not set to 'email' (current value: '$appointmentReminder')\n", FILE_APPEND);
     }
 
     if ($providerId) {
@@ -272,7 +276,7 @@ function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
     }
 
     // Step 1: Verify auth_id exists
-    $checkStmt = $conn->prepare("SELECT insurance_id FROM client_auth WHERE auth_id = ?");
+    $checkStmt = $conn->prepare("SELECT insurance_id, balance_units FROM client_auth WHERE auth_id = ?");
     $checkStmt->bind_param("i", $authId);
     $checkStmt->execute();
     $result = $checkStmt->get_result();
@@ -284,6 +288,7 @@ function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
     }
 
     $insuranceId = $authData['insurance_id'];
+    $currentBalance = (float)($authData['balance_units'] ?? '0.00'); // Cast VARCHAR to float
 
     // Step 2: Verify insurance belongs to client
     $verifyStmt = $conn->prepare("SELECT insurance_id FROM client_insurance WHERE insurance_id = ? AND client_id = ?");
@@ -297,10 +302,10 @@ function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
         throw new Exception("Authorization does not belong to this client: auth_id=$authId, client_id=$clientId");
     }
 
-    // Step 3: Check active authorization and balance
+    // Step 3: Check active authorization
     $stmt = $conn->prepare("SELECT balance_units, status FROM client_auth WHERE auth_id = ? AND UPPER(status) = 'ACTIVE'");
     $stmt->bind_param("i", $authId);
-    $stmt->execute(); // Fixed: Use $stmt instead of $checkStmt
+    $stmt->execute();
     $result = $stmt->get_result();
     $row = $result->fetch_assoc();
     $stmt->close();
@@ -309,7 +314,6 @@ function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
         throw new Exception("No active authorization found for auth_id=$authId");
     }
 
-    $currentBalance = (float)($row['balance_units'] ?? '0.00');
     $newBalance = $currentBalance + $hoursToAdd;
 
     if ($newBalance < 0) {
@@ -318,7 +322,7 @@ function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
 
     // Step 4: Update balance_units
     $stmt = $conn->prepare("UPDATE client_auth SET balance_units = ? WHERE auth_id = ?");
-    $newBalanceStr = number_format($newBalance, 2, '.', '');
+    $newBalanceStr = number_format($newBalance, 2, '.', ''); // Format as string for VARCHAR
     $stmt->bind_param("si", $newBalanceStr, $authId);
     $success = $stmt->execute();
     if (!$success) {
@@ -328,9 +332,10 @@ function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
     }
     $stmt->close();
 
-    file_put_contents('debug.log', "updateClientAuthUnitsScheduled: auth_id=$authId, client_id=$clientId, hoursChange=$hoursToAdd, newBalance=$newBalance, Success=true\n", FILE_APPEND);
+    file_put_contents('debug.log', "updateClientAuthUnitsScheduled: auth_id=$authId, client_id=$clientId, hoursChange=$hoursToAdd, currentBalance=$currentBalance, newBalance=$newBalance, Success=true\n", FILE_APPEND);
     return true;
 }
+
 // Main Logic
 $method = $_SERVER['REQUEST_METHOD'];
 $rawInput = file_get_contents("php://input");
@@ -342,7 +347,7 @@ try {
     switch ($method) {
         // POST Case: Create single or recurring sessions
         case "POST":
-            file_put_contents('debug.log', "Checking fields: clientId=" . ($input['clientId'] ?? 'missing') . ", provider=" . ($input['provider'] ?? 'missing') . ", providerName=" . ($input['providerName'] ?? 'missing') . ", startDateTime=" . ($input['startDateTime'] ?? 'missing') . ", endDateTime=" . ($input['endDateTime'] ?? 'missing') . "\n", FILE_APPEND);
+            file_put_contents('debug.log', "Checking fields: clientId=" . ($input['clientId'] ?? 'missing') . ", provider=" . ($input['provider'] ?? 'missing') . ", providerName=" . ($input['providerName'] ?? 'missing') . ", startDateTime=" . ($input['startDateTime'] ?? 'missing') . ", endDateTime=" . ($input['endDateTime'] ?? 'missing') . ", authId=" . ($input['authId'] ?? 'missing') . "\n", FILE_APPEND);
 
             if (!isset($input['clientId'], $input['provider'], $input['providerName'], $input['startDateTime'], $input['endDateTime'], $input['authId'])) {
                 http_response_code(400);
@@ -376,10 +381,10 @@ try {
                 exit();
             }
 
-            $status = isset($input['status']) ? (string)$input['status'] : 'upcoming';
-            if (!in_array($status, ['upcoming', 'in-progress', 'confirmed', 'cancelled', 'completed'])) {
+            $status = 'Scheduled';
+            if (!in_array($status, ['Scheduled', 'Rendered', 'Cancelled'])) {
                 http_response_code(400);
-                echo json_encode(["error" => "Invalid status"]);
+                echo json_encode(["error" => "Invalid status. Must be 'Scheduled', 'Rendered', or 'Cancelled'"]);
                 exit();
             }
 
@@ -409,13 +414,35 @@ try {
             $stmt->close();
 
             if (!$authData) {
+                // Debug: Check why auth_id is invalid
+                $debugStmt = $conn->prepare("SELECT auth_id, insurance_id, status FROM client_auth WHERE auth_id = ?");
+                $debugStmt->bind_param("i", $authId);
+                $debugStmt->execute();
+                $debugResult = $debugStmt->get_result();
+                $debugAuth = $debugResult->fetch_assoc();
+                $debugStmt->close();
+
+                $debugMsg = "POST Validation failed: auth_id=$authId, client_id=$clientId. ";
+                if (!$debugAuth) {
+                    $debugMsg .= "auth_id not found in client_auth.";
+                } else {
+                    $debugMsg .= "auth_id found, status={$debugAuth['status']}, insurance_id={$debugAuth['insurance_id']}. ";
+                    $checkInsuranceStmt = $conn->prepare("SELECT insurance_id FROM client_insurance WHERE insurance_id = ? AND client_id = ?");
+                    $checkInsuranceStmt->bind_param("is", $debugAuth['insurance_id'], $clientId);
+                    $checkInsuranceStmt->execute();
+                    $insuranceResult = $checkInsuranceStmt->get_result();
+                    $insuranceData = $insuranceResult->fetch_assoc();
+                    $checkInsuranceStmt->close();
+                    $debugMsg .= $insuranceData ? "Insurance linked." : "Insurance not linked to client.";
+                }
+                file_put_contents('debug.log', $debugMsg . "\n", FILE_APPEND);
+
                 http_response_code(400);
                 echo json_encode(["error" => "Invalid or inactive auth_id, or auth_id does not belong to client", "auth_id" => $authId, "client_id" => $clientId]);
-                file_put_contents('debug.log', "POST Validation failed: Invalid or inactive auth_id=$authId or not linked to client_id=$clientId\n", FILE_APPEND);
                 exit();
             }
 
-            $currentBalance = (float)($authData['balance_units'] ?? '0.00');
+            $currentBalance = (float)($authData['balance_units'] ?? '0.00'); // Cast VARCHAR to float
             $totalScheduledHours = floatval($scheduledHours); // For single session
             if ($currentBalance < $totalScheduledHours) {
                 http_response_code(400);
@@ -508,7 +535,7 @@ try {
             INSERT INTO sessions (
                 client_id, provider_id, provider_name, supervising_provider_id, supervising_provider_name,
                 start_utc, end_utc, start_tz, end_tz, auth_code, recurring, recurring_days, place_of_service,
-                location_address, quick_note, status, authorized_hours, scheduled_hours, rendered_hours,
+                location_address, quick_note, STATUS, authorized_hours, scheduled_hours, rendered_hours,
                 recurring_id, auth_id
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
@@ -549,15 +576,16 @@ try {
                     if ($stmt->execute()) {
                         $sessionIds[] = $stmt->insert_id;
                         $totalScheduledHours += floatval($sessionScheduledHours);
-                        file_put_contents('debug.log', "Inserted session_id: {$stmt->insert_id}, start_utc: {$session['start']}\n", FILE_APPEND);
+                        file_put_contents('debug.log', "Inserted session_id: {$stmt->insert_id}, start_utc: {$session['start']}, scheduled_hours: $sessionScheduledHours\n", FILE_APPEND);
                     } else {
                         throw new Exception("Failed to create session: " . $stmt->error);
                     }
                 }
                 $stmt->close();
 
-                // *** Place the updateClientAuthUnitsScheduled call here ***
-                if (!updateClientAuthUnitsScheduled($conn, $clientId, $authId, $totalScheduledHours)) {
+                // Update client_auth balance_units
+                file_put_contents('debug.log', "Updating client_auth for auth_id: $authId, client_id: $clientId, totalScheduledHours: $totalScheduledHours\n", FILE_APPEND);
+                if (!updateClientAuthUnitsScheduled($conn, $clientId, $authId, -$totalScheduledHours)) {
                     throw new Exception("Failed to update client_auth balance_units");
                 }
 
@@ -648,6 +676,7 @@ try {
                 exit();
             }
             break;
+
         // GET Case: Retrieve sessions
         case "GET":
             if (isset($_GET['id'])) {
@@ -730,8 +759,6 @@ try {
             break;
 
         // PUT Case: Update single or recurring sessions
-        // PUT Case: Update single or recurring sessions
-        // PUT Case: Update single or recurring sessions
         case "PUT":
             if (!isset($input['session_id'])) {
                 http_response_code(400);
@@ -808,7 +835,12 @@ try {
                     $placeOfService = isset($input['placeOfService']) ? (string)$input['placeOfService'] : $currentSession['place_of_service'];
                     $locationAddress = isset($input['locationAddress']) ? (string)$input['locationAddress'] : $currentSession['location_address'];
                     $quickNote = isset($input['quickNote']) ? (string)$input['quickNote'] : $currentSession['quick_note'];
-                    $status = isset($input['status']) ? (string)$input['status'] : $currentSession['status'];
+                    if (isset($input['quickNote']) && !empty(trim($input['quickNote']))) {
+                        $status = 'Rendered';
+                    } else {
+                        // Keep current status if quickNote is not being updated
+                        $status = isset($input['status']) ? (string)$input['status'] : $currentSession['status'];
+                    }
                     $authorizedHours = isset($input['authorizedHours']) ? floatval($input['authorizedHours']) : floatval($currentSession['authorized_hours'] ?? '0.00');
                     $scheduledHours = isset($input['scheduledHours']) ? floatval($input['scheduledHours']) : floatval($currentSession['scheduled_hours']);
                     $renderedHours = isset($input['renderedHours']) ? floatval($input['renderedHours']) : floatval($currentSession['rendered_hours'] ?? '0.00');
@@ -824,8 +856,8 @@ try {
                     if (!in_array($placeOfService, ['Home', 'Clinic', 'School', 'Virtual', 'Other'])) {
                         throw new Exception("Invalid place_of_service: $placeOfService");
                     }
-                    if (!in_array($status, ['upcoming', 'in-progress', 'confirmed', 'cancelled', 'completed'])) {
-                        throw new Exception("Invalid status: $status");
+                    if (!in_array($status, ['Scheduled', 'Rendered', 'Cancelled'])) {
+                        throw new Exception("Invalid status: $status. Must be 'Scheduled', 'Rendered', or 'Cancelled'");
                     }
 
                     $startUtc = $session['start_utc'];
@@ -874,7 +906,6 @@ try {
 
                     file_put_contents('debug.log', "Updating session_id: $sessionId with hours change: $hoursChange\n", FILE_APPEND);
 
-                    // Use UPDATE directly without bind_param in loop
                     $updateSql = "
                 UPDATE sessions SET
                     client_id = ?,
@@ -890,7 +921,7 @@ try {
                     place_of_service = ?,
                     location_address = ?,
                     quick_note = ?,
-                    status = ?,
+                    STATUS = ?,
                     authorized_hours = ?,
                     scheduled_hours = ?,
                     rendered_hours = ?
@@ -902,9 +933,8 @@ try {
                         throw new Exception("Prepare failed: " . $conn->error);
                     }
 
-                    // Line 905 - CHANGE: Fix bind_param type string to match 18 variables
                     $updateStmt->bind_param(
-                        "ssssssssssssssdddi",  // Changed from "ssssssssssssssddi" to "ssssssssssssssdddi"
+                        "ssssssssssssssdddi",
                         $clientId,
                         $provider,
                         $providerName,
@@ -937,7 +967,7 @@ try {
                 // Update auth balance if hours changed
                 $authId = isset($input['authId']) && $input['authId'] !== null ? (int)$input['authId'] : $currentSession['auth_id'];
                 if ($totalHoursChange != 0 && !empty($authId)) {
-                    if (!updateClientAuthUnitsScheduled($conn, $currentSession['client_id'], $authId, $totalHoursChange)) {
+                    if (!updateClientAuthUnitsScheduled($conn, $currentSession['client_id'], $authId, -$totalHoursChange)) {
                         throw new Exception("Failed to update client_auth balance_units");
                     }
                 } else {
@@ -1000,6 +1030,7 @@ try {
                 exit();
             }
             break;
+
         // DELETE Case: Cancel single or recurring sessions
         case "DELETE":
             if (!isset($input['session_id'])) {
@@ -1027,7 +1058,7 @@ try {
 
             $conn->begin_transaction();
             try {
-                $stmt = $conn->prepare("SELECT client_id, auth_id, recurring_id, start_utc, end_utc, provider_name, location_address, quick_note, start_tz FROM sessions WHERE session_id = ?");
+                $stmt = $conn->prepare("SELECT client_id, auth_id, recurring_id, start_utc, end_utc, provider_id, provider_name, location_address, quick_note, start_tz, scheduled_hours, rendered_hours FROM sessions WHERE session_id = ?");
                 $stmt->bind_param("i", $sessionId);
                 $stmt->execute();
                 $result = $stmt->get_result();
@@ -1042,14 +1073,15 @@ try {
 
                 $sessionsToUpdate = [];
                 if ($editMode === 'recurring' && !empty($currentSession['recurring_id'])) {
-                    $stmt = $conn->prepare("SELECT session_id, scheduled_hours FROM sessions WHERE recurring_id = ? AND status != 'cancelled'");
+                    $stmt = $conn->prepare("SELECT session_id, scheduled_hours, rendered_hours FROM sessions WHERE recurring_id = ? AND status != 'cancelled'");
                     $stmt->bind_param("i", $currentSession['recurring_id']);
                     $stmt->execute();
                     $result = $stmt->get_result();
                     while ($row = $result->fetch_assoc()) {
                         $sessionsToUpdate[] = [
                             'session_id' => $row['session_id'],
-                            'scheduled_hours' => $row['scheduled_hours']
+                            'scheduled_hours' => $row['scheduled_hours'],
+                            'rendered_hours' => $row['rendered_hours']
                         ];
                     }
                     $stmt->close();
@@ -1057,13 +1089,14 @@ try {
                 } else {
                     $sessionsToUpdate[] = [
                         'session_id' => $sessionId,
-                        'scheduled_hours' => $currentSession['scheduled_hours']
+                        'scheduled_hours' => $currentSession['scheduled_hours'],
+                        'rendered_hours' => $currentSession['rendered_hours']
                     ];
                     file_put_contents('debug.log', "DELETE Mode: SINGLE - Cancelling session_id: $sessionId\n", FILE_APPEND);
                 }
 
                 $stmt = $conn->prepare("UPDATE sessions SET status = ?, cancelled_by = ?, cancelled_reason = ?, updated_at = NOW() WHERE session_id = ?");
-                $status = 'cancelled';
+                $status = 'Cancelled';
                 $rowsAffected = 0;
                 $totalHoursChange = 0;
 
@@ -1071,7 +1104,7 @@ try {
                     $stmt->bind_param("sssi", $status, $cancelledBy, $cancelledReason, $session['session_id']);
                     if ($stmt->execute()) {
                         $rowsAffected += $stmt->affected_rows;
-                        $totalHoursChange -= (float)$session['scheduled_hours'];
+                        $totalHoursChange += (float)$session['scheduled_hours'];
                         file_put_contents('debug.log', "Cancelled session_id: {$session['session_id']}\n", FILE_APPEND);
                     } else {
                         throw new Exception("Failed to cancel session_id: {$session['session_id']} - " . $stmt->error);
@@ -1085,7 +1118,7 @@ try {
 
                 $adminEmail = "christoberedward@gmail.com";
                 $adminName = "Admin";
-                $emailData = getEmailRecipients($conn, $currentSession['client_id'], $currentSession['provider_id'], $currentSession['supervising_provider_id']);
+                $emailData = getEmailRecipients($conn, $currentSession['client_id'], $currentSession['provider_id']);
 
                 if ($emailData) {
                     $clientName = $emailData['clientName'];

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -44,27 +44,17 @@ const initialStaffState = {
   address: "",
   location: "",
   // Professional Information
-  staffType: "RBT",
+  staffType: "",
   npiNumber: "",
   dateOfJoining: "",
   dateOfLeaving: "",
-  status: "Active",
+  status: "",
   dob: "",
   assignedStaff: [],
   assignedClients: [],
 
   // Certifications
-  certifications: [
-    {
-      certificationType: "RBT", // default type
-      certificationNumber: "",
-      npiNumber: "",
-      issueDate: "",
-      expiryDate: "",
-      status: "Active",
-    },
-  ],
-
+  certifications: [], // Changed from having a default RBT certification
   // Timing Availability (flattened for form)
   mondayAvailable: false,
   mondayStart: "",
@@ -121,10 +111,34 @@ const formatTimeForDropdown = (time24hr) => {
     .padStart(2, "0")} ${ampm}`;
 };
 
-// Custom MultiSelect component
 // Custom MultiSelect component - FIXED
-const MultiSelect = ({ options, selected, onChange, placeholder }) => {
+
+export const MultiSelect = ({ options, selected, onChange, placeholder }) => {
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const dropdownRef = useRef(null); // Ref to track the dropdown element
+
+  // Filter options based on search input
+  const filteredOptions = options.filter((option) =>
+    option.label.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // Handle clicks outside the dropdown to close it
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setOpen(false);
+        setSearch(""); // Reset search when closing
+      }
+    };
+
+    // Add event listener for clicks
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      // Cleanup event listener on component unmount
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   const handleSelect = (value) => {
     if (selected.includes(value)) {
@@ -135,17 +149,20 @@ const MultiSelect = ({ options, selected, onChange, placeholder }) => {
   };
 
   return (
-    <div>
+    <div ref={dropdownRef}>
+      {" "}
+      {/* Attach ref to the root div */}
       <Button
-        type="button"  // ADD THIS - prevents form submission
+        type="button"
         variant="outline"
         role="combobox"
         aria-expanded={open}
         className="w-full justify-between bg-transparent"
         onClick={(e) => {
-          e.preventDefault();  // ADD THIS
-          e.stopPropagation(); // ADD THIS
+          e.preventDefault();
+          e.stopPropagation();
           setOpen(!open);
+          setSearch(""); // Reset search when opening/closing
         }}
       >
         {selected.length > 0 ? `${selected.length} selected` : placeholder}
@@ -154,30 +171,42 @@ const MultiSelect = ({ options, selected, onChange, placeholder }) => {
       {open && (
         <div className="w-full p-0 mt-2 border border-slate-200 rounded-lg shadow-lg">
           <div className="p-2">
-            <Input placeholder="Search..." />
+            <Input
+              placeholder="Search..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+            />
           </div>
           <div className="max-h-48 overflow-y-auto">
-            {options.map((option) => (
-              <div
-                key={option.value}
-                className="p-2 flex items-center space-x-2 cursor-pointer hover:bg-slate-100 text-sm"
-                onClick={(e) => {
-                  e.preventDefault();    // ADD THIS
-                  e.stopPropagation();   // ADD THIS
-                  handleSelect(option.value);
-                }}
-              >
-                <CheckIcon
-                  className={cn(
-                    "mr-2 h-4 w-4",
-                    selected.includes(option.value)
-                      ? "opacity-100"
-                      : "opacity-0"
-                  )}
-                />
-                {option.label}
-              </div>
-            ))}
+            {filteredOptions.length === 0 ? (
+              <div className="p-2 text-sm text-gray-500">No results found</div>
+            ) : (
+              filteredOptions.map((option) => (
+                <div
+                  key={option.value}
+                  className="p-2 flex items-center space-x-2 cursor-pointer hover:bg-slate-100 text-sm"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSelect(option.value);
+                  }}
+                >
+                  <CheckIcon
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      selected.includes(option.value)
+                        ? "opacity-100"
+                        : "opacity-0"
+                    )}
+                  />
+                  {option.label}
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -205,7 +234,7 @@ export default function AddStaffModal({
   ];
 
   // Local placeholder; integrate with a clients API later if needed
-   const clients = useSelector((state) => state.clients.items); 
+  const clients = useSelector((state) => state.clients.items);
 
   useEffect(() => {
     if (editingStaff) {
@@ -543,6 +572,7 @@ export default function AddStaffModal({
     setFormData(initialStaffState);
     setErrors({});
     setActiveTab("personal");
+
     onClose();
   };
 
@@ -677,12 +707,12 @@ export default function AddStaffModal({
       certifications: [
         ...prev.certifications,
         {
-          certificationType: "RBT",
+          certificationType: "",
           certificationNumber: "",
           npiNumber: "",
           issueDate: "",
           expiryDate: "",
-          status: "Active",
+          status: "",
         },
       ],
     }));

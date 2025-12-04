@@ -1,11 +1,15 @@
 -- Add new columns to sessions table for recurring sessions and cancellation tracking
-ALTER TABLE `sessions` ADD COLUMN `recurring_id` BIGINT UNSIGNED DEFAULT NULL COMMENT 'Links recurring sessions together' AFTER `recurring_days`;
+ALTER TABLE `sessions`
+ADD COLUMN `recurring_id` BIGINT UNSIGNED DEFAULT NULL COMMENT 'Links recurring sessions together' AFTER `recurring_days`;
 
-ALTER TABLE `sessions` ADD COLUMN `auth_id` INT DEFAULT NULL COMMENT 'Links to client_auth table' AFTER `recurring_id`;
+ALTER TABLE `sessions`
+ADD COLUMN `auth_id` INT DEFAULT NULL COMMENT 'Links to client_auth table' AFTER `recurring_id`;
 
-ALTER TABLE `sessions` ADD COLUMN `cancelled_by` VARCHAR(255) DEFAULT NULL COMMENT 'Name/ID of person who cancelled' AFTER `rendered_hours`;
+ALTER TABLE `sessions`
+ADD COLUMN `cancelled_by` VARCHAR(255) DEFAULT NULL COMMENT 'Name/ID of person who cancelled' AFTER `rendered_hours`;
 
-ALTER TABLE `sessions` ADD COLUMN `cancelled_reason` TEXT DEFAULT NULL COMMENT 'Reason for cancellation' AFTER `cancelled_by`;
+ALTER TABLE `sessions`
+ADD COLUMN `cancelled_reason` TEXT DEFAULT NULL COMMENT 'Reason for cancellation' AFTER `cancelled_by`;
 
 -- Add foreign key constraint for auth_id
 ALTER TABLE `sessions` ADD CONSTRAINT `fk_sessions_auth_id` FOREIGN KEY (`auth_id`) REFERENCES `client_auth` (`auth_id`) ON DELETE SET NULL ON UPDATE CASCADE;
@@ -15,3 +19,83 @@ CREATE INDEX `idx_sessions_recurring_id` ON `sessions` (`recurring_id`);
 
 -- Create index for auth_id for faster lookups
 CREATE INDEX `idx_sessions_auth_id` ON `sessions` (`auth_id`);
+
+-- Create modules table
+CREATE TABLE
+    IF NOT EXISTS modules (
+        id VARCHAR(36) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        status ENUM ('Active', 'Inactive') DEFAULT 'Active',
+        archived BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    );
+
+-- Create domains table
+CREATE TABLE
+    IF NOT EXISTS domains (
+        id VARCHAR(36) PRIMARY KEY,
+        module_id VARCHAR(36) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        status ENUM ('Active', 'Inactive') DEFAULT 'Active',
+        archived BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (module_id) REFERENCES modules (id) ON DELETE CASCADE,
+        INDEX idx_module_id (module_id)
+    );
+
+-- Create programs table
+CREATE TABLE
+    IF NOT EXISTS programs (
+        id VARCHAR(36) PRIMARY KEY,
+        domain_id VARCHAR(36) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        status ENUM ('Active', 'Inactive') DEFAULT 'Active',
+        archived BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (domain_id) REFERENCES domains (id) ON DELETE CASCADE,
+        INDEX idx_domain_id (domain_id)
+    );
+
+-- Create activities table
+CREATE TABLE
+    IF NOT EXISTS activities (
+        id VARCHAR(36) PRIMARY KEY,
+        program_id VARCHAR(36) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        goal_description TEXT,
+        trials INT DEFAULT 1,
+        activity_type VARCHAR(100),
+        instructions TEXT,
+        status ENUM ('Active', 'Inactive') DEFAULT 'Active',
+        archived BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (program_id) REFERENCES programs (id) ON DELETE CASCADE,
+        INDEX idx_program_id (program_id)
+    );
+
+-- 2. CREATE NEW 'activity_tasks' TABLE
+-- 1. ADD 'prompts' COLUMN TO THE 'activities' TABLE
+ALTER TABLE `activities`
+ADD COLUMN `prompts` JSON NULL AFTER `instructions`;
+
+-- Placing it right after 'instructions'
+
+CREATE TABLE
+    `activity_tasks` (
+        `id` VARCHAR(36) COLLATE utf8mb4_general_ci NOT NULL,
+        `activity_id` VARCHAR(36) COLLATE utf8mb4_general_ci NOT NULL,
+        `name` VARCHAR(255) COLLATE utf8mb4_general_ci NOT NULL, -- The specific step (e.g., "Turn on water")
+        `step_order` INT NOT NULL, -- Ensures the steps are displayed in the correct order
+        `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`),
+        KEY `idx_activity_id` (`activity_id`),
+        CONSTRAINT `activity_tasks_ibfk_1` FOREIGN KEY (`activity_id`) REFERENCES `activities` (`id`) ON DELETE CASCADE -- Cascade delete: if the activity is deleted, its steps are removed.
+    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_general_ci;

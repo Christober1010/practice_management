@@ -46,6 +46,13 @@ import {
   MoreVertical,
   File,
   Clock,
+  SquareScissors,
+  ListPlus,
+  FolderKanban,
+  Layers,
+  ListChecks,
+  Target,
+  SquareTerminal,
 } from "lucide-react";
 import AddClientModal from "./add-client-modal";
 import toast, { Toaster } from "react-hot-toast";
@@ -59,7 +66,9 @@ import {
   fetchClients,
 } from "../../app/store/clientSlice";
 import { useSelector } from "react-redux";
-
+import { DropdownMenuLabel } from "@radix-ui/react-dropdown-menu";
+import ClientModulesModal from "./add-client-module";
+import ClientDomainModal from "./add-client-domain";
 function generateUUID() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
@@ -82,6 +91,7 @@ export default function ClientsView() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [expandedClient, setExpandedClient] = useState(null);
+  const [staffList, setStaffList] = useState([]); // Initialize as empty array
 
   // Redux
   const dispatch = useAppDispatch();
@@ -169,7 +179,7 @@ export default function ClientsView() {
       if (result.success) {
         dispatch(updateClientAction(clientData));
         setEditingClient(clientData);
-        fetchClients();
+        dispatch(fetchClients());
         toast.success("Client updated successfully!");
       } else {
         toast.error(
@@ -266,6 +276,31 @@ export default function ClientsView() {
     dispatch(fetchClients());
   }, [dispatch]);
 
+  useEffect(() => {
+    const fetchStaff = async () => {
+      try {
+        const response = await fetch(`${baseUrl}/staff.php`);
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const result = await response.json();
+        if (result.success) {
+          setStaffList(result.staff_records);
+        } else {
+          toast.error(`Failed to fetch staff: ${result.message}`);
+        }
+      } catch (error) {
+        console.error("Error fetching staff:", error);
+        toast.error("Failed to load staff data.");
+      }
+    };
+
+    fetchStaff();
+  }, [baseUrl]);
+
+  const filteredStaff = staffList.filter(
+    (staff) => staff.staffType === "BCBA" || staff.staffType === "BCaBA"
+  );
   const toggleExpanded = (clientId) => {
     setExpandedClient((prev) => (prev === clientId ? null : clientId));
   };
@@ -279,8 +314,75 @@ export default function ClientsView() {
       .toString()
       .padStart(2, "0")} ${ampm}`;
   };
+
+  // Inside the ClientsView component, after your state declarations
+  const masterDataSubItems = [
+    {
+      id: "modules",
+      label: "Modules",
+      icon: FolderKanban,
+      color: "text-blue-600",
+    },
+    { id: "domains", label: "Domains", icon: Layers, color: "text-indigo-600" },
+    {
+      id: "programs",
+      label: "Programs",
+      icon: ListChecks,
+      color: "text-teal-600",
+    },
+    {
+      id: "targets",
+      label: "Targets",
+      icon: Target,
+      color: "text-orange-600",
+    },
+    {
+      id: "prompts",
+      label: "Prompts",
+      icon: SquareTerminal,
+      color: "text-rose-600",
+    },
+  ];
+  const [isClientModulesOpen, setIsClientModulesOpen] = useState(false);
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [isClientDomainsOpen, setIsClientDomainsOpen] = useState(false);
+  const [isClientProgramsOpen, setIsClientProgramsOpen] = useState(false);
+  const [isClientTargetsOpen, setIsClientTargetsOpen] = useState(false);
+  const [domainDetailProps, setDomainDetailProps] = useState(null);
+
+  const handleMasterDataSelect = (itemId, client) => {
+    setSelectedClient(client);
+    switch (itemId) {
+      case "modules":
+        setIsClientModulesOpen(true);
+        break;
+      case "domains":
+        setIsClientDomainsOpen(true);
+        break;
+      case "programs":
+        setIsClientProgramsOpen(true);
+        break;
+      case "targets":
+        setIsClientTargetsOpen(true);
+        break;
+      case "prompts":
+        setIsClientTargetsOpen(true);
+        break;
+      default:
+        break;
+    }
+  };
+
+  const closeModals = () => {
+    setIsClientModulesOpen(false);
+    setIsClientDomainsOpen(false);
+    setIsClientProgramsOpen(false);
+    setIsClientTargetsOpen(false);
+    setSelectedClient(null);
+  };
+
   return (
-    <div className="space-y-8 px-2 sm:px-0 md:px-6">
+    <div className="space-y-8">
       <Toaster />
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row lg:justify-between sm:justify-center sm:items-center ">
@@ -401,437 +503,464 @@ export default function ClientsView() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredClients.map((client) => {
-                    const isExpanded = expandedClient === client.id;
-                    return (
-                      <Fragment key={client.id}>
-                        {/* Main Row */}
-                        <TableRow className="hover:bg-slate-50 transition-colors border-b">
-                          <TableCell className="lg:px-4 sm:px-2 py-4">
-                            <div className="flex items-center space-x-3">
-                              <span className="hidden sm:inline-block">
-                                <div className="bg-teal-100 p-2 rounded-lg flex-shrink-0">
-                                  <Users className="h-4 w-4 text-teal-600" />
-                                </div>
-                              </span>
-                              <div>
-                                <div className="font-semibold text-slate-800">
-                                  {client.first_name} {client.middle_name}{" "}
-                                  {client.last_name}
-                                </div>
-                                <div className="lg:visible sm:hidden flex flex-wrap gap-1 mt-1">
-                                  {client.wait_list_status === "Yes" && (
-                                    <Badge
-                                      variant="outline"
-                                      className=" border-yellow-300 text-yellow-700 text-xs"
-                                    >
-                                      Wait List
-                                    </Badge>
-                                  )}
-                                  {client.archived && (
-                                    <Badge
-                                      variant="outline"
-                                      className="border-amber-300 text-amber-700 text-xs"
-                                    >
-                                      Archived
-                                    </Badge>
-                                  )}
+                  {filteredClients
+                    .sort((a, b) => a.first_name.localeCompare(b.first_name))
+                    .map((client) => {
+                      const isExpanded = expandedClient === client.id;
+                      return (
+                        <Fragment key={client.id}>
+                          {/* Main Row */}
+                          <TableRow className="hover:bg-slate-50 transition-colors border-b">
+                            <TableCell className="lg:px-4 sm:px-2 py-4">
+                              <div className="flex items-center space-x-3">
+                                <span className="hidden sm:inline-block">
+                                  <div className="bg-teal-100 p-2 rounded-lg flex-shrink-0">
+                                    <Users className="h-4 w-4 text-teal-600" />
+                                  </div>
+                                </span>
+                                <div>
+                                  <div className="font-semibold text-slate-800 capitalize">
+                                    {client.first_name} {client.middle_name}{" "}
+                                    {client.last_name}
+                                  </div>
+                                  <div className="lg:visible sm:hidden flex flex-wrap gap-1 mt-1">
+                                    {client.wait_list_status === "Yes" && (
+                                      <Badge
+                                        variant="outline"
+                                        className=" border-yellow-300 text-yellow-700 text-xs"
+                                      >
+                                        Wait List
+                                      </Badge>
+                                    )}
+                                    {client.archived && (
+                                      <Badge
+                                        variant="outline"
+                                        className="border-amber-300 text-amber-700 text-xs"
+                                      >
+                                        Archived
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-4 hidden sm:table-cell">
-                            <span className="font-mono text-sm">
-                              {client.client_uuid}
-                            </span>
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell py-4">
-                            <Badge
-                              className={getStatusColor(client.client_status)}
-                            >
-                              {client.client_status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell py-4">
-                            <div className="text-sm">
-                              {client.phone && (
-                                <div className="flex items-center gap-1">
-                                  <Phone className="h-3 w-3 text-slate-400" />
-                                  {client.phone}
-                                </div>
-                              )}
-                              {client.email && (
-                                <div className="text-slate-600 mt-1">
-                                  {client.email}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-4">
-                            <div className="flex items-center justify-center gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => toggleExpanded(client.id || "")}
-                                className="border-slate-300"
+                            </TableCell>
+                            <TableCell className="py-4 hidden sm:table-cell">
+                              <span className="font-mono text-sm">
+                                {client.client_uuid}
+                              </span>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell py-4">
+                              <Badge
+                                className={getStatusColor(client.client_status)}
                               >
-                                {isExpanded ? (
-                                  <span title="Hide">
-                                    <EyeOff className="h-3 w-3 mr-1" />
-                                  </span>
-                                ) : (
-                                  <span title="View">
-                                    <Eye className="h-3 w-3 mr-1" />
-                                  </span>
+                                {client.client_status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell py-4">
+                              <div className="text-sm">
+                                {client.phone && (
+                                  <div className="flex items-center gap-1">
+                                    <Phone className="h-3 w-3 text-slate-400" />
+                                    {client.phone}
+                                  </div>
                                 )}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleOpenEditModal(client)}
-                                className="border-slate-300"
-                              >
-                                <span title="Edit">
-                                  <Edit className="h-4 w-4 mr-2" />
-                                </span>
-                              </Button>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    title="Options"
-                                    variant="outline"
-                                    size="sm"
-                                    className="border-slate-300 bg-transparent"
+                                {client.email && (
+                                  <div className="text-slate-600 mt-1">
+                                    {client.email}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-4">
+                              <div className="flex items-center justify-center gap-2">
+                                {/* Master Data Dropdown Menu */}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="border-slate-300"
+                                      title="Master Data"
+                                    >
+                                      <ListPlus className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent
+                                    align="end"
+                                    className="w-48"
                                   >
-                                    <MoreVertical className="h-3 w-3" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent
-                                  align="end"
-                                  className="w-48"
+                                    <DropdownMenuLabel className="text-xs text-slate-500 font-semibold p-1">
+                                      Add Master Data
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    {masterDataSubItems.map((subItem) => {
+                                      const SubIcon = subItem.icon;
+                                      return (
+                                        <DropdownMenuItem
+                                          key={subItem.id}
+                                          onClick={() =>
+                                            handleMasterDataSelect(
+                                              subItem.id,
+                                              client
+                                            )
+                                          }
+                                          className="cursor-pointer text-xs"
+                                        >
+                                          <SubIcon
+                                            className={`h-4 w-4 mr-2 ${subItem.color}`}
+                                          />
+                                          {subItem.label}
+                                        </DropdownMenuItem>
+                                      );
+                                    })}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    toggleExpanded(client.id || "")
+                                  }
+                                  className="border-slate-300"
                                 >
-                                  <DropdownMenuItem>
-                                    <Calendar className="h-4 w-4 mr-2" />{" "}
-                                    Schedule Appointment
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    onClick={() =>
-                                      handleArchiveClient(client.id || "")
-                                    }
-                                    className={
-                                      client.archived
-                                        ? "text-green-600"
-                                        : "text-amber-600"
-                                    }
+                                  {isExpanded ? (
+                                    <span title="Hide">
+                                      <EyeOff className="h-3 w-3" />
+                                    </span>
+                                  ) : (
+                                    <span title="View">
+                                      <Eye className="h-3 w-3" />
+                                    </span>
+                                  )}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleOpenEditModal(client)}
+                                  className="border-slate-300"
+                                >
+                                  <span title="Edit">
+                                    <Edit className="h-4 w-4" />
+                                  </span>
+                                </Button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      title="Options"
+                                      variant="outline"
+                                      size="sm"
+                                      className="border-slate-300 bg-transparent"
+                                    >
+                                      <MoreVertical className="h-3 w-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent
+                                    align="end"
+                                    className="w-48"
                                   >
-                                    {client.archived ? (
-                                      <>
-                                        <ArchiveRestore className="h-4 w-4 mr-2" />{" "}
-                                        Restore Client
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Archive className="h-4 w-4 mr-2" />{" "}
-                                        Archive Client
-                                      </>
-                                    )}
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-
-                        {/* Expanded Details Row */}
-                        {isExpanded && (
-                          <TableRow className="bg-slate-50">
-                            <TableCell colSpan={6} className="px-6 py-6">
-                              <div className="space-y-6">
-                                {/* Personal Information Section */}
-                                <Card className="border-slate-200">
-                                  <CardHeader className="pb-3">
-                                    <CardTitle className="flex items-center gap-2 text-base">
-                                      <User className="h-4 w-4 text-teal-600" />{" "}
-                                      Personal Information
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent className="space-y-3 text-sm">
-                                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          First Name
-                                        </p>
-                                        <p className="font-medium">
-                                          {client.first_name || "N/A"}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Middle Name
-                                        </p>
-                                        <p className="font-medium">
-                                          {client.middle_name || "N/A"}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Last Name
-                                        </p>
-                                        <p className="font-medium">
-                                          {client.last_name || "N/A"}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Date of Birth
-                                        </p>
-                                        <p className="font-medium">
-                                          {client.date_of_birth || "N/A"}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Age
-                                        </p>
-                                        <p className="font-medium">
-                                          {calculateAge(client.date_of_birth)}{" "}
-                                          years
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Gender
-                                        </p>
-                                        <p className="font-medium">
-                                          {client.gender || "N/A"}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Preferred Language
-                                        </p>
-                                        <p className="font-medium">
-                                          {client.preferred_language || "N/A"}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-
-                                {/* Contact and Address */}
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                  <Card className="border-slate-200">
-                                    <CardHeader className="pb-3">
-                                      <CardTitle className="flex items-center gap-2 text-base">
-                                        <MapPin className="h-4 w-4 text-teal-600" />{" "}
-                                        Address Information
-                                      </CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="space-y-3 text-sm">
-                                      {client.addresses &&
-                                      client.addresses.length > 0 ? (
-                                        client.addresses.map(
-                                          (address, index) => (
-                                            <div
-                                              key={index}
-                                              className={`${
-                                                index > 0
-                                                  ? "border-t pt-3 mt-3"
-                                                  : ""
-                                              }`}
-                                            >
-                                              {client.addresses.length > 1 && (
-                                                <div className="flex items-center gap-2 mb-2">
-                                                  <Badge
-                                                    variant="outline"
-                                                    className="text-xs"
-                                                  >
-                                                    Address #{index + 1}
-                                                  </Badge>
-                                                  <Badge
-                                                    variant="secondary"
-                                                    className="text-xs"
-                                                  >
-                                                    {address.service_location ||
-                                                      "Home"}
-                                                  </Badge>
-                                                </div>
-                                              )}
-                                              {client.addresses.length === 1 &&
-                                                address.service_location && (
-                                                  <div className="mb-2">
-                                                    <Badge
-                                                      variant="secondary"
-                                                      className="text-xs"
-                                                    >
-                                                      {address.service_location}
-                                                    </Badge>
-                                                  </div>
-                                                )}
-                                              <div>
-                                                <p className="text-slate-500 mb-1">
-                                                  Street Address
-                                                </p>
-                                                <p className="font-medium">
-                                                  {address.address_line_1 ||
-                                                    "Not specified"}
-                                                  {address.address_line_2 && (
-                                                    <>
-                                                      <br />
-                                                      {address.address_line_2}
-                                                    </>
-                                                  )}
-                                                </p>
-                                              </div>
-                                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    City
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {address.city ||
-                                                      "Not specified"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    State
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {address.state ||
-                                                      "Not specified"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Country
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {address.country ||
-                                                      "Not specified"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    ZIP
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {address.zipcode ||
-                                                      "Not specified"}
-                                                  </p>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          )
-                                        )
+                                    <DropdownMenuItem>
+                                      <Calendar className="h-4 w-4 mr-2" />{" "}
+                                      Schedule Appointment
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        handleArchiveClient(client.id || "")
+                                      }
+                                      className={
+                                        client.archived
+                                          ? "text-green-600"
+                                          : "text-amber-600"
+                                      }
+                                    >
+                                      {client.archived ? (
+                                        <>
+                                          <ArchiveRestore className="h-4 w-4 mr-2" />{" "}
+                                          Restore Client
+                                        </>
                                       ) : (
-                                        <div>
-                                          <p className="text-slate-500 mb-1">
-                                            Street Address
-                                          </p>
-                                          <p className="font-medium">
-                                            {client.address_line_1 ||
-                                              "Not specified"}
-                                            {client.address_line_2 && (
-                                              <>
-                                                <br />
-                                                {client.address_line_2}
-                                              </>
-                                            )}
-                                          </p>
-                                        </div>
+                                        <>
+                                          <Archive className="h-4 w-4 mr-2" />{" "}
+                                          Archive Client
+                                        </>
                                       )}
-                                    </CardContent>
-                                  </Card>
-                                  <Card className="border-slate-200">
-                                    <CardHeader className="pb-3">
-                                      <CardTitle className="flex items-center gap-2 text-base">
-                                        <Phone className="h-4 w-4 text-teal-600" />{" "}
-                                        Contact Information
-                                      </CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="space-y-3 text-sm">
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Phone
-                                        </p>
-                                        <p className="font-medium">
-                                          {client.phone || "Not specified"}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Email
-                                        </p>
-                                        <p className="font-medium">
-                                          {client.email || "Not specified"}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Appointment Reminder
-                                        </p>
-                                        <p className="font-medium capitalize">
-                                          {client.appointment_reminder ||
-                                            "Not specified"}
-                                        </p>
-                                      </div>
-                                    </CardContent>
-                                  </Card>
-                                </div>
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </TableCell>
+                          </TableRow>
 
-                                {/* Parent/Guardian and Emergency Contact */}
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          {/* Expanded Details Row */}
+                          {isExpanded && (
+                            <TableRow className="bg-slate-50">
+                              <TableCell colSpan={6} className="px-6 py-6">
+                                <div className="space-y-6">
+                                  {/* Personal Information Section */}
                                   <Card className="border-slate-200">
                                     <CardHeader className="pb-3">
                                       <CardTitle className="flex items-center gap-2 text-base">
                                         <User className="h-4 w-4 text-teal-600" />{" "}
-                                        Parent/Guardian Information
+                                        Personal Information
                                       </CardTitle>
                                     </CardHeader>
                                     <CardContent className="space-y-3 text-sm">
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Name
-                                        </p>
-                                        <p className="font-medium">
-                                          {client.parent_first_name}{" "}
-                                          {client.parent_last_name ||
-                                            "Not specified"}
-                                        </p>
+                                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            First Name
+                                          </p>
+                                          <p className="font-medium">
+                                            {client.first_name || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Middle Name
+                                          </p>
+                                          <p className="font-medium">
+                                            {client.middle_name || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Last Name
+                                          </p>
+                                          <p className="font-medium">
+                                            {client.last_name || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Gender
+                                          </p>
+                                          <p className="font-medium">
+                                            {client.gender || "N/A"}
+                                          </p>
+                                        </div>
                                       </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Relationship
-                                        </p>
-                                        <p className="font-medium">
-                                          {client.relationship_to_insured ===
-                                          "Other"
-                                            ? client.relation_other
-                                            : client.relationship_to_insured ||
-                                              "Not specified"}
-                                        </p>
+                                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Date of Birth
+                                          </p>
+                                          <p className="font-medium">
+                                            {client.date_of_birth || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Age
+                                          </p>
+                                          <p className="font-medium">
+                                            {calculateAge(client.date_of_birth)}{" "}
+                                            years
+                                          </p>
+                                        </div>
+
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Preferred Language
+                                          </p>
+                                          <p className="font-medium">
+                                            {client.preferred_language || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Location
+                                          </p>
+                                          <p className="font-medium">
+                                            {client.location || "N/A"}
+                                          </p>
+                                        </div>
                                       </div>
                                     </CardContent>
                                   </Card>
-                                  <Card className="border-slate-200">
-                                    <CardHeader className="pb-3">
-                                      <CardTitle className="flex items-center gap-2 text-base">
-                                        <Heart className="h-4 w-4 text-teal-600" />{" "}
-                                        Emergency Contact
-                                      </CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="space-y-3 text-sm">
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+
+                                  {/* Contact and Address */}
+                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <Card className="border-slate-200">
+                                      <CardHeader className="pb-3">
+                                        <CardTitle className="flex items-center gap-2 text-base">
+                                          <MapPin className="h-4 w-4 text-teal-600" />{" "}
+                                          Address Information
+                                        </CardTitle>
+                                      </CardHeader>
+                                      <CardContent className="space-y-3 text-sm">
+                                        {client.addresses &&
+                                        client.addresses.length > 0 ? (
+                                          client.addresses.map(
+                                            (address, index) => (
+                                              <div
+                                                key={index}
+                                                className={`${
+                                                  index > 0
+                                                    ? "border-t pt-3 mt-3"
+                                                    : ""
+                                                }`}
+                                              >
+                                                {client.addresses.length >
+                                                  1 && (
+                                                  <div className="flex items-center gap-2 mb-2">
+                                                    <Badge
+                                                      variant="outline"
+                                                      className="text-xs"
+                                                    >
+                                                      Address #{index + 1}
+                                                    </Badge>
+                                                    <Badge
+                                                      variant="secondary"
+                                                      className="text-xs"
+                                                    >
+                                                      {address.service_location ||
+                                                        "Home"}
+                                                    </Badge>
+                                                  </div>
+                                                )}
+                                                {client.addresses.length ===
+                                                  1 &&
+                                                  address.service_location && (
+                                                    <div className="mb-2">
+                                                      <Badge
+                                                        variant="secondary"
+                                                        className="text-xs"
+                                                      >
+                                                        {
+                                                          address.service_location
+                                                        }
+                                                      </Badge>
+                                                    </div>
+                                                  )}
+                                                <div>
+                                                  <p className="text-slate-500 mb-1">
+                                                    Street Address
+                                                  </p>
+                                                  <p className="font-medium">
+                                                    {address.address_line_1 ||
+                                                      "Not specified"}
+                                                    {address.address_line_2 && (
+                                                      <>
+                                                        <br />
+                                                        {address.address_line_2}
+                                                      </>
+                                                    )}
+                                                  </p>
+                                                </div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                                  <div>
+                                                    <p className="text-slate-500 mb-1">
+                                                      City
+                                                    </p>
+                                                    <p className="font-medium">
+                                                      {address.city ||
+                                                        "Not specified"}
+                                                    </p>
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-slate-500 mb-1">
+                                                      State
+                                                    </p>
+                                                    <p className="font-medium">
+                                                      {address.state ||
+                                                        "Not specified"}
+                                                    </p>
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-slate-500 mb-1">
+                                                      Country
+                                                    </p>
+                                                    <p className="font-medium">
+                                                      {address.country ||
+                                                        "Not specified"}
+                                                    </p>
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-slate-500 mb-1">
+                                                      ZIP
+                                                    </p>
+                                                    <p className="font-medium">
+                                                      {address.zipcode ||
+                                                        "Not specified"}
+                                                    </p>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            )
+                                          )
+                                        ) : (
+                                          <div>
+                                            <p className="text-slate-500 mb-1">
+                                              Street Address
+                                            </p>
+                                            <p className="font-medium">
+                                              {client.address_line_1 ||
+                                                "Not specified"}
+                                              {client.address_line_2 && (
+                                                <>
+                                                  <br />
+                                                  {client.address_line_2}
+                                                </>
+                                              )}
+                                            </p>
+                                          </div>
+                                        )}
+                                      </CardContent>
+                                    </Card>
+                                    <Card className="border-slate-200">
+                                      <CardHeader className="pb-3">
+                                        <CardTitle className="flex items-center gap-2 text-base">
+                                          <Phone className="h-4 w-4 text-teal-600" />{" "}
+                                          Contact Information
+                                        </CardTitle>
+                                      </CardHeader>
+                                      <CardContent className="space-y-3 text-sm">
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Phone
+                                          </p>
+                                          <p className="font-medium">
+                                            {client.phone || "Not specified"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Email
+                                          </p>
+                                          <p className="font-medium">
+                                            {client.email || "Not specified"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Appointment Reminder
+                                          </p>
+                                          <p className="font-medium capitalize">
+                                            {client.appointment_reminder ||
+                                              "Not specified"}
+                                          </p>
+                                        </div>
+                                      </CardContent>
+                                    </Card>
+                                  </div>
+
+                                  {/* Parent/Guardian and Emergency Contact */}
+                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <Card className="border-slate-200">
+                                      <CardHeader className="pb-3">
+                                        <CardTitle className="flex items-center gap-2 text-base">
+                                          <User className="h-4 w-4 text-teal-600" />{" "}
+                                          Parent/Guardian Information
+                                        </CardTitle>
+                                      </CardHeader>
+                                      <CardContent className="space-y-3 text-sm">
                                         <div>
                                           <p className="text-slate-500 mb-1">
                                             Name
                                           </p>
                                           <p className="font-medium">
-                                            {client.emergency_contact_name ||
+                                            {client.parent_first_name}{" "}
+                                            {client.parent_last_name ||
                                               "Not specified"}
                                           </p>
                                         </div>
@@ -840,446 +969,488 @@ export default function ClientsView() {
                                             Relationship
                                           </p>
                                           <p className="font-medium">
-                                            {client.emg_relationship ||
-                                              "Not specified"}
+                                            {client.relationship_to_insured ===
+                                            "Other"
+                                              ? client.relation_other
+                                              : client.relationship_to_insured ||
+                                                "Not specified"}
                                           </p>
                                         </div>
-                                        <div>
-                                          <p className="text-slate-500 mb-1">
-                                            Phone
-                                          </p>
-                                          <p className="font-medium">
-                                            {client.emg_phone ||
-                                              "Not specified"}
-                                          </p>
-                                        </div>
-                                        <div>
-                                          <p className="text-slate-500 mb-1">
-                                            Email
-                                          </p>
-                                          <p className="font-medium">
-                                            {client.emg_email ||
-                                              "Not specified"}
-                                          </p>
-                                        </div>
-                                      </div>
-                                    </CardContent>
-                                  </Card>
-                                </div>
-
-                                {/* Insurance Information */}
-                                {client.insurances &&
-                                  Array.isArray(client.insurances) &&
-                                  client.insurances.length > 0 && (
+                                      </CardContent>
+                                    </Card>
                                     <Card className="border-slate-200">
                                       <CardHeader className="pb-3">
                                         <CardTitle className="flex items-center gap-2 text-base">
-                                          <Shield className="h-4 w-4 text-teal-600" />{" "}
-                                          Insurance Information
+                                          <Heart className="h-4 w-4 text-teal-600" />{" "}
+                                          Emergency Contact
+                                        </CardTitle>
+                                      </CardHeader>
+                                      <CardContent className="space-y-3 text-sm">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                          <div>
+                                            <p className="text-slate-500 mb-1">
+                                              Name
+                                            </p>
+                                            <p className="font-medium">
+                                              {client.emergency_contact_name ||
+                                                "Not specified"}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <p className="text-slate-500 mb-1">
+                                              Relationship
+                                            </p>
+                                            <p className="font-medium">
+                                              {client.emg_relationship ||
+                                                "Not specified"}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <p className="text-slate-500 mb-1">
+                                              Phone
+                                            </p>
+                                            <p className="font-medium">
+                                              {client.emg_phone ||
+                                                "Not specified"}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <p className="text-slate-500 mb-1">
+                                              Email
+                                            </p>
+                                            <p className="font-medium">
+                                              {client.emg_email ||
+                                                "Not specified"}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </CardContent>
+                                    </Card>
+                                  </div>
+
+                                  {/* Insurance Information */}
+                                  {client.insurances &&
+                                    Array.isArray(client.insurances) &&
+                                    client.insurances.length > 0 && (
+                                      <Card className="border-slate-200">
+                                        <CardHeader className="pb-3">
+                                          <CardTitle className="flex items-center gap-2 text-base">
+                                            <Shield className="h-4 w-4 text-teal-600" />{" "}
+                                            Insurance Information
+                                          </CardTitle>
+                                        </CardHeader>
+                                        <CardContent>
+                                          <div className="space-y-4">
+                                            {client.insurances.map(
+                                              (insurance, index) => (
+                                                <div
+                                                  key={index}
+                                                  className="border rounded-lg p-4 bg-slate-50"
+                                                >
+                                                  <div className="flex items-center justify-between mb-3">
+                                                    <h4 className="font-semibold">
+                                                      Insurance #{index + 1}
+                                                    </h4>
+                                                    <Badge
+                                                      variant="outline"
+                                                      className={
+                                                        insurance.insurance_type ===
+                                                        "Primary"
+                                                          ? "border-blue-300 text-blue-700"
+                                                          : "border-green-300 text-green-700"
+                                                      }
+                                                    >
+                                                      {insurance.insurance_type}
+                                                    </Badge>
+                                                  </div>
+                                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Provider
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.insurance_provider ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Rendering provider
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.provider_name ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Treatment Type
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.treatment_type ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Insurance ID
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.insurance_id_number ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Group Number
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.group_number ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Coinsurance
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.coinsurance ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Deductible
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.deductible ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                  </div>
+                                                  {insurance.start_date && (
+                                                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                                                      <div>
+                                                        <p className="text-slate-500 mb-1">
+                                                          Start Date
+                                                        </p>
+                                                        <p className="font-medium">
+                                                          {insurance.start_date}
+                                                        </p>
+                                                      </div>
+                                                      <div>
+                                                        <p className="text-slate-500 mb-1">
+                                                          End Date
+                                                        </p>
+                                                        <p className="font-medium">
+                                                          {insurance.end_date ||
+                                                            "Ongoing"}
+                                                        </p>
+                                                      </div>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              )
+                                            )}
+                                          </div>
+                                        </CardContent>
+                                      </Card>
+                                    )}
+
+                                  {/* Authorization Information */}
+                                  {client.authorizations &&
+                                  client.authorizations.length > 0 ? (
+                                    <Card className="border-slate-200">
+                                      <CardHeader className="pb-3">
+                                        <CardTitle className="flex items-center gap-2 text-base">
+                                          <FileText className="h-4 w-4 text-teal-600" />{" "}
+                                          Authorization Information
                                         </CardTitle>
                                       </CardHeader>
                                       <CardContent>
                                         <div className="space-y-4">
-                                          {client.insurances.map(
-                                            (insurance, index) => (
-                                              <div
-                                                key={index}
-                                                className="border rounded-lg p-4 bg-slate-50"
-                                              >
-                                                <div className="flex items-center justify-between mb-3">
-                                                  <h4 className="font-semibold">
-                                                    Insurance #{index + 1}
+                                          {client.authorizations.map(
+                                            (auth, index) => {
+                                              const linkedInsurance =
+                                                client.insurances &&
+                                                client.insurances[
+                                                  Number.parseInt(
+                                                    auth.insurance_id,
+                                                    10
+                                                  )
+                                                ]
+                                                  ? client.insurances[
+                                                      Number.parseInt(
+                                                        auth.insurance_id,
+                                                        10
+                                                      )
+                                                    ]
+                                                  : null;
+                                              const approvedUnits =
+                                                Number.parseFloat(
+                                                  auth.units_approved_per_15_min
+                                                ) || 0;
+                                              const servicedUnits =
+                                                Number.parseFloat(
+                                                  auth.units_serviced
+                                                ) || 0;
+                                              const balanceUnits =
+                                                approvedUnits - servicedUnits;
+                                              return (
+                                                <div
+                                                  key={index}
+                                                  className="border rounded-lg p-4 bg-slate-50"
+                                                >
+                                                  <h4 className="font-semibold mb-3">
+                                                    Authorization #{index + 1}
                                                   </h4>
-                                                  <Badge
-                                                    variant="outline"
-                                                    className={
-                                                      insurance.insurance_type ===
-                                                      "Primary"
-                                                        ? "border-blue-300 text-blue-700"
-                                                        : "border-green-300 text-green-700"
-                                                    }
-                                                  >
-                                                    {insurance.insurance_type}
-                                                  </Badge>
-                                                </div>
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Provider
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {insurance.insurance_provider ||
-                                                        "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Treatment Type
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {insurance.treatment_type ||
-                                                        "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Insurance ID
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {insurance.insurance_id_number ||
-                                                        "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Group Number
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {insurance.group_number ||
-                                                        "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Coinsurance
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {insurance.coinsurance ||
-                                                        "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Deductible
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {insurance.deductible ||
-                                                        "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                </div>
-                                                {insurance.start_date && (
-                                                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
                                                     <div>
                                                       <p className="text-slate-500 mb-1">
-                                                        Start Date
+                                                        Authorization Number
                                                       </p>
                                                       <p className="font-medium">
-                                                        {insurance.start_date}
+                                                        {auth.authorization_number ||
+                                                          "Not specified"}
                                                       </p>
                                                     </div>
                                                     <div>
                                                       <p className="text-slate-500 mb-1">
-                                                        End Date
+                                                        Billing Codes
                                                       </p>
                                                       <p className="font-medium">
-                                                        {insurance.end_date ||
-                                                          "Ongoing"}
+                                                        {auth.billing_codes ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Units Approved (per 15
+                                                        min)
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {auth.units_approved_per_15_min ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Units Serviced
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {auth.units_serviced ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Balance Units
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {balanceUnits ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Status
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {auth.status ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Linked Insurance
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {linkedInsurance
+                                                          ? linkedInsurance.insurance_provider ||
+                                                            `Insurance #${
+                                                              auth.insurance_id
+                                                                ? Number.parseInt(
+                                                                    auth.insurance_id,
+                                                                    10
+                                                                  ) + 1
+                                                                : "-"
+                                                            }`
+                                                          : "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Period
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {auth.start_date &&
+                                                        auth.end_date
+                                                          ? `${auth.start_date} to ${auth.end_date}`
+                                                          : "Not specified"}
                                                       </p>
                                                     </div>
                                                   </div>
+                                                </div>
+                                              );
+                                            }
+                                          )}
+                                        </div>
+                                      </CardContent>
+                                    </Card>
+                                  ) : (
+                                    <Card className="border-slate-200">
+                                      <CardHeader className="pb-3">
+                                        <CardTitle className="text-slate-600 text-base text-center italic">
+                                          No authorizations found.
+                                        </CardTitle>
+                                      </CardHeader>
+                                    </Card>
+                                  )}
+
+                                  {/* Documents Display */}
+                                  {client.documents &&
+                                    client.documents.length > 0 && (
+                                      <Card className="border-slate-200">
+                                        <CardHeader className="pb-3">
+                                          <CardTitle className="flex items-center gap-2 text-base">
+                                            <File className="h-4 w-4 text-teal-600" />{" "}
+                                            Client Documents
+                                          </CardTitle>
+                                        </CardHeader>
+                                        <CardContent>
+                                          <div className="space-y-4">
+                                            {client.documents.map(
+                                              (doc, index) => (
+                                                <div
+                                                  key={index}
+                                                  className="border rounded-lg p-4 bg-slate-50"
+                                                >
+                                                  <div className="flex items-center justify-between mb-3">
+                                                    <h4 className="font-semibold">
+                                                      Document #{index + 1}
+                                                    </h4>
+                                                    <Badge
+                                                      variant="outline"
+                                                      className="border-gray-300 text-gray-700"
+                                                    >
+                                                      {doc.document_type ||
+                                                        "N/A"}
+                                                    </Badge>
+                                                  </div>
+                                                  <div className="text-sm">
+                                                    <p className="text-slate-500 mb-1">
+                                                      File URL
+                                                    </p>
+                                                    {doc.file_url ? (
+                                                      <a
+                                                        href={doc.file_url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="font-medium text-blue-600 hover:underline break-all"
+                                                      >
+                                                        {doc.file_url}
+                                                      </a>
+                                                    ) : (
+                                                      <p className="font-medium">
+                                                        Not provided
+                                                      </p>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              )
+                                            )}
+                                          </div>
+                                        </CardContent>
+                                      </Card>
+                                    )}
+
+                                  {/* Notes */}
+                                  {(client.client_notes ||
+                                    client.other_information) && (
+                                    <Card className="border-slate-200">
+                                      <CardHeader className="pb-3">
+                                        <CardTitle className="flex items-center gap-2 text-base">
+                                          <FileText className="h-4 w-4 text-teal-600" />{" "}
+                                          Notes & Additional Information
+                                        </CardTitle>
+                                      </CardHeader>
+                                      <CardContent className="space-y-4 text-sm">
+                                        {client.client_notes && (
+                                          <div>
+                                            <p className="text-slate-500 mb-2 font-medium">
+                                              Client Notes
+                                            </p>
+                                            <p className="bg-slate-50 p-3 rounded-lg">
+                                              {client.client_notes}
+                                            </p>
+                                          </div>
+                                        )}
+                                        {client.other_information && (
+                                          <div>
+                                            <p className="text-slate-500 mb-2 font-medium">
+                                              Other Information
+                                            </p>
+                                            <p className="bg-slate-50 p-3 rounded-lg">
+                                              {client.other_information}
+                                            </p>
+                                          </div>
+                                        )}
+                                      </CardContent>
+                                    </Card>
+                                  )}
+
+                                  {/* Availability */}
+                                  {client.availability &&
+                                    Object.keys(client.availability).length >
+                                      0 && (
+                                      <Card className="border-slate-200">
+                                        <CardHeader className="pb-3">
+                                          <CardTitle className="flex items-center gap-2 text-base">
+                                            <Clock className="h-4 w-4 text-teal-600" />{" "}
+                                            Availability
+                                          </CardTitle>
+                                        </CardHeader>
+                                        <CardContent>
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                                            {Object.entries(
+                                              client.availability
+                                            ).map(([day, data]) => (
+                                              <div
+                                                key={day}
+                                                className="border rounded-lg p-3 bg-slate-50"
+                                              >
+                                                <h4 className="font-semibold mb-2 capitalize">
+                                                  {day}
+                                                </h4>
+                                                {data.available ? (
+                                                  <p className="text-green-600">
+                                                    Available:{" "}
+                                                    {formatTimeForDisplay(
+                                                      data.start
+                                                    )}{" "}
+                                                    -{" "}
+                                                    {formatTimeForDisplay(
+                                                      data.end
+                                                    )}
+                                                  </p>
+                                                ) : (
+                                                  <p className="text-gray-500">
+                                                    Not Available
+                                                  </p>
                                                 )}
                                               </div>
-                                            )
-                                          )}
-                                        </div>
-                                      </CardContent>
-                                    </Card>
-                                  )}
-
-                                {/* Authorization Information */}
-                                {client.authorizations &&
-                                client.authorizations.length > 0 ? (
-                                  <Card className="border-slate-200">
-                                    <CardHeader className="pb-3">
-                                      <CardTitle className="flex items-center gap-2 text-base">
-                                        <FileText className="h-4 w-4 text-teal-600" />{" "}
-                                        Authorization Information
-                                      </CardTitle>
-                                    </CardHeader>
-                                    <CardContent>
-                                      <div className="space-y-4">
-                                        {client.authorizations.map(
-                                          (auth, index) => {
-                                            const linkedInsurance =
-                                              client.insurances &&
-                                              client.insurances[
-                                                Number.parseInt(
-                                                  auth.insurance_id,
-                                                  10
-                                                )
-                                              ]
-                                                ? client.insurances[
-                                                    Number.parseInt(
-                                                      auth.insurance_id,
-                                                      10
-                                                    )
-                                                  ]
-                                                : null;
-                                            const approvedUnits =
-                                              Number.parseFloat(
-                                                auth.units_approved_per_15_min
-                                              ) || 0;
-                                            const servicedUnits =
-                                              Number.parseFloat(
-                                                auth.units_serviced
-                                              ) || 0;
-                                            const balanceUnits =
-                                              approvedUnits - servicedUnits;
-                                            return (
-                                              <div
-                                                key={index}
-                                                className="border rounded-lg p-4 bg-slate-50"
-                                              >
-                                                <h4 className="font-semibold mb-3">
-                                                  Authorization #{index + 1}
-                                                </h4>
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Authorization Number
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {auth.authorization_number ||
-                                                        "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Billing Codes
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {auth.billing_codes ||
-                                                        "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Units Approved (per 15
-                                                      min)
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {auth.units_approved_per_15_min ||
-                                                        "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Units Serviced
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {auth.units_serviced ||
-                                                        "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Balance Units
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {balanceUnits ||
-                                                        "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Status
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {auth.status ||
-                                                        "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Linked Insurance
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {linkedInsurance
-                                                        ? linkedInsurance.insurance_provider ||
-                                                          `Insurance #${
-                                                            auth.insurance_id
-                                                              ? Number.parseInt(
-                                                                  auth.insurance_id,
-                                                                  10
-                                                                ) + 1
-                                                              : "-"
-                                                          }`
-                                                        : "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                  <div>
-                                                    <p className="text-slate-500 mb-1">
-                                                      Period
-                                                    </p>
-                                                    <p className="font-medium">
-                                                      {auth.start_date &&
-                                                      auth.end_date
-                                                        ? `${auth.start_date} to ${auth.end_date}`
-                                                        : "Not specified"}
-                                                    </p>
-                                                  </div>
-                                                </div>
-                                              </div>
-                                            );
-                                          }
-                                        )}
-                                      </div>
-                                    </CardContent>
-                                  </Card>
-                                ) : (
-                                  <Card className="border-slate-200">
-                                    <CardHeader className="pb-3">
-                                      <CardTitle className="text-slate-600 text-base text-center italic">
-                                        No authorizations found.
-                                      </CardTitle>
-                                    </CardHeader>
-                                  </Card>
-                                )}
-
-                                {/* Documents Display */}
-                                {client.documents &&
-                                  client.documents.length > 0 && (
-                                    <Card className="border-slate-200">
-                                      <CardHeader className="pb-3">
-                                        <CardTitle className="flex items-center gap-2 text-base">
-                                          <File className="h-4 w-4 text-teal-600" />{" "}
-                                          Client Documents
-                                        </CardTitle>
-                                      </CardHeader>
-                                      <CardContent>
-                                        <div className="space-y-4">
-                                          {client.documents.map(
-                                            (doc, index) => (
-                                              <div
-                                                key={index}
-                                                className="border rounded-lg p-4 bg-slate-50"
-                                              >
-                                                <div className="flex items-center justify-between mb-3">
-                                                  <h4 className="font-semibold">
-                                                    Document #{index + 1}
-                                                  </h4>
-                                                  <Badge
-                                                    variant="outline"
-                                                    className="border-gray-300 text-gray-700"
-                                                  >
-                                                    {doc.document_type || "N/A"}
-                                                  </Badge>
-                                                </div>
-                                                <div className="text-sm">
-                                                  <p className="text-slate-500 mb-1">
-                                                    File URL
-                                                  </p>
-                                                  {doc.file_url ? (
-                                                    <a
-                                                      href={doc.file_url}
-                                                      target="_blank"
-                                                      rel="noopener noreferrer"
-                                                      className="font-medium text-blue-600 hover:underline break-all"
-                                                    >
-                                                      {doc.file_url}
-                                                    </a>
-                                                  ) : (
-                                                    <p className="font-medium">
-                                                      Not provided
-                                                    </p>
-                                                  )}
-                                                </div>
-                                              </div>
-                                            )
-                                          )}
-                                        </div>
-                                      </CardContent>
-                                    </Card>
-                                  )}
-
-                                {/* Notes */}
-                                {(client.client_notes ||
-                                  client.other_information) && (
-                                  <Card className="border-slate-200">
-                                    <CardHeader className="pb-3">
-                                      <CardTitle className="flex items-center gap-2 text-base">
-                                        <FileText className="h-4 w-4 text-teal-600" />{" "}
-                                        Notes & Additional Information
-                                      </CardTitle>
-                                    </CardHeader>
-                                    <CardContent className="space-y-4 text-sm">
-                                      {client.client_notes && (
-                                        <div>
-                                          <p className="text-slate-500 mb-2 font-medium">
-                                            Client Notes
-                                          </p>
-                                          <p className="bg-slate-50 p-3 rounded-lg">
-                                            {client.client_notes}
-                                          </p>
-                                        </div>
-                                      )}
-                                      {client.other_information && (
-                                        <div>
-                                          <p className="text-slate-500 mb-2 font-medium">
-                                            Other Information
-                                          </p>
-                                          <p className="bg-slate-50 p-3 rounded-lg">
-                                            {client.other_information}
-                                          </p>
-                                        </div>
-                                      )}
-                                    </CardContent>
-                                  </Card>
-                                )}
-
-                                {/* Availability */}
-                                {client.availability &&
-                                  Object.keys(client.availability).length >
-                                    0 && (
-                                    <Card className="border-slate-200">
-                                      <CardHeader className="pb-3">
-                                        <CardTitle className="flex items-center gap-2 text-base">
-                                          <Clock className="h-4 w-4 text-teal-600" />{" "}
-                                          Availability
-                                        </CardTitle>
-                                      </CardHeader>
-                                      <CardContent>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                                          {Object.entries(
-                                            client.availability
-                                          ).map(([day, data]) => (
-                                            <div
-                                              key={day}
-                                              className="border rounded-lg p-3 bg-slate-50"
-                                            >
-                                              <h4 className="font-semibold mb-2 capitalize">
-                                                {day}
-                                              </h4>
-                                              {data.available ? (
-                                                <p className="text-green-600">
-                                                  Available:{" "}
-                                                  {formatTimeForDisplay(
-                                                    data.start
-                                                  )}{" "}
-                                                  -{" "}
-                                                  {formatTimeForDisplay(
-                                                    data.end
-                                                  )}
-                                                </p>
-                                              ) : (
-                                                <p className="text-gray-500">
-                                                  Not Available
-                                                </p>
-                                              )}
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </CardContent>
-                                    </Card>
-                                  )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </Fragment>
-                    );
-                  })}
+                                            ))}
+                                          </div>
+                                        </CardContent>
+                                      </Card>
+                                    )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
+                      );
+                    })}
                 </TableBody>
               </Table>
               {filteredClients.length === 0 && (
@@ -1306,7 +1477,36 @@ export default function ClientsView() {
         }}
         onSave={editingClient ? handleEditClient : handleAddClient}
         editingClient={editingClient}
+        filteredStaff={filteredStaff}
       />
+
+      {/* Modules Modal — now supports clicking into domains */}
+      {selectedClient && (
+        <ClientModulesModal
+          isOpen={isClientModulesOpen}
+          onClose={() => {
+            setIsClientModulesOpen(false);
+            setSelectedClient(null);
+          }}
+          clientId={selectedClient.id}
+          clientName={`${selectedClient.first_name} ${selectedClient.last_name}`}
+          onDomainSelect={setDomainDetailProps} // THIS LINE IS KEY
+        />
+      )}
+
+      {selectedClient && (
+        <ClientDomainModal
+          isOpen={isClientDomainsOpen}
+          onClose={() => {
+            setIsClientDomainsOpen(false);
+            setSelectedClient(null);
+          }}
+          clientId={selectedClient.id}
+          clientName={`${selectedClient.first_name} ${selectedClient.last_name}`}
+        />
+      )}
+
+      
     </div>
   );
 }

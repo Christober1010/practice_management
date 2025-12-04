@@ -35,7 +35,7 @@
     "**/*.tsx",
     "next-env.d.ts",
     ".next/types/**/*.ts"
-  ],
+, "components/master-data/ABAProgramModal.jsx", "components/master-data/task-analysis-detail.jsx", "app/store/programSlice.js", "components/master-data/DeleteConfirmModal.jsx"  ],
   "exclude": [
     "node_modules"
   ]

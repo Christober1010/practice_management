@@ -70,7 +70,7 @@ const initialForm = {
   ends: "Never",
   endDate: "",
   endAfterOccurrences: 1,
-  placeOfService: "Clinic",
+  placeOfService: "",
   locationAddress: "",
   quickNote: "",
   startDateTime: "",
@@ -133,6 +133,20 @@ const convertToUTC = (localDateTimeString, userTimezone) => {
   }
 };
 
+function normalizeSessionStatus(session) {
+  const statusMap = {
+    upcoming: "Scheduled",
+    "in-progress": "Scheduled",
+    confirmed: "Scheduled",
+    completed: "Rendered",
+    cancelled: "Cancelled",
+  };
+
+  const oldStatus = session.status || session.STATUS || "Scheduled";
+  const lowerStatus = oldStatus.toLowerCase();
+
+  return statusMap[lowerStatus] || oldStatus;
+}
 export default function NewSessionFormModal({
   isOpen,
   onClose,
@@ -214,6 +228,73 @@ export default function NewSessionFormModal({
     setForm((prev) => ({ ...prev, scheduledHours: hours.toFixed(2) }));
   }, [form.startDateTime, form.endDateTime]);
 
+  // useEffect(() => {
+  //   if (!isOpen) return;
+
+  //   if (editingSession && userTimezone) {
+  //     if (editingSession.recurring && editingSession.recurring !== "No") {
+  //       setEditMode("single");
+  //     }
+
+  //     setForm({
+  //       ...initialForm,
+  //       ...editingSession,
+  //       clientId: editingSession.clientId || "",
+  //       provider: editingSession.providerId || "",
+  //       providerName: editingSession.providerName || "",
+  //       supervisingProvider: editingSession.supervisingProviderId || "",
+  //       supervisingProviderName: editingSession.supervisingProviderName || "",
+  //       recurring:
+  //         editingSession.recurring?.frequency &&
+  //         editingSession.recurring.frequency !== "No"
+  //           ? "Repeats"
+  //           : "No",
+  //       repeatFrequency: editingSession.recurring?.frequency || "Daily",
+  //       repeatOn: editingSession.recurring?.days || [],
+  //       ends: editingSession.recurring?.ends?.type || "Never",
+  //       endDate: editingSession.recurring?.ends?.date || "",
+  //       endAfterOccurrences: editingSession.recurring?.ends?.occurrences || 1,
+  //       startDateTime: convertToUserTimezone(
+  //         editingSession.startDateTime,
+  //         editingSession.startTZ || userTimezone
+  //       ),
+  //       endDateTime: convertToUserTimezone(
+  //         editingSession.endDateTime,
+  //         editingSession.endTZ || userTimezone
+  //       ),
+  //       startTZ: editingSession.startTZ || userTimezone,
+  //       endTZ: editingSession.endTZ || userTimezone,
+  //       authId: editingSession.authId || "",
+  //       scheduledHours:
+  //         (
+  //           editingSession.scheduledHours ??
+  //           editingSession.scheduled_hours ??
+  //           ""
+  //         )?.toString() || "",
+  //       renderedHours:
+  //         (
+  //           editingSession.renderedHours ??
+  //           editingSession.rendered_hours ??
+  //           "0"
+  //         )?.toString() || "0",
+  //     });
+  //   } else if (selectedDate && userTimezone) {
+  //     const y = selectedDate.getFullYear();
+  //     const m = String(selectedDate.getMonth() + 1).padStart(2, "0");
+  //     const d = String(selectedDate.getDate()).padStart(2, "0");
+  //     setForm((prev) => ({
+  //       ...initialForm,
+  //       startDateTime: `${y}-${m}-${d}T09:00`,
+  //       endDateTime: `${y}-${m}-${d}T10:00`,
+  //       startTZ: userTimezone,
+  //       endTZ: userTimezone,
+  //     }));
+  //   }
+  //   setActiveTab("scheduling");
+  // }, [isOpen, editingSession, selectedDate, userTimezone]);
+
+  // Replace the useEffect that handles editingSession (around line 215) with this:
+  console.log(editingSession, "editingSession");
   useEffect(() => {
     if (!isOpen) return;
 
@@ -222,12 +303,40 @@ export default function NewSessionFormModal({
         setEditMode("single");
       }
 
+      // Find the provider names from the staff list to ensure they're populated
+      const providerStaff = staff.find(
+        (s) =>
+          s.id === editingSession.providerId || s.id === editingSession.provider
+      );
+      const supervisingStaff = staff.find(
+        (s) =>
+          s.id === editingSession.supervisingProviderId ||
+          s.id === editingSession.supervisingProvider
+      );
+      let extractedAuthId = editingSession.authId || "";
+      if (!extractedAuthId && editingSession.authCode) {
+        const parts = editingSession.authCode.split("-");
+        if (parts.length === 2) {
+          extractedAuthId = parts[1];
+        }
+      }
+
       setForm({
         ...initialForm,
         ...editingSession,
         clientId: editingSession.clientId || "",
-        provider: editingSession.providerId || "",
-        supervisingProvider: editingSession.supervisingProviderId || "",
+        provider: editingSession.providerId || editingSession.provider || "",
+        // Use staff data first, fallback to editingSession
+        providerName:
+          providerStaff?.fullName || editingSession.providerName || "",
+        supervisingProvider:
+          editingSession.supervisingProviderId ||
+          editingSession.supervisingProvider ||
+          "",
+        supervisingProviderName:
+          supervisingStaff?.fullName ||
+          editingSession.supervisingProviderName ||
+          "",
         recurring:
           editingSession.recurring?.frequency &&
           editingSession.recurring.frequency !== "No"
@@ -248,7 +357,7 @@ export default function NewSessionFormModal({
         ),
         startTZ: editingSession.startTZ || userTimezone,
         endTZ: editingSession.endTZ || userTimezone,
-        authId: editingSession.authId || "",
+        authId: extractedAuthId,
         scheduledHours:
           (
             editingSession.scheduledHours ??
@@ -275,7 +384,7 @@ export default function NewSessionFormModal({
       }));
     }
     setActiveTab("scheduling");
-  }, [isOpen, editingSession, selectedDate, userTimezone]);
+  }, [isOpen, editingSession, selectedDate, userTimezone, staff]);
 
   const clientOptions = useMemo(
     () =>
@@ -422,7 +531,7 @@ export default function NewSessionFormModal({
       placeOfService: form.placeOfService,
       locationAddress: form.locationAddress,
       quickNote: form.quickNote,
-      status: "upcoming",
+      status: "Scheduled",
       recurring: {
         frequency: form.recurring === "Repeats" ? form.repeatFrequency : "No",
         days: form.repeatFrequency === "Weekly" ? form.repeatOn : [],
@@ -552,7 +661,6 @@ export default function NewSessionFormModal({
     setShowCancelDialog(false);
     onClose?.();
   };
-
   return (
     <>
       <Dialog open={isOpen} onOpenChange={handleClose}>
@@ -634,11 +742,13 @@ export default function NewSessionFormModal({
                         "Client *",
                         form.clientId,
                         (v) => setField("clientId", v),
-                        clientOptions.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name}
-                          </SelectItem>
-                        )),
+                        clientOptions
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((c) => (
+                            <SelectItem key={c.id} value={c.id}>
+                              {c.name}
+                            </SelectItem>
+                          )),
                         "Select client"
                       )}
                       {renderSelectWithError(
@@ -653,11 +763,13 @@ export default function NewSessionFormModal({
                             selected ? selected.fullName : ""
                           );
                         },
-                        staff.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>
-                            {s.fullName} ({s.staffType})
-                          </SelectItem>
-                        )),
+                        staff
+                          .sort((a, b) => a.fullName.localeCompare(b.fullName))
+                          .map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.fullName} ({s.staffType})
+                            </SelectItem>
+                          )),
                         "Select provider"
                       )}
                     </div>
@@ -693,11 +805,13 @@ export default function NewSessionFormModal({
                           ];
                         }
 
-                        return availableSupervisors.map((s) => (
-                          <SelectItem key={s.id} value={s.id}>
-                            {s.fullName} ({s.staffType})
-                          </SelectItem>
-                        ));
+                        return availableSupervisors
+                          .sort((a, b) => a.fullName.localeCompare(b.fullName))
+                          .map((s) => (
+                            <SelectItem key={s.id} value={s.id}>
+                              {s.fullName} ({s.staffType})
+                            </SelectItem>
+                          ));
                       })(),
                       "Select supervising provider"
                     )}
@@ -714,11 +828,13 @@ export default function NewSessionFormModal({
                         "Start Time Zone *",
                         form.startTZ,
                         (v) => setField("startTZ", v),
-                        TIME_ZONES.map((tz) => (
-                          <SelectItem key={tz} value={tz}>
-                            {tz} {tz === userTimezone ? "(You)" : ""}
-                          </SelectItem>
-                        ))
+                        TIME_ZONES.sort((a, b) => a.localeCompare(b)).map(
+                          (tz) => (
+                            <SelectItem key={tz} value={tz}>
+                              {tz} {tz === userTimezone ? "(You)" : ""}
+                            </SelectItem>
+                          )
+                        )
                       )}
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -877,17 +993,27 @@ export default function NewSessionFormModal({
                         )}
                       </CardContent>
                     </Card>
-
                     {renderSelectWithError(
                       "authCode",
                       "Billing Code *",
                       form.authCode,
                       (v) => {
                         setField("authCode", v);
+                        if (v === "no-auth") {
+                          setField("authId", "");
+                          return;
+                        }
+                        // Parse composite value: "97151-301"
+                        const [code, authIdStr] = v.split("-");
+                        if (authIdStr) {
+                          setField("authId", authIdStr);
+                          return;
+                        }
+                        // Fallback to original find if no composite (for backward compatibility)
                         const selected = selectedClient?.authorizations?.find(
                           (a) =>
                             (a.billing_codes?.trim() ||
-                              a.authorization_number?.trim()) === v
+                              a.authorization_number?.trim()) === code
                         );
                         if (selected) {
                           setField(
@@ -897,19 +1023,26 @@ export default function NewSessionFormModal({
                         }
                       },
                       selectedClient?.authorizations?.length
-                        ? selectedClient.authorizations.map((a, i) => {
-                            const code =
-                              a.billing_codes?.trim() ||
-                              a.authorization_number?.trim();
-                            const displayCode = `${code} (Auth ID: ${
-                              a.auth_id
-                            } - ${a.end_date || "N/A"})`;
-                            return (
-                              <SelectItem key={`${code}-${i}`} value={code}>
-                                {displayCode}
-                              </SelectItem>
-                            );
-                          })
+                        ? selectedClient.authorizations
+                            .filter((a) => a.status === "Active") // Optional: filter active only
+                            .map((a, i) => {
+                              const code =
+                                a.billing_codes?.trim() ||
+                                a.authorization_number?.trim();
+                              const authId = a.auth_id;
+                              const compositeValue = `${code}-${authId}`; // Unique: "97151-301"
+                              const displayCode = `${code} (Auth ID: ${authId} - ${
+                                a.end_date || "Ongoing"
+                              })`;
+                              return (
+                                <SelectItem
+                                  key={compositeValue}
+                                  value={compositeValue}
+                                >
+                                  {displayCode}
+                                </SelectItem>
+                              );
+                            })
                         : [
                             <SelectItem key="no-auth" value="no-auth" disabled>
                               No Billing code for this client
@@ -919,11 +1052,23 @@ export default function NewSessionFormModal({
                         ? "Select Billing code"
                         : "Select client first"
                     )}
+
                     {renderSelectWithError(
                       "locationAddress",
                       "Location Address *",
                       form.locationAddress,
-                      (v) => setField("locationAddress", v),
+                      (v) => {
+                        setField("locationAddress", v);
+                        // Find the selected address to get its service_location
+                        const selectedAddress = selectedClient?.address.find(
+                          (addr) => addr.value === v
+                        );
+                        // Update placeOfService with the service_location, or set to empty string if not found
+                        setField(
+                          "placeOfService",
+                          selectedAddress?.service_location || ""
+                        );
+                      },
                       selectedClient && selectedClient.address.length > 0
                         ? selectedClient.address.map((addr) => (
                             <SelectItem

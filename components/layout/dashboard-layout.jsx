@@ -14,8 +14,14 @@ import ParentPortal from "@/components/portal/parent-portal";
 import StaffView from "@/components/staff/staff-view";
 import UsersView from "@/components/users/users-view";
 import ProgramsView from "@/components/master-data/ProgramsView";
+import ModulesList from "@/components/master-data/modules-list";
+import DomainsList from "@/components/master-data/domains-list";
+import ProgramsList from "@/components/master-data/programs-list";
+import PromptsList from "@/components/master-data/prompts-list";
+import TargetsList from "@/components/master-data/targets-list";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import AppSidebar from "@/components/layout/app-sidebar";
+import ExcelToTable from "../reports/ExcelToTable";
 
 export default function DashboardLayout({ userRole, onLogout }) {
   const [currentView, setCurrentView] = useState("dashboard");
@@ -51,6 +57,18 @@ export default function DashboardLayout({ userRole, onLogout }) {
         return <UsersView />;
       case "masterData":
         return <ProgramsView />;
+      case "modules":
+        return <ModulesList />;
+      case "domains":
+        return <DomainsList />;
+      case "programs":
+        return <ProgramsList />;
+      case "targets":
+        return <TargetsList />;
+      case "prompts":
+        return <PromptsList />;
+      case "reports":
+        return <ExcelToTable />;
       default:
         return <AdminDashboard />;
     }
@@ -63,9 +81,9 @@ export default function DashboardLayout({ userRole, onLogout }) {
         setCurrentView={setCurrentView}
         onLogout={onLogout}
       />
-      <div className="w-full bg-gray-50 ">
+      <div className="w-full bg-gray-50 overflow-x-hidden">
         <Header userRole={userRole} onLogout={onLogout} />
-        <main className="p-6 bg-white">{renderContent()}</main>
+        <main className="p-6 bg-white ">{renderContent()}</main>
       </div>
     </SidebarProvider>
   );

@@ -453,558 +453,569 @@ export default function StaffView() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredStaff?.map((member) => {
-                    const isExpanded = expandedStaff === member.id;
-                    return (
-                      <>
-                        {/* Main Row */}
-                        <TableRow
-                          key={member.id}
-                          className="hover:bg-slate-50 transition-colors border-b"
-                        >
-                          <TableCell className="lg:px-4 sm:px-2 py-4">
-                            <div className="flex items-center space-x-3">
-                              <span className="hidden sm:inline-block">
-                                <div className="bg-teal-100 p-2 rounded-lg flex-shrink-0">
-                                  <Users className="h-4 w-4 text-teal-600" />
-                                </div>
-                              </span>
-                              <div>
-                                <div className="font-semibold text-slate-800">
-                                  {member.fullName}
-                                </div>
-                                <div className="lg:visible sm:hidden flex flex-wrap gap-1 mt-1">
-                                  <Badge
-                                    className={getTypeColor(member.staffType)}
-                                  >
-                                    {member.staffType}
-                                  </Badge>
-                                  <Badge
-                                    className={getStatusColor(member.status)}
-                                  >
-                                    {member.status}
-                                  </Badge>
-                                  {member.archived && (
+                  {filteredStaff
+                    ?.sort((a, b) => a.fullName.localeCompare(b.fullName))
+                    .map((member) => {
+                      const isExpanded = expandedStaff === member.id;
+                      return (
+                        <>
+                          {/* Main Row */}
+                          <TableRow
+                            key={member.id}
+                            className="hover:bg-slate-50 transition-colors border-b"
+                          >
+                            <TableCell className="lg:px-4 sm:px-2 py-4">
+                              <div className="flex items-center space-x-3">
+                                <span className="hidden sm:inline-block">
+                                  <div className="bg-teal-100 p-2 rounded-lg flex-shrink-0">
+                                    <Users className="h-4 w-4 text-teal-600" />
+                                  </div>
+                                </span>
+                                <div>
+                                  <div className="font-semibold text-slate-800 capitalize">
+                                    {member.fullName}
+                                  </div>
+                                  <div className="lg:visible sm:hidden flex flex-wrap gap-1 mt-1">
                                     <Badge
-                                      variant="outline"
-                                      className="border-amber-300 text-amber-700 text-xs"
+                                      className={getTypeColor(member.staffType)}
                                     >
-                                      Archived
+                                      {member.staffType}
                                     </Badge>
-                                  )}
+                                    <Badge
+                                      className={getStatusColor(member.status)}
+                                    >
+                                      {member.status}
+                                    </Badge>
+                                    {member.archived && (
+                                      <Badge
+                                        variant="outline"
+                                        className="border-amber-300 text-amber-700 text-xs"
+                                      >
+                                        Archived
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-4 hidden sm:table-cell">
-                            <span className="font-mono text-sm">
-                              {member.id}
-                            </span>
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell py-4">
-                            <Badge className={getStatusColor(member.status)}>
-                              {member.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell py-4">
-                            <div className="text-sm">
-                              {member.phone && (
-                                <div className="flex items-center gap-1">
-                                  <Phone className="h-3 w-3 text-slate-400" />
-                                  {member.phone}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="py-4">
-                            <div className="flex items-center justify-center gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => toggleExpanded(member.id || "")}
-                                className="border-slate-300"
-                              >
-                                {isExpanded ? (
-                                  <span title="Hide">
-                                    <EyeOff className="h-3 w-3 mr-1" />
-                                  </span>
-                                ) : (
-                                  <span title="View">
-                                    <Eye className="h-3 w-3 mr-1" />
-                                  </span>
+                            </TableCell>
+                            <TableCell className="py-4 hidden sm:table-cell">
+                              <span className="font-mono text-sm">
+                                {member.id}
+                              </span>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell py-4">
+                              <Badge className={getStatusColor(member.status)}>
+                                {member.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell py-4">
+                              <div className="text-sm">
+                                {member.phone && (
+                                  <div className="flex items-center gap-1">
+                                    <Phone className="h-3 w-3 text-slate-400" />
+                                    {member.phone}
+                                  </div>
                                 )}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleOpenEditModal(member)}
-                                className="border-slate-300"
-                              >
-                                <span title="Edit">
-                                  <Edit className="h-4 w-4 mr-2" />
-                                </span>
-                              </Button>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button
-                                    title="Options"
-                                    variant="outline"
-                                    size="sm"
-                                    className="border-slate-300 bg-transparent"
-                                  >
-                                    <MoreVertical className="h-3 w-3" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent
-                                  align="end"
-                                  className="w-48"
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-4">
+                              <div className="flex items-center justify-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    toggleExpanded(member.id || "")
+                                  }
+                                  className="border-slate-300"
                                 >
-                                  <DropdownMenuItem>
-                                    <Calendar className="h-4 w-4 mr-2" />{" "}
-                                    Schedule
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    onClick={() =>
-                                      handleArchiveStaff(member.id || "")
-                                    }
-                                    className={
-                                      member.archived
-                                        ? "text-green-600"
-                                        : "text-amber-600"
-                                    }
+                                  {isExpanded ? (
+                                    <span title="Hide">
+                                      <EyeOff className="h-3 w-3 mr-1" />
+                                    </span>
+                                  ) : (
+                                    <span title="View">
+                                      <Eye className="h-3 w-3 mr-1" />
+                                    </span>
+                                  )}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleOpenEditModal(member)}
+                                  className="border-slate-300"
+                                >
+                                  <span title="Edit">
+                                    <Edit className="h-4 w-4 mr-2" />
+                                  </span>
+                                </Button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      title="Options"
+                                      variant="outline"
+                                      size="sm"
+                                      className="border-slate-300 bg-transparent"
+                                    >
+                                      <MoreVertical className="h-3 w-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent
+                                    align="end"
+                                    className="w-48"
                                   >
-                                    {member.archived ? (
-                                      <>
-                                        <ArchiveRestore className="h-4 w-4 mr-2" />{" "}
-                                        Restore Staff
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Archive className="h-4 w-4 mr-2" />{" "}
-                                        Archive Staff
-                                      </>
-                                    )}
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                        {/* Expanded Details Row */}
-                        {isExpanded && (
-                          <TableRow className="bg-slate-50">
-                            <TableCell colSpan={5} className="px-6 py-6">
-                              <div className="space-y-6">
-                                {/* Personal Information Section */}
-                                <Card className="border-slate-200">
-                                  <CardHeader className="pb-3">
-                                    <CardTitle className="flex items-center gap-2 text-base">
-                                      <Users className="h-4 w-4 text-teal-600" />{" "}
-                                      Personal Information
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent className="space-y-3 text-sm">
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          First Name
-                                        </p>
-                                        <p className="font-medium">
-                                          {member.firstName || "N/A"}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Last Name
-                                        </p>
-                                        <p className="font-medium">
-                                          {member.lastName || "N/A"}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Email
-                                        </p>
-                                        <p className="font-medium">
-                                          {member.email || "N/A"}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Phone
-                                        </p>
-                                        <p className="font-medium">
-                                          {member.phone || "N/A"}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Date of birth
-                                        </p>
-                                        <p className="font-medium">
-                                          {member.dob || "N/A"}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Date of Joining
-                                        </p>
-                                        <p className="font-medium">
-                                          {formatDate(member.dateOfJoining)}
-                                        </p>
-                                      </div>
-
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Date of Leaving
-                                        </p>
-                                        <p className="font-medium">
-                                          {formatDate(member.dateOfLeaving)}
-                                        </p>
-                                      </div>
-
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Address
-                                        </p>
-                                        <p className="font-medium">
-                                          {member.address || "N/A"}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Location
-                                        </p>
-                                        <p className="font-medium">
-                                          {member.location || "N/A"}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-
-                                {/* Professional Information Section */}
-                                <Card className="border-slate-200">
-                                  <CardHeader className="pb-3">
-                                    <CardTitle className="flex items-center gap-2 text-base">
-                                      <Users className="h-4 w-4 text-teal-600" />
-                                      Professional Information
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent className="space-y-3 text-sm">
-                                    {/* Top row: Staff Type, Status, Dates */}
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Staff Type
-                                        </p>
-                                        <p className="font-medium">
-                                          {member.staffType || "N/A"}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Status
-                                        </p>
-                                        <p className="font-medium">
-                                          {member.status || "N/A"}
-                                        </p>
-                                      </div>
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Date of Joining
-                                        </p>
-                                        <p className="font-medium">
-                                          {member.dateOfJoining
-                                            ? new Date(
-                                                member.dateOfJoining
-                                              ).toLocaleDateString()
-                                            : "N/A"}
-                                        </p>
-                                      </div>
-                                    </div>
-
-                                    {/* Bottom row: Date of Leaving */}
-                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                      <div>
-                                        <p className="text-slate-500 mb-1">
-                                          Date of Leaving
-                                        </p>
-                                        <p className="font-medium">
-                                          {member.dateOfLeaving
-                                            ? new Date(
-                                                member.dateOfLeaving
-                                              ).toLocaleDateString()
-                                            : "N/A"}
-                                        </p>
-                                      </div>
-
-                                      <div>
-                                        <p className="text-slate-500 mb-1 font-semibold">
-                                          Assigned Staff
-                                        </p>
-                                        {member.assignedStaffNames &&
-                                        member.assignedStaffNames.length > 0 ? (
-                                          <div className="flex flex-wrap gap-2">
-                                            {member.assignedStaffNames.map(
-                                              (item, index) => (
-                                                <span
-                                                  key={index}
-                                                  className="inline-block bg-teal-100 text-teal-800 text-sm font-medium px-3 py-1 rounded-full shadow-sm hover:bg-teal-200 transition-colors"
-                                                >
-                                                  {item.length > 20
-                                                    ? `${item.slice(0, 17)}...`
-                                                    : item}
-                                                </span>
-                                              )
-                                            )}
-                                          </div>
-                                        ) : (
-                                          <p className="italic text-gray-500">
-                                            No assigned staff.
-                                          </p>
-                                        )}
-                                      </div>
-
-                                      <div>
-                                        <p className="text-slate-500 mb-1 font-semibold">
-                                          Assigned Clients
-                                        </p>
-                                        {member.assignedClientNames &&
-                                        member.assignedClientNames.length >
-                                          0 ? (
-                                          <div className="flex flex-wrap gap-2">
-                                            {member.assignedClientNames.map(
-                                              (item, index) => (
-                                                <span
-                                                  key={index}
-                                                  className="inline-block bg-blue-100 text-blue-800 text-sm font-medium px-3 py-1 rounded-full shadow-sm hover:bg-blue-200 transition-colors"
-                                                >
-                                                  {item.length > 20
-                                                    ? `${item.slice(0, 17)}...`
-                                                    : item}
-                                                </span>
-                                              )
-                                            )}
-                                          </div>
-                                        ) : (
-                                          <p className="italic text-gray-500">
-                                            No assigned clients.
-                                          </p>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-
-                                {/* Certification Details Section */}
-                                {/* Certification Details Section */}
-                                <Card className="border-slate-200">
-                                  <CardHeader className="pb-3">
-                                    <CardTitle className="flex items-center gap-2 text-base">
-                                      <Users className="h-4 w-4 text-teal-600" />
-                                      Certification Details
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent>
-                                    {member.certifications &&
-                                    member.certifications.length > 0 ? (
-                                      <div className="space-y-4">
-                                        {member.certifications.map(
-                                          (cert, index) => (
-                                            <div
-                                              key={cert.id || index}
-                                              className="border rounded-lg p-4 bg-slate-50 shadow-sm"
-                                            >
-                                              <h4 className="font-semibold mb-3">
-                                                Certification #{index + 1}
-                                              </h4>
-
-                                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Certification Type
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {cert.certification_type ||
-                                                      "N/A"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Certification Number
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {cert.certification_number ||
-                                                      "N/A"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    NPI Number
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {cert.npi_number ||
-                                                      cert.npiNumber ||
-                                                      "N/A"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Status
-                                                  </p>
-                                                  <Badge
-                                                    className={
-                                                      cert.status === "Active"
-                                                        ? "bg-green-100 text-green-800"
-                                                        : cert.status ===
-                                                          "Expired"
-                                                        ? "bg-red-100 text-red-800"
-                                                        : "bg-gray-100 text-gray-800"
-                                                    }
-                                                  >
-                                                    {cert.status || "N/A"}
-                                                  </Badge>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Issue Date
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {cert.issue_date
-                                                      ? formatDate(
-                                                          cert.issue_date
-                                                        )
-                                                      : "N/A"}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-slate-500 mb-1">
-                                                    Expiry Date
-                                                  </p>
-                                                  <p className="font-medium">
-                                                    {cert.expiry_date
-                                                      ? formatDate(
-                                                          cert.expiry_date
-                                                        )
-                                                      : "N/A"}
-                                                  </p>
-                                                </div>
-                                              </div>
-                                            </div>
-                                          )
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <p className="text-slate-600 text-base text-center italic">
-                                        No certifications found.
-                                      </p>
-                                    )}
-                                  </CardContent>
-                                </Card>
-
-                                {/* Timing Availability */}
-                                <Card className="border-slate-200">
-                                  <CardHeader className="pb-3">
-                                    <CardTitle className="flex items-center gap-2 text-base">
-                                      <Clock className="h-4 w-4 text-teal-600" />{" "}
-                                      Availability
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                                      {Object.entries(
-                                        member.availability || {}
-                                      ).map(([day, schedule]) => (
-                                        <div
-                                          key={day}
-                                          className="border rounded-lg p-3 bg-slate-50"
-                                        >
-                                          <h4 className="font-semibold mb-2 capitalize">
-                                            {day}
-                                          </h4>
-                                          {schedule.available ? (
-                                            <p className="text-green-600">
-                                              Available:{" "}
-                                              {formatTimeForDisplay(
-                                                schedule.start
-                                              )}{" "}
-                                              -{" "}
-                                              {formatTimeForDisplay(
-                                                schedule.end
-                                              )}
-                                            </p>
-                                          ) : (
-                                            <p className="text-gray-500">
-                                              Not Available
-                                            </p>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                    {Object.keys(member.availability || {})
-                                      .length === 0 && (
-                                      <p className="text-slate-500 italic">
-                                        No availability information.
-                                      </p>
-                                    )}
-                                  </CardContent>
-                                </Card>
-
-                                {/* Location Preferences */}
-                                <Card className="border-slate-200">
-                                  <CardHeader className="pb-3">
-                                    <CardTitle className="flex items-center gap-2 text-base">
-                                      <MapPin className="h-4 w-4 mr-1" />{" "}
-                                      Location Preferences
-                                    </CardTitle>
-                                  </CardHeader>
-                                  <CardContent className="space-y-3 text-sm">
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                      {Object.entries(
-                                        member.locationPreferences || {}
-                                      ).map(([location, available]) => (
-                                        <div
-                                          key={location}
-                                          className="flex items-center gap-2"
-                                        >
-                                          <span className="text-slate-500 capitalize">
-                                            {location}:
-                                          </span>
-                                          <Badge
-                                            variant="outline"
-                                            className={
-                                              available
-                                                ? "bg-green-100 text-green-800"
-                                                : "bg-red-100 text-red-800"
-                                            }
-                                          >
-                                            {available
-                                              ? "Preferred"
-                                              : "Not Preferred"}
-                                          </Badge>
-                                        </div>
-                                      ))}
-                                      {Object.keys(
-                                        member.locationPreferences || {}
-                                      ).length === 0 && (
-                                        <p className="text-slate-500 italic">
-                                          No location preferences.
-                                        </p>
+                                    <DropdownMenuItem>
+                                      <Calendar className="h-4 w-4 mr-2" />{" "}
+                                      Schedule
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        handleArchiveStaff(member.id || "")
+                                      }
+                                      className={
+                                        member.archived
+                                          ? "text-green-600"
+                                          : "text-amber-600"
+                                      }
+                                    >
+                                      {member.archived ? (
+                                        <>
+                                          <ArchiveRestore className="h-4 w-4 mr-2" />{" "}
+                                          Restore Staff
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Archive className="h-4 w-4 mr-2" />{" "}
+                                          Archive Staff
+                                        </>
                                       )}
-                                    </div>
-                                  </CardContent>
-                                </Card>
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </div>
                             </TableCell>
                           </TableRow>
-                        )}
-                      </>
-                    );
-                  })}
+                          {/* Expanded Details Row */}
+                          {isExpanded && (
+                            <TableRow className="bg-slate-50">
+                              <TableCell colSpan={5} className="px-6 py-6">
+                                <div className="space-y-6">
+                                  {/* Personal Information Section */}
+                                  <Card className="border-slate-200">
+                                    <CardHeader className="pb-3">
+                                      <CardTitle className="flex items-center gap-2 text-base">
+                                        <Users className="h-4 w-4 text-teal-600" />{" "}
+                                        Personal Information
+                                      </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="space-y-3 text-sm">
+                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            First Name
+                                          </p>
+                                          <p className="font-medium">
+                                            {member.firstName || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Last Name
+                                          </p>
+                                          <p className="font-medium">
+                                            {member.lastName || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Email
+                                          </p>
+                                          <p className="font-medium">
+                                            {member.email || "N/A"}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Phone
+                                          </p>
+                                          <p className="font-medium">
+                                            {member.phone || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Date of birth
+                                          </p>
+                                          <p className="font-medium">
+                                            {member.dob || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Date of Joining
+                                          </p>
+                                          <p className="font-medium">
+                                            {formatDate(member.dateOfJoining)}
+                                          </p>
+                                        </div>
+
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Date of Leaving
+                                          </p>
+                                          <p className="font-medium">
+                                            {formatDate(member.dateOfLeaving)}
+                                          </p>
+                                        </div>
+
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Address
+                                          </p>
+                                          <p className="font-medium">
+                                            {member.address || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Location
+                                          </p>
+                                          <p className="font-medium">
+                                            {member.location || "N/A"}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </CardContent>
+                                  </Card>
+
+                                  {/* Professional Information Section */}
+                                  <Card className="border-slate-200">
+                                    <CardHeader className="pb-3">
+                                      <CardTitle className="flex items-center gap-2 text-base">
+                                        <Users className="h-4 w-4 text-teal-600" />
+                                        Professional Information
+                                      </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="space-y-3 text-sm">
+                                      {/* Top row: Staff Type, Status, Dates */}
+                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Staff Type
+                                          </p>
+                                          <p className="font-medium">
+                                            {member.staffType || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Status
+                                          </p>
+                                          <p className="font-medium">
+                                            {member.status || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Date of Joining
+                                          </p>
+                                          <p className="font-medium">
+                                            {member.dateOfJoining
+                                              ? new Date(
+                                                  member.dateOfJoining
+                                                ).toLocaleDateString()
+                                              : "N/A"}
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      {/* Bottom row: Date of Leaving */}
+                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Date of Leaving
+                                          </p>
+                                          <p className="font-medium">
+                                            {member.dateOfLeaving
+                                              ? new Date(
+                                                  member.dateOfLeaving
+                                                ).toLocaleDateString()
+                                              : "N/A"}
+                                          </p>
+                                        </div>
+
+                                        <div>
+                                          <p className="text-slate-500 mb-1 font-semibold">
+                                            Assigned Staff
+                                          </p>
+                                          {member.assignedStaffNames &&
+                                          member.assignedStaffNames.length >
+                                            0 ? (
+                                            <div className="flex flex-wrap gap-2">
+                                              {member.assignedStaffNames.map(
+                                                (item, index) => (
+                                                  <span
+                                                    key={index}
+                                                    className="inline-block bg-teal-100 text-teal-800 text-sm font-medium px-3 py-1 rounded-full shadow-sm hover:bg-teal-200 transition-colors"
+                                                  >
+                                                    {item.length > 20
+                                                      ? `${item.slice(
+                                                          0,
+                                                          17
+                                                        )}...`
+                                                      : item}
+                                                  </span>
+                                                )
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <p className="italic text-gray-500">
+                                              No assigned staff.
+                                            </p>
+                                          )}
+                                        </div>
+
+                                        <div>
+                                          <p className="text-slate-500 mb-1 font-semibold">
+                                            Assigned Clients
+                                          </p>
+                                          {member.assignedClientNames &&
+                                          member.assignedClientNames.length >
+                                            0 ? (
+                                            <div className="flex flex-wrap gap-2">
+                                              {member.assignedClientNames.map(
+                                                (item, index) => (
+                                                  <span
+                                                    key={index}
+                                                    className="inline-block bg-blue-100 text-blue-800 text-sm font-medium px-3 py-1 rounded-full shadow-sm hover:bg-blue-200 transition-colors"
+                                                  >
+                                                    {item.length > 20
+                                                      ? `${item.slice(
+                                                          0,
+                                                          17
+                                                        )}...`
+                                                      : item}
+                                                  </span>
+                                                )
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <p className="italic text-gray-500">
+                                              No assigned clients.
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </CardContent>
+                                  </Card>
+
+                                  {/* Certification Details Section */}
+                                  {/* Certification Details Section */}
+                                  <Card className="border-slate-200">
+                                    <CardHeader className="pb-3">
+                                      <CardTitle className="flex items-center gap-2 text-base">
+                                        <Users className="h-4 w-4 text-teal-600" />
+                                        Certification Details
+                                      </CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                      {member.certifications &&
+                                      member.certifications.length > 0 ? (
+                                        <div className="space-y-4">
+                                          {member.certifications.map(
+                                            (cert, index) => (
+                                              <div
+                                                key={cert.id || index}
+                                                className="border rounded-lg p-4 bg-slate-50 shadow-sm"
+                                              >
+                                                <h4 className="font-semibold mb-3">
+                                                  Certification #{index + 1}
+                                                </h4>
+
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+                                                  <div>
+                                                    <p className="text-slate-500 mb-1">
+                                                      Certification Type
+                                                    </p>
+                                                    <p className="font-medium">
+                                                      {cert.certification_type ||
+                                                        "N/A"}
+                                                    </p>
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-slate-500 mb-1">
+                                                      Certification Number
+                                                    </p>
+                                                    <p className="font-medium">
+                                                      {cert.certification_number ||
+                                                        "N/A"}
+                                                    </p>
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-slate-500 mb-1">
+                                                      NPI Number
+                                                    </p>
+                                                    <p className="font-medium">
+                                                      {cert.npi_number ||
+                                                        cert.npiNumber ||
+                                                        "N/A"}
+                                                    </p>
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-slate-500 mb-1">
+                                                      Status
+                                                    </p>
+                                                    <Badge
+                                                      className={
+                                                        cert.status === "Active"
+                                                          ? "bg-green-100 text-green-800"
+                                                          : cert.status ===
+                                                            "Expired"
+                                                          ? "bg-red-100 text-red-800"
+                                                          : "bg-gray-100 text-gray-800"
+                                                      }
+                                                    >
+                                                      {cert.status || "N/A"}
+                                                    </Badge>
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-slate-500 mb-1">
+                                                      Issue Date
+                                                    </p>
+                                                    <p className="font-medium">
+                                                      {cert.issue_date
+                                                        ? formatDate(
+                                                            cert.issue_date
+                                                          )
+                                                        : "N/A"}
+                                                    </p>
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-slate-500 mb-1">
+                                                      Expiry Date
+                                                    </p>
+                                                    <p className="font-medium">
+                                                      {cert.expiry_date
+                                                        ? formatDate(
+                                                            cert.expiry_date
+                                                          )
+                                                        : "N/A"}
+                                                    </p>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            )
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <p className="text-slate-600 text-base text-center italic">
+                                          No certifications found.
+                                        </p>
+                                      )}
+                                    </CardContent>
+                                  </Card>
+
+                                  {/* Timing Availability */}
+                                  <Card className="border-slate-200">
+                                    <CardHeader className="pb-3">
+                                      <CardTitle className="flex items-center gap-2 text-base">
+                                        <Clock className="h-4 w-4 text-teal-600" />{" "}
+                                        Availability
+                                      </CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                                        {Object.entries(
+                                          member.availability || {}
+                                        ).map(([day, schedule]) => (
+                                          <div
+                                            key={day}
+                                            className="border rounded-lg p-3 bg-slate-50"
+                                          >
+                                            <h4 className="font-semibold mb-2 capitalize">
+                                              {day}
+                                            </h4>
+                                            {schedule.available ? (
+                                              <p className="text-green-600">
+                                                Available:{" "}
+                                                {formatTimeForDisplay(
+                                                  schedule.start
+                                                )}{" "}
+                                                -{" "}
+                                                {formatTimeForDisplay(
+                                                  schedule.end
+                                                )}
+                                              </p>
+                                            ) : (
+                                              <p className="text-gray-500">
+                                                Not Available
+                                              </p>
+                                            )}
+                                          </div>
+                                        ))}
+                                      </div>
+                                      {Object.keys(member.availability || {})
+                                        .length === 0 && (
+                                        <p className="text-slate-500 italic">
+                                          No availability information.
+                                        </p>
+                                      )}
+                                    </CardContent>
+                                  </Card>
+
+                                  {/* Location Preferences */}
+                                  <Card className="border-slate-200">
+                                    <CardHeader className="pb-3">
+                                      <CardTitle className="flex items-center gap-2 text-base">
+                                        <MapPin className="h-4 w-4 mr-1" />{" "}
+                                        Location Preferences
+                                      </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="space-y-3 text-sm">
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {Object.entries(
+                                          member.locationPreferences || {}
+                                        ).map(([location, available]) => (
+                                          <div
+                                            key={location}
+                                            className="flex items-center gap-2"
+                                          >
+                                            <span className="text-slate-500 capitalize">
+                                              {location}:
+                                            </span>
+                                            <Badge
+                                              variant="outline"
+                                              className={
+                                                available
+                                                  ? "bg-green-100 text-green-800"
+                                                  : "bg-red-100 text-red-800"
+                                              }
+                                            >
+                                              {available
+                                                ? "Preferred"
+                                                : "Not Preferred"}
+                                            </Badge>
+                                          </div>
+                                        ))}
+                                        {Object.keys(
+                                          member.locationPreferences || {}
+                                        ).length === 0 && (
+                                          <p className="text-slate-500 italic">
+                                            No location preferences.
+                                          </p>
+                                        )}
+                                      </div>
+                                    </CardContent>
+                                  </Card>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </>
+                      );
+                    })}
                 </TableBody>
               </Table>
               {filteredStaff?.length === 0 && !isLoading && (
