@@ -1,31 +1,40 @@
-"use client"
+// add-module-modal.tsx
+"use client";
 
-import type React from "react"
-
-import { useState, useEffect } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
-import toast from "react-hot-toast"
+import React, { useEffect, useState } from "react";
+import { useAppSelector } from "@/app/store/hooks";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import toast from "react-hot-toast";
 
 interface Module {
-  id: string
-  name: string
-  description: string
-  status: string
-  archived: boolean
+  id: string;
+  name: string;
+  description: string;
+  status: string;
+  archived: boolean | number;
+  // optional fields that may exist when editing a client-module
+  client_name?: string;
+  client_id?: string | number;
 }
 
 interface AddModuleModalProps {
-  isOpen: boolean
-  onClose: () => void
-  onAdd: (module: any) => Promise<void>
-  onEdit?: (module: any) => Promise<void>
-  loading: boolean
-  editingModule?: Module | null
+  isOpen: boolean;
+  onClose: () => void;
+  // callbacks invoked after successful add/edit to allow parent to refresh lists
+  onAdd: (module: Module) => Promise<void>;
+  onEdit?: (module: Module) => Promise<void>;
+  loading: boolean;
+  editingModule?: Module | null;
+  // optional: allow callers to pass pre-fetched clients list (array of objects)
+  clientsProp?: Array<{ id?: string | number; name: string; [key: string]: any }>;
 }
+
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "";
 
 export default function AddModuleModal({
   isOpen,
@@ -34,62 +43,161 @@ export default function AddModuleModal({
   onEdit,
   loading,
   editingModule,
+  clientsProp,
 }: AddModuleModalProps) {
-  const [name, setName] = useState("")
-  const [description, setDescription] = useState("")
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [status, setStatus] = useState("Active");
+  const [archived, setArchived] = useState<false | 0 | true | 1>(0);
+
+  // selectedClient is client id if available, otherwise client name string.
+  // value "generic" indicates no client link.
+  console.log(clientsProp,"clients")
+  const [selectedClientValue, setSelectedClientValue] = useState<string | number | "generic">("generic");
+
+  // Pull clients from redux store if available, otherwise fallback to prop
+  // Expectation: state.clients.items = [{ id, name, email, phone, ...}, ...]
+  const storeClients = useAppSelector((s: any) => s.clients?.items || []);
+  const clients = (clientsProp && clientsProp.length ? clientsProp : storeClients) as Array<
+    { id?: string | number; name: string; [key: string]: any }
+  >;
+
+  // find selected client object for displaying details
+  const selectedClientObj = (() => {
+    if (selectedClientValue === "generic") return null;
+    return clients.find((c) => String(c.id) === String(selectedClientValue) || c.name === selectedClientValue) || null;
+  })();
 
   useEffect(() => {
     if (editingModule) {
-      setName(editingModule.name)
-      setDescription(editingModule.description)
+      setName(editingModule.name || "");
+      setDescription(editingModule.description || "");
+      setStatus(editingModule.status || "Active");
+      setArchived(editingModule.archived ? (editingModule.archived === 1 ? 1 : true) : 0);
+      // preselect client if editing a client-module
+      if (editingModule.client_id) {
+        setSelectedClientValue(editingModule.client_id as string | number);
+      } else if (editingModule.client_name) {
+        // fallback to name if id is not present
+        setSelectedClientValue(editingModule.client_name);
+      } else {
+        setSelectedClientValue("generic");
+      }
     } else {
-      setName("")
-      setDescription("")
+      setName("");
+      setDescription("");
+      setStatus("Active");
+      setArchived(0);
+      setSelectedClientValue("generic");
     }
-  }, [editingModule, isOpen])
+  }, [editingModule, isOpen]);
+
+  const buildModulePayload = (): Module => {
+    return {
+      id: editingModule?.id || `module_${Date.now()}`,
+      name: name.trim(),
+      description: description.trim(),
+      status,
+      archived,
+      // when client selected, include client fields to help the API and parent
+      ...(selectedClientValue !== "generic"
+        ? {
+            client_id: selectedClientObj?.id ?? selectedClientValue,
+            client_name: selectedClientObj?.name ?? String(selectedClientValue),
+          }
+        : {}),
+    };
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
+
     if (!name.trim()) {
-      toast.error("Module name is required")
-      return
+      toast.error("Module name is required");
+      return;
     }
 
+    const modulePayload = buildModulePayload();
+
+    // Choose API route depending on client assignment
+    // - If client selected (selectedClientValue !== "generic") -> POST to client-modules.php
+    // - Else -> POST to generic modules endpoint (modules.php) — adjust if your API name differs
     try {
-      if (editingModule) {
-        const updatedModule = {
-          id: editingModule.id,
-          name: name.trim(),
-          description: description.trim(),
-          status: editingModule.status,
-          archived: editingModule.archived,
+      if (selectedClientValue !== "generic") {
+        // client-specific flow
+        const clientIdToSend = selectedClientObj?.id ?? selectedClientValue;
+        const body = {
+          client_id: clientIdToSend,
+          modules: [
+            {
+              id: modulePayload.id,
+              mame: modulePayload.name,
+              description: modulePayload.description,
+              status: modulePayload.status,
+              archived: modulePayload.archived ? 1 : 0,
+            },
+          ],
+        };
+
+        const res = await fetch(`${BASE_URL}/client-modules.php`, {
+          method: editingModule ? "PUT" : "POST", // some servers use PUT for update; adapt if required
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        const json = await res.json();
+        if (json && json.success) {
+          toast.success("Client module saved");
+          // notify parent so it can refresh lists
+          await onAdd(modulePayload).catch(() => {});
+          onClose();
+        } else {
+          const msg = json?.message || "Failed to save client module";
+          toast.error(msg);
         }
-        await onEdit?.(updatedModule)
       } else {
-        const newModule = {
-          id: `module_${Date.now()}`,
-          name: name.trim(),
-          description: description.trim(),
-          status: "Active",
-          archived: 0,
+        // generic module flow
+        const body = {
+          modules: [
+            {
+              id: modulePayload.id,
+              name: modulePayload.name,
+              description: modulePayload.description,
+              status: modulePayload.status,
+              archived: modulePayload.archived ? 1 : 0,
+            },
+          ],
+        };
+
+        const res = await fetch(`${BASE_URL}/modules.php`, {
+          method: editingModule ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+
+        const json = await res.json();
+        if (json && json.success) {
+          toast.success("Module saved");
+          await onAdd(modulePayload).catch(() => {});
+          onClose();
+        } else {
+          const msg = json?.message || "Failed to save module";
+          toast.error(msg);
         }
-        await onAdd(newModule)
       }
-      setName("")
-      setDescription("")
-      onClose()
-    } catch (error) {
-      console.error("Error saving module:", error)
-      toast.error("Failed to save module")
+    } catch (err) {
+      console.error("Error saving module:", err);
+      toast.error("Network or server error while saving module");
     }
-  }
+  };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{editingModule ? "Edit Module" : "Add New Module"}</DialogTitle>
         </DialogHeader>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="module-name">Module Name</Label>
@@ -101,6 +209,7 @@ export default function AddModuleModal({
               disabled={loading}
             />
           </div>
+
           <div className="space-y-2">
             <Label htmlFor="module-description">Description (optional)</Label>
             <Textarea
@@ -111,6 +220,66 @@ export default function AddModuleModal({
               disabled={loading}
             />
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <Label>Status</Label>
+              <Select value={status} onValueChange={(v) => setStatus(String(v))}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Active">Active</SelectItem>
+                  <SelectItem value="Inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Assign to client</Label>
+              <Select
+                value={selectedClientValue === "generic" ? "generic" : String(selectedClientValue)}
+                onValueChange={(val) => {
+                  if (val === "generic") setSelectedClientValue("generic");
+                  else {
+                    // prefer id if the client object has id property
+                    const found = clients.find((c) => String(c.id) === String(val) || c.name === val);
+                    setSelectedClientValue(found?.id ?? val);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="generic">Generic (no client)</SelectItem>
+                  {clients.map((c) => {
+                    const clientId = c.id ?? c.name;
+                    console.log(c,"clients")
+                    return (
+                      <SelectItem key={String(clientId)} value={String(clientId)}>
+                        {c.first_name}{c.last_name}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* show a compact client details card if a client is selected */}
+          {selectedClientObj && (
+            <div className="border rounded p-3 bg-slate-50">
+              <div className="font-medium">{selectedClientObj.name}</div>
+              {selectedClientObj.email && <div className="text-sm">Email: {selectedClientObj.email}</div>}
+              {selectedClientObj.phone && <div className="text-sm">Phone: {selectedClientObj.phone}</div>}
+              {/* render additional fields if present */}
+              {selectedClientObj.contact_person && (
+                <div className="text-sm">Contact: {selectedClientObj.contact_person}</div>
+              )}
+            </div>
+          )}
+
           <div className="flex gap-2 justify-end">
             <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
               Cancel
@@ -122,5 +291,5 @@ export default function AddModuleModal({
         </form>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

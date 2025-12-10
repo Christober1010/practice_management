@@ -42,16 +42,20 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { fetchClients } from "@/app/store/clientSlice";
 
 /**
  * ModulesList
  *
- * Fixes applied:
- *  - Client filter: now filters only client modules when a specific client is chosen.
- *  - Client dropdown: de-duplicated client names and includes "all".
- *  - Add module: passes `clients` and `handleAddModule` to modal so client-specific modules
- *    are created via /client-modules.php while generic modules use the generic endpoint.
+ * Dropdown change: instead of listing each client name, the dropdown presents:
+ *  - "generic"  -> Generic modules only
+ *  - "client"   -> Client modules only (all clients combined)
+ *  - "all"      -> Generic + Client modules
+ *
+ * Behavior:
+ *  - When viewMode is "client" or "all" we fetch client modules from get-all.php.
+ *  - When viewMode is "generic" we only use the redux-provided generic modules.
+ *
+ * Note: Radix Select items MUST NOT use value="" — we use non-empty string values.
  */
 
 export default function ModulesList() {
@@ -60,7 +64,7 @@ export default function ModulesList() {
   const [showArchived, setShowArchived] = useState(false);
 
   // viewMode: "generic" | "client" | "all"
-  const [viewMode, setViewMode] = useState("all");
+  const [viewMode, setViewMode] = useState("generic");
 
   // clientModulesData.modules will hold modules returned by API (client-specific source)
   const [clientModulesData, setClientModulesData] = useState({
@@ -74,20 +78,13 @@ export default function ModulesList() {
   const [moduleToDelete, setModuleToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Filter target client (string client_name or "all")
-  const [selectedClient, setSelectedClient] = useState("all");
-
   const dispatch = useAppDispatch();
   const programsData = useAppSelector((state) => state.programs.items);
   const loading = useAppSelector((state) => state.programs.loading);
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
-  useEffect(() => {
-    dispatch(fetchClients());
-  }, [dispatch]);
-
-  // Fetch client modules (all client modules combined)
+  // Fetch client modules (all client modules combined) whenever viewMode requires it
   const fetchClientSpecificData = async () => {
     try {
       setLoadingClientData(true);
@@ -95,6 +92,7 @@ export default function ModulesList() {
       const data = await res.json();
 
       if (data && data.success) {
+        // Expect data.modules to be an array of modules with at least id, NAME/name, client_name, etc.
         setClientModulesData({
           modules: Array.isArray(data.modules) ? data.modules : [],
         });
@@ -111,17 +109,19 @@ export default function ModulesList() {
   };
 
   useEffect(() => {
+    // fetch generic programs once (redux)
     dispatch(fetchPrograms());
   }, [dispatch]);
 
   useEffect(() => {
-    fetchClientSpecificData();
-  }, []);
-
-  useEffect(() => {
     if (viewMode === "client" || viewMode === "all") {
       fetchClientSpecificData();
+    } else {
+      // clear client modules when not needed
+      setClientModulesData({ modules: [] });
     }
+    // we intentionally don't include fetchClientSpecificData in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode]);
 
   // Map generic modules from redux to a common module shape
@@ -137,7 +137,7 @@ export default function ModulesList() {
     }));
   }, [programsData]);
 
-  // Map client modules from API to the same shape
+  // Map client modules from API to the same shape (no single-client filtering — it's all client modules)
   const clientModules = useMemo(() => {
     if (!clientModulesData.modules?.length) return [];
     return clientModulesData.modules.map((m) => ({
@@ -147,20 +147,11 @@ export default function ModulesList() {
       status: m.STATUS || m.status || "Active",
       archived: m.archived === 1 || m.archived === true,
       client_name: m.client_name || "",
-      raw: m, // keep original if needed
       type: "client",
     }));
   }, [clientModulesData.modules]);
 
-  // Build a de-duplicated list of client names for dropdown and modal
-  const clientNames = useMemo(() => {
-    const names = clientModules
-      .map((c) => (c.client_name || "").trim())
-      .filter(Boolean);
-    return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
-  }, [clientModules]);
-
-  // displayedModules corrected: when selectedClient !== "all" we filter only modules that have matching client_name
+  // Determine displayed modules according to viewMode and filters
   const displayedModules = useMemo(() => {
     let baseModules = [];
 
@@ -172,19 +163,10 @@ export default function ModulesList() {
       baseModules = [...genericModules, ...clientModules];
     }
 
-    // If a specific client is chosen (not "all") then show only modules for that client.
-    // Important: generic-only view ignores this (generic list remains).
-    if (selectedClient && selectedClient !== "all") {
-      // Only keep client modules that match the selected client.
-      baseModules = baseModules.filter((m) => m.client_name === selectedClient);
-    }
-
     const filtered = baseModules
       .filter((module) => {
         const matchesSearch = [module.name, module.description].some((v) =>
-          String(v || "")
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase())
+          String(v || "").toLowerCase().includes(searchTerm.toLowerCase())
         );
         const matchesStatus =
           statusFilter === "all" || module.status === statusFilter;
@@ -201,7 +183,6 @@ export default function ModulesList() {
     searchTerm,
     statusFilter,
     showArchived,
-    selectedClient,
   ]);
 
   const activeCount = genericModules.filter((m) => !m.archived).length;
@@ -218,69 +199,6 @@ export default function ModulesList() {
     dispatch(fetchPrograms());
   };
 
-  // Add module handler: called by modal on submit
-  const handleAddModule = async ({ client_id, moduleData }) => {
-    // moduleData is expected shape: { id, name, description, status, archived }
-    // If client_id provided -> call client API (user requested)
-    // If no client_id -> fallback to generic add (refresh programs)
-    if (client_id) {
-      const newModule = {
-        id: moduleData.id,
-        ...moduleData,
-        status: moduleData.status || "Active",
-        archived: moduleData.archived || false,
-      };
-
-      try {
-        const response = await fetch(`${baseUrl}/client-modules.php`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            client_id,
-            modules: [newModule],
-          }),
-        });
-
-        const result = await response.json();
-        if (result.success) {
-          toast.success("Client module added successfully");
-          // refresh client modules & generic store
-          fetchClientSpecificData();
-          dispatch(fetchPrograms());
-          setIsAddModalOpen(false);
-        } else {
-          toast.error(result.message || "Failed to add client module");
-        }
-      } catch (error) {
-        console.error("Error adding client module:", error);
-        toast.error("Error adding client module");
-      }
-    } else {
-      // Generic module path:
-      // If your backend expects a different route, change below to match.
-      try {
-        const response = await fetch(`${baseUrl}/modules.php`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            modules: [moduleData],
-          }),
-        });
-        const result = await response.json();
-        if (result.success) {
-          toast.success("Module added successfully");
-          dispatch(fetchPrograms());
-          setIsAddModalOpen(false);
-        } else {
-          toast.error(result.message || "Failed to add module");
-        }
-      } catch (err) {
-        console.error("Error adding generic module:", err);
-        toast.error("Error adding module");
-      }
-    }
-  };
-
   return (
     <div className="space-y-8">
       <Toaster />
@@ -291,11 +209,10 @@ export default function ModulesList() {
           setIsAddModalOpen(false);
           setEditingModule(null);
         }}
-        onAdd={handleAddModule}
+        onAdd={() => dispatch(fetchPrograms())}
+        onEdit={() => dispatch(fetchPrograms())}
         loading={loading}
         editingModule={editingModule}
-        clients={clientNames}
-        
       />
 
       <DeleteConfirmModal
@@ -336,13 +253,11 @@ export default function ModulesList() {
           >
             {showArchived ? (
               <>
-                <ArchiveRestore className="h-4 w-4 mr-2" /> Show Active (
-                {activeCount})
+                <ArchiveRestore className="h-4 w-4 mr-2" /> Show Active ({activeCount})
               </>
             ) : (
               <>
-                <Archive className="h-4 w-4 mr-2" /> Show Archived (
-                {archivedCount})
+                <Archive className="h-4 w-4 mr-2" /> Show Archived ({archivedCount})
               </>
             )}
           </Button>
@@ -363,21 +278,6 @@ export default function ModulesList() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-
-            <Select value={selectedClient} onValueChange={setSelectedClient}>
-              <SelectTrigger className="w-full sm:w-64 border-slate-200">
-                <SelectValue placeholder="Select client" />
-              </SelectTrigger>
-
-              <SelectContent>
-                <SelectItem value="all">All clients</SelectItem>
-                {clientNames.map((name) => (
-                  <SelectItem key={name} value={name}>
-                    {name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
 
             {/* View Mode Dropdown - shows Generic / Client / All */}
             <Select value={viewMode} onValueChange={setViewMode}>
@@ -429,7 +329,7 @@ export default function ModulesList() {
       </Card>
 
       {/* Loading or Empty State */}
-      {loading || loadingClientData ? (
+      {(loading || loadingClientData) ? (
         <div className="text-center py-20">
           <p className="text-gray-500 animate-pulse">Loading modules...</p>
         </div>
@@ -446,12 +346,8 @@ export default function ModulesList() {
           <CardHeader className="pb-4">
             <CardTitle className="text-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                {viewMode === "generic" && (
-                  <BookOpen className="h-5 w-5 text-teal-600" />
-                )}
-                {viewMode === "client" && (
-                  <Users className="h-5 w-5 text-purple-600" />
-                )}
+                {viewMode === "generic" && <BookOpen className="h-5 w-5 text-teal-600" />}
+                {viewMode === "client" && <Users className="h-5 w-5 text-purple-600" />}
                 {viewMode === "all" && (
                   <div className="flex -space-x-1">
                     <BookOpen className="h-5 w-5 text-teal-600" />
@@ -462,10 +358,7 @@ export default function ModulesList() {
                 {viewMode === "client" && "Client"}
                 {viewMode === "all" && "All"} Modules
               </div>
-              <Badge variant="secondary">
-                {displayedModules.length} module
-                {displayedModules.length !== 1 ? "s" : ""}
-              </Badge>
+              <Badge variant="secondary">{displayedModules.length} module{displayedModules.length !== 1 ? "s" : ""}</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent className="p-1">
@@ -475,12 +368,8 @@ export default function ModulesList() {
                   <TableRow className="bg-slate-50">
                     <TableHead>Module Name</TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead className="hidden sm:table-cell">
-                      Status
-                    </TableHead>
-                    <TableHead className="hidden lg:table-cell">
-                      Description
-                    </TableHead>
+                    <TableHead className="hidden sm:table-cell">Status</TableHead>
+                    <TableHead className="hidden lg:table-cell">Description</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -504,9 +393,7 @@ export default function ModulesList() {
                               : "text-purple-700 border-purple-300"
                           }
                         >
-                          {module.type === "generic"
-                            ? "Generic"
-                            : module.client_name || "Client"}
+                          {module.type === "generic" ? "Generic" : (module.client_name || "Client")}
                         </Badge>
                       </TableCell>
                       <TableCell className="hidden sm:table-cell p-2">
@@ -551,16 +438,8 @@ export default function ModulesList() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
-                                onClick={() =>
-                                  handleArchiveModule(
-                                    module.id.replace(/^generic-/, "")
-                                  )
-                                }
-                                className={
-                                  module.archived
-                                    ? "text-green-600"
-                                    : "text-amber-600"
-                                }
+                                onClick={() => handleArchiveModule(module.id.replace(/^generic-/, ""))}
+                                className={module.archived ? "text-green-600" : "text-amber-600"}
                               >
                                 {module.archived ? "Restore" : "Archive"} Module
                               </DropdownMenuItem>
