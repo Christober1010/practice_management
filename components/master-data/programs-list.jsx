@@ -21,12 +21,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Search,
   Layers,
   Plus,
@@ -34,24 +28,23 @@ import {
   Trash2,
   Archive,
   ArchiveRestore,
-  MoreVertical,
   BookOpen,
   Users,
 } from "lucide-react";
-import { Toaster, toast } from "react-hot-toast";
+import toast, { Toaster } from "react-hot-toast";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
-import { fetchPrograms, toggleArchiveProgram } from "@/app/store/programSlice";
+import { fetchPrograms } from "@/app/store/programSlice";
+import { fetchClients } from "@/app/store/clientSlice";
 
 import AddProgramModal from "./add-program-modal";
 import DeleteConfirmModal from "./DeleteConfirmModal";
-import ArchiveConfirmModal from "./ArchiveConfirmModal";
 
 export default function ProgramsList() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [showArchived, setShowArchived] = useState(false);
-
-  const [viewMode, setViewMode] = useState("generic"); // "generic" | "client" | "all"
+  const [viewMode, setViewMode] = useState("all"); // "generic" | "client" | "all"
+  const [selectedClient, setSelectedClient] = useState("all");
 
   const [clientProgramsData, setClientProgramsData] = useState({
     modules: [],
@@ -62,33 +55,19 @@ export default function ProgramsList() {
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingProgram, setEditingProgram] = useState(null);
-
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [programToDelete, setProgramToDelete] = useState(null);
-  const [deleting, setDeleting] = useState(false);
-
-  const [isArchiveModalOpen, setIsArchiveModalOpen] = useState(false);
-  const [programToArchive, setProgramToArchive] = useState(null);
-  const [archiving, setArchiving] = useState(false);
 
   const dispatch = useAppDispatch();
-  const programsData = useAppSelector((state) => state.programs.items);
+  const programsData = useAppSelector((state) => state.programs.items || {});
+  const clients = useAppSelector((state) => state.clients?.items || []);
   const loading = useAppSelector((state) => state.programs.loading);
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case "Active":
-        return "bg-green-100 text-green-800";
-      case "Inactive":
-        return "bg-gray-100 text-gray-800";
-      default:
-        return "bg-gray-100 text-gray-800";
-    }
-  };
 
   useEffect(() => {
     dispatch(fetchPrograms());
+    dispatch(fetchClients());
   }, [dispatch]);
 
   const fetchClientSpecificData = async () => {
@@ -117,11 +96,31 @@ export default function ProgramsList() {
   useEffect(() => {
     if (viewMode === "client" || viewMode === "all") {
       fetchClientSpecificData();
-    } else {
-      setClientProgramsData({ modules: [], domains: [], programs: [] });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode]);
+
+  // Check for pending client from client view navigation
+  useEffect(() => {
+    const pendingClient = localStorage.getItem("pendingClientForMasterData");
+    const pendingAction = localStorage.getItem("pendingAction");
+    const pendingType = localStorage.getItem("pendingMasterDataType");
+    
+    if (pendingClient && pendingAction === "add" && pendingType === "programs") {
+      try {
+        // Just open the add modal - client will be pre-selected in the modal
+        setIsAddModalOpen(true);
+        // Clear localStorage
+        localStorage.removeItem("pendingClientForMasterData");
+        localStorage.removeItem("pendingAction");
+        localStorage.removeItem("pendingMasterDataType");
+      } catch (err) {
+        console.error("Error parsing pending client info:", err);
+        localStorage.removeItem("pendingClientForMasterData");
+        localStorage.removeItem("pendingAction");
+        localStorage.removeItem("pendingMasterDataType");
+      }
+    }
+  }, []);
 
   const genericPrograms = useMemo(() => {
     if (!programsData?.programs) return [];
@@ -149,6 +148,16 @@ export default function ProgramsList() {
 
   const clientPrograms = useMemo(() => {
     if (!clientProgramsData.programs?.length) return [];
+
+    const clientMap = {};
+    clients.forEach((c) => {
+      clientMap[String(c.id)] =
+        `${c.first_name || ""} ${c.last_name || ""}`.trim() ||
+        c.name ||
+        c.client_name ||
+        "Unknown Client";
+    });
+
     return clientProgramsData.programs.map((p) => {
       const domain = clientProgramsData.domains?.find(
         (d) => String(d.id) === String(p.domain_id || p.domainId)
@@ -156,6 +165,8 @@ export default function ProgramsList() {
       const module = clientProgramsData.modules?.find(
         (m) => String(m.id) === String(domain?.module_id || domain?.moduleId)
       );
+      const clientName = clientMap[String(p.client_id)] || "Unknown Client";
+
       return {
         id: `client-${p.id}`,
         rawId: p.id,
@@ -164,8 +175,10 @@ export default function ProgramsList() {
         status: p.STATUS || p.status || "Active",
         archived: p.archived === 1 || p.archived === true,
         domainId: p.domain_id || p.domainId,
-        domainName: domain?.NAME || domain?.name || "N/A",
-        moduleName: module?.NAME || module?.name || "N/A",
+        domainName: domain?.NAME || domain?.name || "—",
+        moduleName: module?.NAME || module?.name || "—",
+        client_name: clientName,
+        client_id: p.client_id,
         type: "client",
       };
     });
@@ -173,19 +186,25 @@ export default function ProgramsList() {
     clientProgramsData.programs,
     clientProgramsData.domains,
     clientProgramsData.modules,
+    clients,
   ]);
 
+  const clientNames = useMemo(() => {
+    const names = clientPrograms.map((p) => p.client_name).filter(Boolean);
+    return Array.from(new Set(names)).sort();
+  }, [clientPrograms]);
+
   const displayedPrograms = useMemo(() => {
-    let basePrograms = [];
-    if (viewMode === "generic") {
-      basePrograms = genericPrograms;
-    } else if (viewMode === "client") {
-      basePrograms = clientPrograms;
-    } else {
-      basePrograms = [...genericPrograms, ...clientPrograms];
+    let list = [];
+    if (viewMode === "generic") list = genericPrograms;
+    else if (viewMode === "client") list = clientPrograms;
+    else list = [...genericPrograms, ...clientPrograms];
+
+    if (selectedClient !== "all" && viewMode !== "generic") {
+      list = list.filter((p) => p.client_name === selectedClient);
     }
 
-    return basePrograms
+    return list
       .filter((program) => {
         const matchesSearch = [
           program.name,
@@ -210,69 +229,125 @@ export default function ProgramsList() {
     searchTerm,
     statusFilter,
     showArchived,
+    selectedClient,
   ]);
 
-  const activeCount = genericPrograms.filter((p) => !p.archived).length || 0;
-  const archivedCount = genericPrograms.filter((p) => p.archived).length || 0;
 
   const handleAddProgram = async (newProgram) => {
+    const isClientProgram = newProgram.client_id != null;
+
+    const payload = isClientProgram
+      ? {
+          client_id: newProgram.client_id,
+          programs: [
+            {
+              id: newProgram.id,
+              domainId: newProgram.domainId,
+              name: newProgram.name,
+              description: newProgram.description || "",
+              status: newProgram.status || "Active",
+              archived: 0,
+            },
+          ],
+        }
+      : {
+          programs: [
+            {
+              id: newProgram.id,
+              domainId: newProgram.domainId,
+              name: newProgram.name,
+              description: newProgram.description || "",
+              status: newProgram.status || "Active",
+              archived: 0,
+            },
+          ],
+        };
+
     try {
-      const res = await fetch(`${baseUrl}/programs.php`, {
+      const url = isClientProgram ? "/client-modules.php" : "/programs.php";
+      const res = await fetch(`${baseUrl}${url}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ programs: [newProgram] }),
+        body: JSON.stringify(payload),
       });
       const result = await res.json();
+
       if (result.success) {
-        toast.success("Program added successfully!");
+        toast.success("Program saved!");
         dispatch(fetchPrograms());
+        if (viewMode === "client" || viewMode === "all") {
+          fetchClientSpecificData();
+        }
         setIsAddModalOpen(false);
       } else {
-        toast.error(`Failed: ${result.message || "unknown error"}`);
+        toast.error(result.message || "Save failed");
       }
     } catch (err) {
-      console.error(err);
-      toast.error("Error adding program");
+      toast.error("Network error");
     }
   };
 
   const handleEditProgram = async (updatedProgram) => {
-    try {
-      const payload = {
-        programId: updatedProgram.rawId || updatedProgram.id,
-        name: updatedProgram.name,
-        description: updatedProgram.description,
-        status: updatedProgram.status,
-        domainId: updatedProgram.domainId,
-      };
+    const isClientProgram = updatedProgram.client_id != null;
 
-      const res = await fetch(`${baseUrl}/programs.php`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+    try {
+      let res;
+      if (isClientProgram) {
+        const payload = {
+          client_id: updatedProgram.client_id,
+          programs: [
+            {
+              id: updatedProgram.rawId || updatedProgram.id,
+              domainId: updatedProgram.domainId,
+              name: updatedProgram.name,
+              description: updatedProgram.description || "",
+              status: updatedProgram.status || "Active",
+            },
+          ],
+        };
+        res = await fetch(`${baseUrl}/client-modules.php`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        const payload = {
+          programId: updatedProgram.rawId || updatedProgram.id,
+          name: updatedProgram.name,
+          description: updatedProgram.description,
+          status: updatedProgram.status,
+          domainId: updatedProgram.domainId,
+        };
+        res = await fetch(`${baseUrl}/programs.php`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+      }
 
       const result = await res.json();
 
       if (result.success) {
         toast.success("Program updated!");
         dispatch(fetchPrograms());
+        if (viewMode === "client" || viewMode === "all") {
+          fetchClientSpecificData();
+        }
         setIsAddModalOpen(false);
         setEditingProgram(null);
       } else {
-        toast.error(`Failed: ${result.message || "unknown error"}`);
+        toast.error(result.message || "Update failed");
       }
     } catch (err) {
-      console.error("Error updating program:", err);
-      toast.error("Error updating program");
+      toast.error("Network error");
     }
   };
 
+
   const handleDeleteProgram = async () => {
     if (!programToDelete) return;
-    setDeleting(true);
     try {
       const res = await fetch(`${baseUrl}/programs.php`, {
         method: "DELETE",
@@ -286,59 +361,17 @@ export default function ProgramsList() {
       if (result.success) {
         toast.success("Program deleted!");
         dispatch(fetchPrograms());
+        if (viewMode === "client" || viewMode === "all") {
+          fetchClientSpecificData();
+        }
         setIsDeleteModalOpen(false);
       } else {
-        toast.error(`Delete failed: ${result.message || "unknown"}`);
+        toast.error(result.message || "Delete failed");
       }
     } catch (err) {
-      console.error(err);
-      toast.error("Error deleting program");
+      toast.error("Network error");
     } finally {
-      setDeleting(false);
       setProgramToDelete(null);
-    }
-  };
-
-  const handleArchiveProgram = async (programId) => {
-    const program =
-      genericPrograms.find((p) => p.id === programId) ||
-      clientPrograms.find((p) => p.id === programId);
-    if (!program || !program.rawId) {
-      toast.error("Program not found");
-      return;
-    }
-
-    const willArchive = !program.archived;
-    const updatedStatus = willArchive ? "Inactive" : "Active";
-
-    try {
-      const res = await fetch(`${baseUrl}/programs.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          programId: program.rawId,
-          archived: willArchive ? 1 : 0,
-          status: updatedStatus,
-        }),
-      });
-
-      const result = await res.json();
-
-      if (result.success) {
-        dispatch(
-          toggleArchiveProgram({
-            programId: program.rawId,
-            archived: willArchive ? 1 : 0,
-            status: updatedStatus,
-          })
-        );
-        toast.success(willArchive ? "Program archived!" : "Program restored!");
-      } else {
-        toast.error(`Failed: ${result.message || "Unknown error"}`);
-      }
-    } catch (err) {
-      console.error("Archive error:", err);
-      toast.error("Network error. Try again.");
     }
   };
 
@@ -351,18 +384,6 @@ export default function ProgramsList() {
     <div className="space-y-8">
       <Toaster />
 
-      {/* <AddProgramModal
-        isOpen={isAddModalOpen}
-        onClose={() => {
-          setIsAddModalOpen(false);
-          setEditingProgram(null);
-        }}
-        onAdd={handleAddProgram}
-        onEdit={handleEditProgram}
-        domains={programsData?.domains || []}
-        loading={loading}
-        editingProgram={editingProgram}
-      /> */}
       <AddProgramModal
         isOpen={isAddModalOpen}
         onClose={() => {
@@ -371,9 +392,10 @@ export default function ProgramsList() {
         }}
         onAdd={handleAddProgram}
         onEdit={handleEditProgram}
-        domains={programsData?.domains || []}
-        modules={programsData?.modules || []}
-        loading={loading}
+        domains={[...(programsData?.domains || []), ...(clientProgramsData.domains || [])]}
+        modules={[...(programsData?.modules || []), ...(clientProgramsData.modules || [])]}
+        clients={clients}
+        loading={loading || loadingClientData}
         editingProgram={editingProgram}
       />
 
@@ -385,108 +407,102 @@ export default function ProgramsList() {
         }}
         onConfirm={handleDeleteProgram}
         moduleName={programToDelete?.name || ""}
-        loading={deleting}
+        loading={false}
       />
 
-      <ArchiveConfirmModal
-        isOpen={isArchiveModalOpen}
-        onClose={() => {
-          setIsArchiveModalOpen(false);
-          setProgramToArchive(null);
-        }}
-        onConfirm={() =>
-          programToArchive && handleArchiveProgram(programToArchive.id)
-        }
-        domainName={programToArchive?.name || ""}
-        willArchive={!programToArchive?.archived}
-        loading={archiving}
-      />
-
-      <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-3xl font-bold text-slate-800">Programs</h2>
-          <p className="text-slate-600 mt-1">Manage program master data</p>
+          <p className="text-slate-600">Manage program master data</p>
         </div>
-        <div className="flex flex-row flex-wrap gap-2 sm:items-center sm:justify-end">
+        <div className="flex gap-3">
           <Button
             onClick={() => {
               setEditingProgram(null);
               setIsAddModalOpen(true);
             }}
-            className="bg-teal-600 hover:bg-teal-700 text-white"
-            size="sm"
+            className="bg-teal-600 hover:bg-teal-700"
           >
             <Plus className="h-4 w-4 mr-2" /> Add Program
           </Button>
           <Button
             variant="outline"
-            size="sm"
             onClick={() => setShowArchived(!showArchived)}
-            className="border-slate-300"
           >
             {showArchived ? (
               <>
-                <ArchiveRestore className="h-4 w-4 mr-2" /> Show Active (
-                {activeCount})
+                <ArchiveRestore className="h-4 w-4 mr-2" /> Show Active
               </>
             ) : (
               <>
-                <Archive className="h-4 w-4 mr-2" /> Show Archived (
-                {archivedCount})
+                <Archive className="h-4 w-4 mr-2" /> Show Archived
               </>
             )}
           </Button>
         </div>
       </div>
 
-      <Card className="shadow-lg border-0">
+      <Card>
         <CardContent className="p-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:space-x-4">
+          <div className="flex flex-col lg:flex-row gap-4 items-center">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
               <Input
                 placeholder="Search programs..."
-                className="pl-10 border-slate-200 focus:border-teal-500 focus:ring-teal-500"
+                className="pl-10"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
 
+            {viewMode !== "generic" && (
+              <Select value={selectedClient} onValueChange={setSelectedClient}>
+                <SelectTrigger className="w-full sm:w-64">
+                  <SelectValue placeholder="All clients" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All clients</SelectItem>
+                  {clientNames.map((NAME) => (
+                    <SelectItem key={NAME} value={NAME}>
+                      {NAME}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
             <Select value={viewMode} onValueChange={setViewMode}>
-              <SelectTrigger className="w-full sm:w-64 border-slate-200">
-                <SelectValue placeholder="Select view" />
+              <SelectTrigger className="w-full sm:w-64">
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="generic">
                   <div className="flex items-center gap-2">
-                    <BookOpen className="h-4 w-4 text-teal-600" />
-                    Generic programs
+                    <BookOpen className="h-4 w-4 text-teal-600" /> Generic
+                    programs
                   </div>
                 </SelectItem>
                 <SelectItem value="client">
                   <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-purple-600" />
-                    Client programs
+                    <Users className="h-4 w-4 text-purple-600" /> Client programs
                   </div>
                 </SelectItem>
                 <SelectItem value="all">
                   <div className="flex items-center gap-2">
-                    <div className="flex -space-x-1">
-                      <BookOpen className="h-5 w-5 text-teal-600" />
-                      <Users className="h-5 w-5 text-purple-600" />
-                    </div>
-                    All (Generic + Client)
+                    <BookOpen className="h-4 w-4 text-teal-600" />
+                    <Users className="h-4 w-4 text-purple-600" />
+                    All programs
                   </div>
                 </SelectItem>
               </SelectContent>
             </Select>
 
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-48 border-slate-200">
-                <SelectValue placeholder="Filter by status" />
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="all">All Status</SelectItem>
                 <SelectItem value="Active">Active</SelectItem>
                 <SelectItem value="Inactive">Inactive</SelectItem>
               </SelectContent>
@@ -496,71 +512,66 @@ export default function ProgramsList() {
       </Card>
 
       {loading || loadingClientData ? (
-        <div className="h-64 mx-auto">
-          <p className="text-center animate-pulse text-gray-500">
-            Fetching programs…
-          </p>
-        </div>
+        <div className="text-center py-20 text-gray-500">Loading...</div>
+      ) : displayedPrograms.length === 0 ? (
+        <Card>
+          <CardContent className="py-16 text-center text-slate-500">
+            No programs found.
+          </CardContent>
+        </Card>
       ) : (
-        <Card className="shadow-lg border-0">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-slate-800 flex items-center justify-between">
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <Layers className="h-5 w-5 text-teal-600" />
+                <Layers className="h-5 w-5" />
                 {viewMode === "generic" && "Generic"}
                 {viewMode === "client" && "Client"}
                 {viewMode === "all" && "All"} Programs
               </div>
               <Badge variant="secondary">
                 {displayedPrograms.length} program
-                {displayedPrograms.length !== 1 ? "s" : ""}
+                {displayedPrograms.length !== 1 && "s"}
               </Badge>
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent className="p-1">
             <div className="overflow-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-slate-50 border-b">
-                    <TableHead className="font-semibold text-slate-700">
-                      Module
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-700">
-                      Domain
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-700">
-                      Program Name
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-700">
-                      Type
-                    </TableHead>
-                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                  <TableRow className="bg-slate-50">
+                    <TableHead className="px-2">Module Name</TableHead>
+                    <TableHead className="px-2">Domain Name</TableHead>
+                    <TableHead className="px-2">Program Name</TableHead>
+                    <TableHead className="px-2">Type</TableHead>
+                    <TableHead className="hidden sm:table-cell">
                       Status
                     </TableHead>
-                    <TableHead className="hidden md:table-cell font-semibold text-slate-700">
-                      Description
-                    </TableHead>
-                    <TableHead className="font-semibold text-slate-700 text-right">
-                      Actions
-                    </TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
+
                 <TableBody>
                   {displayedPrograms.map((program) => (
-                    <TableRow
-                      key={program.id}
-                      className="hover:bg-slate-50 transition-colors border-b"
-                    >
-                      <TableCell className="p-4 font-medium text-slate-800">
+                    <TableRow key={program.id} className="hover:bg-slate-50">
+                      <TableCell className="font-medium p-2">
                         {program.moduleName}
                       </TableCell>
-                      <TableCell className="p-4 font-medium text-slate-800">
+
+                      <TableCell className="font-medium p-2">
                         {program.domainName}
                       </TableCell>
-                      <TableCell className="p-4 font-medium text-slate-800">
+
+                      <TableCell className="font-medium p-2">
                         {program.name}
+                        {program.archived && (
+                          <Badge variant="outline" className="ml-2 text-xs">
+                            Archived
+                          </Badge>
+                        )}
                       </TableCell>
-                      <TableCell className="p-4">
+
+                      <TableCell className="p-2">
                         <Badge
                           variant="outline"
                           className={
@@ -569,25 +580,30 @@ export default function ProgramsList() {
                               : "text-purple-700 border-purple-300"
                           }
                         >
-                          {program.type === "generic" ? "Generic" : "Client"}
+                          {program.type === "generic"
+                            ? "Generic"
+                            : program.client_name || "Client"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell p-4">
-                        <Badge className={getStatusColor(program.status)}>
+
+                      <TableCell className="hidden sm:table-cell p-2">
+                        <Badge
+                          className={
+                            program.status === "Active"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-gray-100 text-gray-800"
+                          }
+                        >
                           {program.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="hidden md:table-cell p-4 text-slate-600">
-                        {program.description || "N/A"}
-                      </TableCell>
 
-                      <TableCell className="py-4">
-                        <div className="flex items-center justify-end gap-2">
+                      <TableCell className="text-right p-2">
+                        <div className="flex justify-end gap-2 p-2">
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => openEditModal(program)}
-                            className="border-slate-300 hover:bg-teal-50"
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
@@ -595,68 +611,20 @@ export default function ProgramsList() {
                           <Button
                             variant="outline"
                             size="sm"
+                            className="text-red-600 border-red-300"
                             onClick={() => {
                               setProgramToDelete(program);
                               setIsDeleteModalOpen(true);
                             }}
-                            className="border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400"
-                            disabled={deleting}
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
-
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="border-slate-300"
-                                onClick={() => {
-                                  setProgramToArchive(program);
-                                  setIsArchiveModalOpen(true);
-                                }}
-                              >
-                                <MoreVertical className="h-4 w-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                              <DropdownMenuItem
-                                onClick={() => handleArchiveProgram(program.id)}
-                                className={
-                                  program.archived
-                                    ? "text-green-600"
-                                    : "text-amber-600"
-                                }
-                              >
-                                {program.archived ? (
-                                  <>
-                                    <ArchiveRestore className="h-4 w-4 mr-2" />
-                                    Restore Program
-                                  </>
-                                ) : (
-                                  <>
-                                    <Archive className="h-4 w-4 mr-2" />
-                                    Archive Program
-                                  </>
-                                )}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
                         </div>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
-
-              {displayedPrograms.length === 0 && (
-                <div className="text-center py-12">
-                  <Layers className="h-12 w-12 text-slate-400 mx-auto mb-4" />
-                  <p className="text-slate-500">
-                    No programs match your search.
-                  </p>
-                </div>
-              )}
             </div>
           </CardContent>
         </Card>

@@ -37,11 +37,12 @@ interface AddTargetModalProps {
   onClose: () => void;
   onAdd: (target: any) => Promise<void>;
   onEdit: (target: any) => Promise<void>;
-  programs: any[];
-  domains: any[];
-  modules: any[];
-  allPrompts: any[];
-  loading: boolean;
+  programs?: any[];
+  domains?: any[];
+  modules?: any[];
+  clients?: any[];
+  allPrompts?: any[];
+  loading?: boolean;
   editingTarget?: any | null;
 }
 
@@ -61,17 +62,21 @@ export default function AddTargetModal({
   onClose,
   onAdd,
   onEdit,
-  programs,
-  domains,
-  modules,
-  allPrompts,
-  loading,
-  editingTarget,
+  programs = [],
+  domains = [],
+  modules = [],
+  clients = [],
+  allPrompts = [],
+  loading = false,
+  editingTarget = null,
 }: AddTargetModalProps) {
+  const isEditing = !!editingTarget;
+
   const [name, setName] = useState("");
   const [programId, setProgramId] = useState("");
   const [activityType, setActivityType] = useState("");
   const [status, setStatus] = useState("Active");
+  const [selectedClientValue, setSelectedClientValue] = useState("generic");
 
   const [goalDescription, setGoalDescription] = useState("");
   const [instructions, setInstructions] = useState("");
@@ -83,17 +88,22 @@ export default function AddTargetModal({
   >([]);
   const [newTaskName, setNewTaskName] = useState("");
   const [newTaskSequence, setNewTaskSequence] = useState("1");
+  const [programSearch, setProgramSearch] = useState("");
 
-  const isEditMode = !!editingTarget;
+  // Find selected client
+  const selectedClientObj =
+    selectedClientValue === "generic"
+      ? null
+      : clients.find((c) => String(c.id) === String(selectedClientValue)) || null;
 
   // Pre-fill fields when editing
   useEffect(() => {
-    if (editingTarget) {
+    if (isEditing && editingTarget) {
       setName(editingTarget.name || "");
-      setProgramId(editingTarget.programId || "");
-      setActivityType(editingTarget.activityType || "");
+      setProgramId(editingTarget.programId || editingTarget.program_id || "");
+      setActivityType(editingTarget.activityType || editingTarget.activity_type || "");
       setStatus(editingTarget.status || "Active");
-      setGoalDescription(editingTarget.goalDescription || "");
+      setGoalDescription(editingTarget.goalDescription || editingTarget.goal_description || "");
       setInstructions(editingTarget.instructions || "");
       setTrials(String(editingTarget.trials || 1));
 
@@ -111,10 +121,36 @@ export default function AddTargetModal({
           sequence: t.step_order || t.sequence || 1,
         })) || [];
       setTasks(taskList);
+
+      setSelectedClientValue(editingTarget.client_id ? String(editingTarget.client_id) : "generic");
     } else {
       resetForm();
+      
+      // Check for pending client from client view navigation
+      const pendingClient = localStorage.getItem("pendingClientForMasterData");
+      if (pendingClient && isOpen) {
+        try {
+          const clientInfo = JSON.parse(pendingClient);
+          // Try to find client by ID first, then by name
+          const foundClient = clients.find(
+            (c) => String(c.id) === String(clientInfo.id) || c.name === clientInfo.name
+          );
+          if (foundClient) {
+            setSelectedClientValue(String(foundClient.id ?? foundClient.name));
+          } else if (clientInfo.id) {
+            setSelectedClientValue(String(clientInfo.id));
+          } else if (clientInfo.name) {
+            setSelectedClientValue(clientInfo.name);
+          } else {
+            setSelectedClientValue("generic");
+          }
+        } catch (err) {
+          console.error("Error parsing pending client info:", err);
+          setSelectedClientValue("generic");
+        }
+      }
     }
-  }, [editingTarget]);
+  }, [editingTarget, isEditing, isOpen, clients]);
 
   const handleAddTask = () => {
     if (!newTaskName.trim()) {
@@ -178,7 +214,7 @@ export default function AddTargetModal({
       .filter(Boolean);
 
     try {
-      if (isEditMode) {
+      if (isEditing) {
         // Update existing target
         const updatedTarget = {
           ...editingTarget,
@@ -191,6 +227,9 @@ export default function AddTargetModal({
           trials: Number.parseInt(trials) || 1,
           prompts: promptObjects,
           tasks: activityType === "Task Analysis" ? tasks : [],
+          ...(selectedClientValue !== "generic"
+            ? { client_id: selectedClientObj?.id || selectedClientValue }
+            : {}),
         };
         await onEdit(updatedTarget);
       } else {
@@ -207,6 +246,9 @@ export default function AddTargetModal({
           trials: Number.parseInt(trials) || 1,
           prompts: promptObjects,
           tasks: activityType === "Task Analysis" ? tasks : [],
+          ...(selectedClientValue !== "generic"
+            ? { client_id: selectedClientObj?.id || selectedClientValue }
+            : {}),
         };
         await onAdd(newTarget);
       }
@@ -231,6 +273,8 @@ export default function AddTargetModal({
     setNewTaskName("");
     setNewTaskSequence("1");
     setSelectedPrompts([]);
+    setSelectedClientValue("generic");
+    setProgramSearch("");
   };
 
   const MultiSelectPrompts = () => {
@@ -367,145 +411,174 @@ export default function AddTargetModal({
     );
   };
 
-  const selectedProgram = programs.find((p) => p.id === programId);
-  const selectedDomain = domains.find(
-    (d) => d.id === selectedProgram?.domainId
-  );
-  const selectedModule = modules.find((m) => m.id === selectedDomain?.moduleId);
-
-  // Dynamic Title
-  const renderTitle = () => {
-    if (selectedProgram && selectedDomain && selectedModule) {
-      return (
-        <div className="flex flex-col items-center text-center">
-          <span className="text-lg font-semibold">
-            {isEditMode ? "Edit Target" : "Add Target"}
-          </span>
-
-          <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-            <span className="font-medium">{selectedModule.name}</span>
-            <ChevronRight size={18} className="text-muted-foreground" />
-
-            <span className="font-medium">{selectedDomain.name}</span>
-            <ChevronRight size={18} className="text-muted-foreground" />
-
-            <span className="font-medium">{selectedProgram.name}</span>
-            <ChevronRight size={18} className="text-muted-foreground" />
-
-            <span className="font-medium">{name || "Target"}</span>
-
-            {activityType === "Task Analysis" && (
-              <>
-                <ChevronRight size={18} className="text-muted-foreground" />
-                <span className="font-medium">Task</span>
-              </>
-            )}
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <span className="text-lg font-semibold">
-        {isEditMode ? "Edit Target" : "Add Target"}
-      </span>
-    );
+  // Safe way to get names
+  const getModuleName = (mod) => {
+    return mod?.name || mod?.NAME || "Unnamed Module";
   };
-  const [programSearch, setProgramSearch] = useState("");
-  const selectedProgramObj = programs.find((p) => p.id === programId);
 
-  const selectedProgramLabel = selectedProgramObj
-    ? (() => {
-        const dom = domains.find((d) => d.id === selectedProgramObj.domainId);
-        const mod = modules.find((m) => m.id === dom?.moduleId);
-        return `${mod?.name || "Module"} - ${dom?.name || "Domain"} - ${
-          selectedProgramObj.name
-        }`;
-      })()
-    : "";
-  const sortedFilteredPrograms = [...programs]
-    .filter((p) => p.id && String(p.id).trim() !== "")
+  const getDomainName = (dom) => {
+    return dom?.name || dom?.NAME || "Unnamed Domain";
+  };
+
+  const getProgramName = (prog) => {
+    return prog?.name || prog?.NAME || "Unnamed Program";
+  };
+
+  const selectedProgram = programs.find((p) => String(p.id) === String(programId));
+  const selectedDomain = domains.find(
+    (d) => String(d.id) === String(selectedProgram?.domainId || selectedProgram?.domain_id)
+  );
+  const selectedModule = modules.find((m) => String(m.id) === String(selectedDomain?.moduleId || selectedDomain?.module_id));
+
+  const selectedDomainName = selectedDomain ? getDomainName(selectedDomain) : "";
+  const selectedModuleName = selectedModule ? getModuleName(selectedModule) : "";
+  const selectedProgramName = selectedProgram ? getProgramName(selectedProgram) : "";
+
+  // SAFE filtering + sorting
+  const filteredPrograms = programs
+    .filter((p) => p.id != null && String(p.id).trim() !== "")
+    .filter((p) => {
+      const search = programSearch.toLowerCase();
+      const domain = domains.find((d) => String(d.id) === String(p.domainId || p.domain_id));
+      const module = modules.find((m) => String(m.id) === String(domain?.moduleId || domain?.module_id));
+      const moduleName = module ? getModuleName(module).toLowerCase() : "";
+      const domainName = domain ? getDomainName(domain).toLowerCase() : "";
+      const programName = getProgramName(p).toLowerCase();
+      const label = `${moduleName} - ${domainName} - ${programName}`;
+      return label.includes(search);
+    })
     .sort((a, b) => {
-      const domainA = domains.find((d) => d.id === a.domainId);
-      const domainB = domains.find((d) => d.id === b.domainId);
+      const domainA = domains.find((d) => String(d.id) === String(a.domainId || a.domain_id));
+      const domainB = domains.find((d) => String(d.id) === String(b.domainId || b.domain_id));
+      const moduleA = modules.find((m) => String(m.id) === String(domainA?.moduleId || domainA?.module_id));
+      const moduleB = modules.find((m) => String(m.id) === String(domainB?.moduleId || domainB?.module_id));
 
-      const moduleA =
-        modules.find((m) => m.id === domainA?.moduleId)?.name || "";
-      const moduleB =
-        modules.find((m) => m.id === domainB?.moduleId)?.name || "";
-
-      const moduleCompare = moduleA.localeCompare(moduleB);
+      const moduleCompare = getModuleName(moduleA).localeCompare(getModuleName(moduleB));
       if (moduleCompare !== 0) return moduleCompare;
 
-      const domainCompare = (domainA?.name || "").localeCompare(
-        domainB?.name || ""
-      );
+      const domainCompare = getDomainName(domainA).localeCompare(getDomainName(domainB));
       if (domainCompare !== 0) return domainCompare;
 
-      return a.name.localeCompare(b.name);
-    })
-    .filter((p) => {
-      const dom = domains.find((d) => d.id === p.domainId);
-      const mod = modules.find((m) => m.id === dom?.moduleId);
-      const label = `${mod?.name || ""} - ${dom?.name || ""} - ${p.name}`;
-      return label.toLowerCase().includes(programSearch.toLowerCase());
+      return getProgramName(a).localeCompare(getProgramName(b));
     });
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md lg:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex flex-col items-center text-center capitalize">
-            {renderTitle()}
+          <DialogTitle className="text-center">
+            <div className="text-lg font-semibold">
+              {isEditing ? "Edit Target" : "Add New Target"}
+            </div>
+            {selectedModule && selectedDomain && selectedProgram && (
+              <div className="flex items-center justify-center gap-2 mt-3 text-sm text-muted-foreground">
+                <span className="font-medium">{selectedModuleName}</span>
+                <ChevronRight className="h-4 w-4" />
+                <span className="font-medium">{selectedDomainName}</span>
+                <ChevronRight className="h-4 w-4" />
+                <span className="font-medium">{selectedProgramName}</span>
+                {name && (
+                  <>
+                    <ChevronRight className="h-4 w-4" />
+                    <span className="font-medium text-teal-600 truncate max-w-[200px]">
+                      {name}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-2 gap-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Client Selector */}
+          <div className="space-y-2">
+            <Label>Assign to Client</Label>
+            <Select
+              value={selectedClientValue === "generic" ? "generic" : selectedClientValue}
+              onValueChange={(val) => setSelectedClientValue(val === "generic" ? "generic" : val)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Generic (no client)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="generic">Generic (no client)</SelectItem>
+                {clients
+                  .filter((client) => client.id != null && String(client.id).trim() !== "")
+                  .map((client) => {
+                    const displayName =
+                      `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
+                      client.name ||
+                      "Unnamed Client";
+                    return (
+                      <SelectItem key={client.id} value={String(client.id)}>
+                        {displayName}
+                      </SelectItem>
+                    );
+                  })}
+              </SelectContent>
+            </Select>
+
+            {selectedClientObj && (
+              <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded-md text-sm">
+                <div className="font-medium text-purple-900">
+                  {selectedClientObj.first_name || ""} {selectedClientObj.last_name || ""}
+                </div>
+                {selectedClientObj.email && (
+                  <div className="text-purple-700">Email: {selectedClientObj.email}</div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Select Program */}
           <div className="space-y-2">
-            <Label htmlFor="program-select">Select Program</Label>
-
+            <Label>Program *</Label>
             <Select
               value={programId}
               onValueChange={(value) => {
                 setProgramId(value);
-                setProgramSearch(""); // reset search when selecting
+                setProgramSearch("");
               }}
               disabled={loading}
             >
-              <SelectTrigger id="program-select">
+              <SelectTrigger>
                 <SelectValue placeholder="Choose a program">
-                  {selectedProgramLabel}
+                  {selectedModuleName && selectedDomainName && selectedProgramName
+                    ? `${selectedModuleName} - ${selectedDomainName} - ${selectedProgramName}`
+                    : "Select a program"}
                 </SelectValue>
               </SelectTrigger>
 
               <SelectContent>
-                {/* 🔍 Search Input */}
-                <div className="px-2 py-2 sticky top-0 bg-white z-10">
+                <div className="p-2 sticky top-0 bg-white border-b z-10">
                   <Input
                     placeholder="Search programs..."
                     value={programSearch}
                     onChange={(e) => setProgramSearch(e.target.value)}
-                    onKeyDown={(e) => e.stopPropagation()} // IMPORTANT FIX
                     className="h-8"
+                    onClick={(e) => e.stopPropagation()}
                   />
                 </div>
 
-                {/* List */}
-                {sortedFilteredPrograms.length > 0 ? (
-                  sortedFilteredPrograms.map((program) => {
-                    const dom = domains.find((d) => d.id === program.domainId);
-                    const mod = modules.find((m) => m.id === dom?.moduleId);
+                {filteredPrograms.length === 0 ? (
+                  <div className="p-4 text-center text-muted-foreground">
+                    No programs found
+                  </div>
+                ) : (
+                  filteredPrograms.map((program) => {
+                    const dom = domains.find((d) => String(d.id) === String(program.domainId || program.domain_id));
+                    const mod = modules.find((m) => String(m.id) === String(dom?.moduleId || dom?.module_id));
+                    const modName = mod ? getModuleName(mod) : "";
+                    const domName = dom ? getDomainName(dom) : "";
+                    const progName = getProgramName(program);
+                    const label = `${modName} - ${domName} - ${progName}`;
 
                     return (
-                      <SelectItem key={program.id} value={program.id}>
-                        {mod?.name} - {dom?.name} - {program.name}
+                      <SelectItem key={program.id} value={String(program.id)}>
+                        {label}
                       </SelectItem>
                     );
                   })
-                ) : (
-                  <div className="py-2 px-3 text-sm text-muted-foreground">
-                    No programs found
-                  </div>
                 )}
               </SelectContent>
             </Select>
@@ -650,38 +723,28 @@ export default function AddTargetModal({
             </Card>
           )}
 
-          {/* Status */}
-          <div className="space-y-2">
-            <Label htmlFor="status">Status</Label>
-            <Select value={status} onValueChange={setStatus} disabled={loading}>
-              <SelectTrigger id="status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Active">Active</SelectItem>
-                <SelectItem value="Inactive">Inactive</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Status on edit */}
+          {isEditing && (
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Active">Active</SelectItem>
+                  <SelectItem value="Inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
-          {/* Buttons */}
-          <div className="flex gap-2 justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={loading}
-            >
+          <div className="flex justify-end gap-3 pt-4">
+            <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
-              {loading
-                ? isEditMode
-                  ? "Updating..."
-                  : "Adding..."
-                : isEditMode
-                ? "Save Changes"
-                : "Add Target"}
+            <Button type="submit" disabled={loading} className="bg-teal-600 hover:bg-teal-700">
+              {loading ? "Saving..." : isEditing ? "Update Target" : "Add Target"}
             </Button>
           </div>
         </form>

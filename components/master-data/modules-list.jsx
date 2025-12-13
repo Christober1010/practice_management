@@ -124,6 +124,29 @@ export default function ModulesList() {
     }
   }, [viewMode]);
 
+  // Check for pending client from client view navigation
+  useEffect(() => {
+    const pendingClient = localStorage.getItem("pendingClientForMasterData");
+    const pendingAction = localStorage.getItem("pendingAction");
+    const pendingType = localStorage.getItem("pendingMasterDataType");
+    
+    if (pendingClient && pendingAction === "add" && pendingType === "modules") {
+      try {
+        // Just open the add modal - client will be pre-selected in the modal
+        setIsAddModalOpen(true);
+        // Clear localStorage
+        localStorage.removeItem("pendingClientForMasterData");
+        localStorage.removeItem("pendingAction");
+        localStorage.removeItem("pendingMasterDataType");
+      } catch (err) {
+        console.error("Error parsing pending client info:", err);
+        localStorage.removeItem("pendingClientForMasterData");
+        localStorage.removeItem("pendingAction");
+        localStorage.removeItem("pendingMasterDataType");
+      }
+    }
+  }, []);
+
   // Map generic modules from redux to a common module shape
   const genericModules = useMemo(() => {
     if (!programsData?.modules) return [];
@@ -244,9 +267,10 @@ export default function ModulesList() {
         const result = await response.json();
         if (result.success) {
           toast.success("Client module added successfully");
-          // refresh client modules & generic store
-          fetchClientSpecificData();
           dispatch(fetchPrograms());
+          if (viewMode === "client" || viewMode === "all") {
+            fetchClientSpecificData();
+          }
           setIsAddModalOpen(false);
         } else {
           toast.error(result.message || "Failed to add client module");
@@ -270,6 +294,9 @@ export default function ModulesList() {
         if (result.success) {
           toast.success("Module added successfully");
           dispatch(fetchPrograms());
+          if (viewMode === "client" || viewMode === "all") {
+            fetchClientSpecificData();
+          }
           setIsAddModalOpen(false);
         } else {
           toast.error(result.message || "Failed to add module");

@@ -109,39 +109,39 @@ function handleGet($conn)
         $activities[] = $row;
     }
 
-    // Fetch prompts for all targets
-    $promptsByTarget = [];
-    if (!empty($activities)) {
-        $targetIds = array_map(function($act) { return $act['id']; }, $activities);
-        $escapedIds = array_map([$conn, 'real_escape_string'], $targetIds);
-        $idsList = "'" . implode("','", $escapedIds) . "'";
+    // // Fetch prompts for all targets
+    // $promptsByTarget = [];
+    // if (!empty($activities)) {
+    //     $targetIds = array_map(function($act) { return $act['id']; }, $activities);
+    //     $escapedIds = array_map([$conn, 'real_escape_string'], $targetIds);
+    //     $idsList = "'" . implode("','", $escapedIds) . "'";
 
-        $promptQuery = "
-            SELECT tp.target_id, mp.id, mp.prompt_name, mp.max_score, 
-                   mp.score_as_independent, mp.dtt, mp.ta, mp.maintenance
-            FROM client_target_prompts tp
-            JOIN master_prompts mp ON tp.prompt_id = mp.id
-            WHERE tp.target_id IN ($idsList)
-            ORDER BY tp.target_id, tp.prompt_order
-        ";
-        $promptResult = $conn->query($promptQuery);
-        while ($p = $promptResult->fetch_assoc()) {
-            $promptsByTarget[$p['target_id']][] = [
-                'id' => $p['id'],
-                'prompt_name' => $p['prompt_name'],
-                'max_score' => $p['max_score'],
-                'score_as_independent' => $p['score_as_independent'],
-                'dtt' => $p['dtt'],
-                'ta' => $p['ta'],
-                'maintenance' => $p['maintenance']
-            ];
-        }
-    }
+    //     $promptQuery = "
+    //         SELECT tp.target_id, mp.id, mp.prompt_name, mp.max_score, 
+    //                mp.score_as_independent, mp.dtt, mp.ta, mp.maintenance
+    //         FROM client_target_prompts tp
+    //         JOIN master_prompts mp ON tp.prompt_id = mp.id
+    //         WHERE tp.target_id IN ($idsList)
+    //         ORDER BY tp.target_id, tp.prompt_order
+    //     ";
+    //     $promptResult = $conn->query($promptQuery);
+    //     while ($p = $promptResult->fetch_assoc()) {
+    //         $promptsByTarget[$p['target_id']][] = [
+    //             'id' => $p['id'],
+    //             'prompt_name' => $p['prompt_name'],
+    //             'max_score' => $p['max_score'],
+    //             'score_as_independent' => $p['score_as_independent'],
+    //             'dtt' => $p['dtt'],
+    //             'ta' => $p['ta'],
+    //             'maintenance' => $p['maintenance']
+    //         ];
+    //     }
+    // }
 
-    // Add prompts to activities
-    foreach ($activities as &$activity) {
-        $activity['prompts'] = $promptsByTarget[$activity['id']] ?? [];
-    }
+    // // Add prompts to activities
+    // foreach ($activities as &$activity) {
+    //     $activity['prompts'] = $promptsByTarget[$activity['id']] ?? [];
+    // }
 
     echo json_encode([
         'success' => true,
@@ -296,9 +296,14 @@ function handlePost($conn, $input)
                     throw new Exception("Error saving activity: " . $conn->error);
                 }
 
-                // Save prompt associations
-                if (isset($activity['prompts']) && is_array($activity['prompts'])) {
-                    saveTargetPrompts($conn, $id, $activity['prompts']);
+                // Save prompt associations (skip if table doesn't exist)
+                if (isset($activity['prompts']) && is_array($activity['prompts']) && !empty($activity['prompts'])) {
+                    try {
+                        saveTargetPrompts($conn, $id, $activity['prompts']);
+                    } catch (Exception $promptErr) {
+                        // Log but don't fail the entire operation if prompt saving fails
+                        error_log("Warning: Failed to save prompts for target $id: " . $promptErr->getMessage());
+                    }
                 }
             }
         }
@@ -314,30 +319,62 @@ function handlePost($conn, $input)
 
 function saveTargetPrompts($conn, $targetId, $promptIds)
 {
-    // Delete existing associations
-    $stmt = $conn->prepare("DELETE FROM client_target_prompts WHERE target_id = ?");
-    $stmt->bind_param("s", $targetId);
-    $stmt->execute();
-    $stmt->close();
+    // Check if table exists first
+    $tableCheck = $conn->query("SHOW TABLES LIKE 'client_target_prompts'");
+    if (!$tableCheck || $tableCheck->num_rows === 0) {
+        // Table doesn't exist, skip prompt saving
+        return;
+    }
+    
+    // Check if column exists
+    $columnCheck = $conn->query("SHOW COLUMNS FROM client_target_prompts LIKE 'prompt_id'");
+    if (!$columnCheck || $columnCheck->num_rows === 0) {
+        // Column doesn't exist, skip prompt saving
+        return;
+    }
 
     if (empty($promptIds)) {
         return;
     }
 
-    // Insert new associations
-    $stmt = $conn->prepare(
-        "INSERT INTO client_target_prompts (id, target_id, prompt_id, prompt_order) VALUES (?, ?, ?, ?)"
-    );
+    try {
+        // Delete existing associations
+        $stmt = $conn->prepare("DELETE FROM client_target_prompts WHERE target_id = ?");
+        if ($stmt) {
+            $stmt->bind_param("s", $targetId);
+            $stmt->execute();
+            $stmt->close();
+        }
 
-    foreach ($promptIds as $idx => $prompt) {
-        $assocId = generateId();
-        $promptId = is_array($prompt) ? $prompt['id'] : $prompt;
-        $order = $idx;
+        // Insert new associations
+        $stmt = $conn->prepare(
+            "INSERT INTO client_target_prompts (id, target_id, prompt_id, prompt_order) VALUES (?, ?, ?, ?)"
+        );
 
-        $stmt->bind_param("sssi", $assocId, $targetId, $promptId, $order);
-        $stmt->execute();
+        if (!$stmt) {
+            throw new Exception("Failed to prepare statement: " . $conn->error);
+        }
+
+        foreach ($promptIds as $idx => $prompt) {
+            $assocId = generateId();
+            $promptId = is_array($prompt) ? ($prompt['id'] ?? null) : $prompt;
+            
+            if (!$promptId) {
+                continue; // Skip if no valid prompt ID
+            }
+            
+            $order = $idx;
+
+            $stmt->bind_param("sssi", $assocId, $targetId, $promptId, $order);
+            if (!$stmt->execute()) {
+                throw new Exception("Failed to insert prompt association: " . $stmt->error);
+            }
+        }
+        $stmt->close();
+    } catch (Exception $e) {
+        // Re-throw so caller can handle it
+        throw $e;
     }
-    $stmt->close();
 }
 
 function handlePut($conn, $input)
@@ -433,8 +470,13 @@ function handlePut($conn, $input)
                 throw new Exception("Error updating activity: " . $conn->error);
             }
 
-            if (isset($input['prompts'])) {
-                saveTargetPrompts($conn, $activityId, $input['prompts']);
+            if (isset($input['prompts']) && is_array($input['prompts']) && !empty($input['prompts'])) {
+                try {
+                    saveTargetPrompts($conn, $activityId, $input['prompts']);
+                } catch (Exception $promptErr) {
+                    // Log but don't fail the entire operation if prompt saving fails
+                    error_log("Warning: Failed to save prompts for target $activityId: " . $promptErr->getMessage());
+                }
             }
 
             $conn->commit();
@@ -502,8 +544,11 @@ function handleDelete($conn, $input)
         try {
             $id = $conn->real_escape_string($input['activityId']);
             
-            // Delete prompt associations
-            $conn->query("DELETE FROM client_target_prompts WHERE target_id = '$id'");
+            // Delete prompt associations (only if table exists)
+            $tableCheck = $conn->query("SHOW TABLES LIKE 'client_target_prompts'");
+            if ($tableCheck && $tableCheck->num_rows > 0) {
+                $conn->query("DELETE FROM client_target_prompts WHERE target_id = '$id'");
+            }
             
             // Delete activity
             $query = "DELETE FROM client_targets WHERE id = '$id' AND client_id = '$clientId'";

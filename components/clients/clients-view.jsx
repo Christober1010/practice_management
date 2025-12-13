@@ -476,25 +476,20 @@ export default function ClientsView() {
   };
 
   const handleMasterDataSelect = async (itemId, client) => {
-    setSelectedClient(client);
-    await loadClientPrograms(client.id);
-    switch (itemId) {
-      case "modules":
-        setIsClientModulesOpen(true);
-        break;
-      case "domains":
-        setIsClientDomainsOpen(true);
-        break;
-      case "programs":
-        await loadClientPrograms(client.id);
-        setIsClientProgramsOpen(true);
-        break;
-      case "targets":
-        setIsClientTargetsOpen(true);
-        break;
-      default:
-        break;
-    }
+    // Store client info in localStorage for the master data component to pick up
+    const clientInfo = {
+      id: client.id,
+      name: `${client.first_name || ""} ${client.last_name || ""}`.trim() || client.name || "Unknown Client",
+      first_name: client.first_name,
+      last_name: client.last_name,
+    };
+    localStorage.setItem("pendingClientForMasterData", JSON.stringify(clientInfo));
+    localStorage.setItem("pendingAction", "add"); // Indicate we want to add new item
+    localStorage.setItem("pendingMasterDataType", itemId); // Store which type (modules/domains/programs/targets)
+    
+    // Navigate to the appropriate master data view using custom event
+    localStorage.setItem("currentView", itemId);
+    window.dispatchEvent(new CustomEvent("navigateToView", { detail: { view: itemId } }));
   };
 
   const handleAddProgram = async (payload) => {

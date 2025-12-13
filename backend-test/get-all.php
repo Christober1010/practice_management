@@ -21,17 +21,16 @@ try {
     }
     $conn->set_charset('utf8mb4');
 
-    // First: Get the actual column name for client name from clients table
-    $nameColumn = 'client_name'; // default guess
-
+    // --------- CLIENT NAME COLUMN RESOLUTION ----------
+    $nameColumn = 'client_name'; // default
     $colsResult = $conn->query("SHOW COLUMNS FROM clients LIKE '%name%'");
     if ($colsResult && $colsResult->num_rows > 0) {
         $row = $colsResult->fetch_assoc();
-        $nameColumn = $row['Field']; // This will be: client_name, name, full_name, etc.
+        $nameColumn = $row['Field'];
     }
 
-    // Now build the query safely
-    $sql = "
+    // --------- MODULES ----------
+    $sqlModules = "
         SELECT 
             cm.id,
             cm.client_id,
@@ -47,42 +46,146 @@ try {
         ORDER BY client_display_name, cm.NAME
     ";
 
-    $result = $conn->query($sql);
-    if (!$result) {
-        throw new Exception("Query failed: " . $conn->error);
+    $resultModules = $conn->query($sqlModules);
+    if (!$resultModules) {
+        throw new Exception('Modules query failed: ' . $conn->error);
     }
 
     $modules = [];
-    $clients = [];
-
-    while ($row = $result->fetch_assoc()) {
-        $clientName = $row['client_display_name'];
-
-        // Add client to list (unique)
-        if (!in_array($clientName, $clients, true)) {
-            $clients[] = $clientName;
-        }
-
+    while ($row = $resultModules->fetch_assoc()) {
         $modules[] = [
-            'id'               => $row['id'],
-            'client_id'        => $row['client_id'],
-            'name'             => $row['NAME'] ?? 'Unnamed Module',
-            'description'      => $row['description'] ?? '',
-            'status'           => $row['STATUS'] ?? 'Active',
-            'archived'         => (bool)$row['archived'],
-            'client_name'      => $clientName,
-            'created_at'       => $row['created_at'],
-            'updated_at'       => $row['updated_at']
+            'id'          => $row['id'],
+            'client_id'   => $row['client_id'],
+            'name'        => $row['NAME'] ?? 'Unnamed Module',
+            'description' => $row['description'] ?? '',
+            'status'      => $row['STATUS'] ?? 'Active',
+            'archived'    => (bool)$row['archived'],
+            'client_name' => $row['client_display_name'],
+            'created_at'  => $row['created_at'],
+            'updated_at'  => $row['updated_at']
         ];
     }
 
-    // Sort clients alphabetically
-    sort($clients);
+    // --------- DOMAINS ----------
+    $sqlDomains = "
+        SELECT 
+            d.id,
+            d.client_id,
+            d.module_id,
+            d.NAME,
+            d.description,
+            d.STATUS,
+            d.archived,
+            d.created_at,
+            d.updated_at
+        FROM client_domains d
+        ORDER BY d.NAME
+    ";
+
+    $resultDomains = $conn->query($sqlDomains);
+    if (!$resultDomains) {
+        throw new Exception('Domains query failed: ' . $conn->error);
+    }
+
+    $domains = [];
+    while ($row = $resultDomains->fetch_assoc()) {
+        $domains[] = [
+            'id'          => $row['id'],
+            'client_id'   => $row['client_id'],
+            'module_id'   => $row['module_id'],
+            'name'        => $row['NAME'] ?? 'Unnamed Domain',
+            'description' => $row['description'] ?? '',
+            'status'      => $row['STATUS'] ?? 'Active',
+            'archived'    => (bool)$row['archived'],
+            'created_at'  => $row['created_at'],
+            'updated_at'  => $row['updated_at']
+        ];
+    }
+
+    // --------- PROGRAMS ----------
+    $sqlPrograms = "
+        SELECT 
+            p.id,
+            p.client_id,
+            p.domain_id,
+            p.NAME,
+            p.description,
+            p.STATUS,
+            p.archived,
+            p.created_at,
+            p.updated_at
+        FROM client_programs p
+        ORDER BY p.NAME
+    ";
+
+    $resultPrograms = $conn->query($sqlPrograms);
+    if (!$resultPrograms) {
+        throw new Exception('Programs query failed: ' . $conn->error);
+    }
+
+    $programs = [];
+    while ($row = $resultPrograms->fetch_assoc()) {
+        $programs[] = [
+            'id'          => $row['id'],
+            'client_id'   => $row['client_id'],
+            'domain_id'   => $row['domain_id'],
+            'name'        => $row['NAME'] ?? 'Unnamed Program',
+            'description' => $row['description'] ?? '',
+            'status'      => $row['STATUS'] ?? 'Active',
+            'archived'    => (bool)$row['archived'],
+            'created_at'  => $row['created_at'],
+            'updated_at'  => $row['updated_at']
+        ];
+    }
+
+    // --------- TARGETS ----------
+    $sqlTargets = "
+        SELECT 
+            t.id,
+            t.client_id,
+            t.program_id,
+            t.NAME,
+            t.goal_description,
+            t.trials,
+            t.activity_type,
+            t.instructions,
+            t.STATUS,
+            t.archived,
+            t.created_at,
+            t.updated_at
+        FROM client_targets t
+        ORDER BY t.NAME
+    ";
+
+    $resultTargets = $conn->query($sqlTargets);
+    if (!$resultTargets) {
+        throw new Exception('Targets query failed: ' . $conn->error);
+    }
+
+    $targets = [];
+    while ($row = $resultTargets->fetch_assoc()) {
+        $targets[] = [
+            'id'              => $row['id'],
+            'client_id'       => $row['client_id'],
+            'program_id'      => $row['program_id'],
+            'name'            => $row['NAME'] ?? 'Unnamed Target',
+            'goal_description'=> $row['goal_description'] ?? '',
+            'trials'          => (int)$row['trials'],
+            'activity_type'   => $row['activity_type'],
+            'instructions'    => $row['instructions'],
+            'status'          => $row['STATUS'] ?? 'Active',
+            'archived'        => (bool)$row['archived'],
+            'created_at'      => $row['created_at'],
+            'updated_at'      => $row['updated_at']
+        ];
+    }
 
     echo json_encode([
-        'success' => true,
-        'modules' => $modules,
-        'clients' => $clients
+        'success'  => true,
+        'modules'  => $modules,
+        'domains'  => $domains,
+        'programs' => $programs,
+        'targets'  => $targets
     ]);
 
 } catch (Exception $e) {

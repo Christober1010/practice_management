@@ -88,9 +88,34 @@ export default function AddModuleModal({
       setDescription("");
       setStatus("Active");
       setArchived(0);
-      setSelectedClientValue("generic");
+      
+      // Check for pending client from client view navigation
+      const pendingClient = localStorage.getItem("pendingClientForMasterData");
+      if (pendingClient && isOpen) {
+        try {
+          const clientInfo = JSON.parse(pendingClient);
+          // Try to find client by ID first, then by name
+          const foundClient = clients.find(
+            (c) => String(c.id) === String(clientInfo.id) || c.name === clientInfo.name
+          );
+          if (foundClient) {
+            setSelectedClientValue(foundClient.id ?? foundClient.name);
+          } else if (clientInfo.id) {
+            setSelectedClientValue(clientInfo.id);
+          } else if (clientInfo.name) {
+            setSelectedClientValue(clientInfo.name);
+          } else {
+            setSelectedClientValue("generic");
+          }
+        } catch (err) {
+          console.error("Error parsing pending client info:", err);
+          setSelectedClientValue("generic");
+        }
+      } else {
+        setSelectedClientValue("generic");
+      }
     }
-  }, [editingModule, isOpen]);
+  }, [editingModule, isOpen, clients]);
 
   const buildModulePayload = (): Module => {
     return {
@@ -131,7 +156,7 @@ export default function AddModuleModal({
           modules: [
             {
               id: modulePayload.id,
-              mame: modulePayload.name,
+              name: modulePayload.name,
               description: modulePayload.description,
               status: modulePayload.status,
               archived: modulePayload.archived ? 1 : 0,

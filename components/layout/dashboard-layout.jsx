@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Header from "./header";
 import AdminDashboard from "@/components/dashboards/admin-dashboard";
 import BCBADashboard from "@/components/dashboards/bcba-dashboard";
@@ -25,6 +25,28 @@ import ExcelToTable from "../reports/ExcelToTable";
 
 export default function DashboardLayout({ userRole, onLogout }) {
   const [currentView, setCurrentView] = useState("dashboard");
+
+  // Listen for navigation events from other components
+  useEffect(() => {
+    const handleNavigate = (event) => {
+      const view = event.detail?.view || localStorage.getItem("currentView");
+      if (view) {
+        setCurrentView(view);
+      }
+    };
+
+    window.addEventListener("navigateToView", handleNavigate);
+    
+    // Also check localStorage on mount for pending navigation
+    const savedView = localStorage.getItem("currentView");
+    if (savedView) {
+      setCurrentView(savedView);
+    }
+
+    return () => {
+      window.removeEventListener("navigateToView", handleNavigate);
+    };
+  }, []);
 
   const renderContent = () => {
     switch (currentView) {

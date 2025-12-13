@@ -1,7 +1,6 @@
 "use client";
 
-import type React from "react";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -22,14 +21,19 @@ import {
 import { ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
 
+function generateId() {
+  return `program_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
 interface AddProgramModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdd: (program: any) => Promise<void>;
   onEdit: (program: any) => Promise<void>;
-  domains: any[];
-  modules: any[];
-  loading: boolean;
+  domains?: any[];
+  modules?: any[];
+  clients?: any[];
+  loading?: boolean;
   editingProgram?: any | null;
 }
 
@@ -38,128 +42,169 @@ export default function AddProgramModal({
   onClose,
   onAdd,
   onEdit,
-  domains,
-  modules,
-  loading,
-  editingProgram,
+  domains = [],
+  modules = [],
+  clients = [],
+  loading = false,
+  editingProgram = null,
 }: AddProgramModalProps) {
+  const isEditing = !!editingProgram;
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [domainId, setDomainId] = useState("");
-  const isEditMode = !!editingProgram;
+  const [status, setStatus] = useState("Active");
+  const [selectedClientValue, setSelectedClientValue] = useState("generic");
+  const [domainSearch, setDomainSearch] = useState("");
 
-  // 🔹 Pre-fill fields when editing
+  // Safe way to get module/domain name
+  const getModuleName = (mod) => {
+    return mod?.name || mod?.NAME || "Unnamed Module";
+  };
+
+  const getDomainName = (dom) => {
+    return dom?.name || dom?.NAME || "Unnamed Domain";
+  };
+
+  // Find selected client
+  const selectedClientObj =
+    selectedClientValue === "generic"
+      ? null
+      : clients.find((c) => String(c.id) === String(selectedClientValue)) || null;
+
+  // Reset / fill form
   useEffect(() => {
-    if (editingProgram) {
+    if (isEditing && editingProgram) {
       setName(editingProgram.name || "");
       setDescription(editingProgram.description || "");
-      setDomainId(
-        editingProgram.domainId ? String(editingProgram.domainId) : ""
-      );
+      setStatus(editingProgram.status || "Active");
+
+      const domId = editingProgram.domainId || editingProgram.domain_id || "";
+      setDomainId(String(domId));
+
+      setSelectedClientValue(editingProgram.client_id ? String(editingProgram.client_id) : "generic");
     } else {
       setName("");
       setDescription("");
       setDomainId("");
+      setStatus("Active");
+      setDomainSearch("");
+      
+      // Check for pending client from client view navigation
+      const pendingClient = localStorage.getItem("pendingClientForMasterData");
+      if (pendingClient && isOpen) {
+        try {
+          const clientInfo = JSON.parse(pendingClient);
+          // Try to find client by ID first, then by name
+          const foundClient = clients.find(
+            (c) => String(c.id) === String(clientInfo.id) || c.name === clientInfo.name
+          );
+          if (foundClient) {
+            setSelectedClientValue(String(foundClient.id ?? foundClient.name));
+          } else if (clientInfo.id) {
+            setSelectedClientValue(String(clientInfo.id));
+          } else if (clientInfo.name) {
+            setSelectedClientValue(clientInfo.name);
+          } else {
+            setSelectedClientValue("generic");
+          }
+        } catch (err) {
+          console.error("Error parsing pending client info:", err);
+          setSelectedClientValue("generic");
+        }
+      } else {
+        setSelectedClientValue("generic");
+      }
     }
-  }, [editingProgram]);
+  }, [editingProgram, isEditing, isOpen, clients]);
 
-  // 🔹 Derive selected domain/module
-  const selectedDomain = domains.find((d) => String(d.id) === domainId);
-  const selectedModule = modules.find((m) => m.id === selectedDomain?.moduleId);
+  const selectedDomain = domains.find((d) => String(d.id) === String(domainId));
+  const selectedModule = modules.find(
+    (m) => String(m.id) === String(selectedDomain?.moduleId || selectedDomain?.module_id)
+  );
+  const selectedDomainName = selectedDomain ? getDomainName(selectedDomain) : "";
+  const selectedModuleName = selectedModule ? getModuleName(selectedModule) : "";
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // SAFE filtering + sorting
+  const filteredDomains = domains
+    .filter((d) => d.id != null && String(d.id).trim() !== "")
+    .filter((d) => {
+      const search = domainSearch.toLowerCase();
+      const moduleName = getModuleName(
+        modules.find((m) => String(m.id) === String(d.moduleId || d.module_id))
+      ).toLowerCase();
+      const domainName = getDomainName(d).toLowerCase();
+      const label = `${moduleName} - ${domainName}`;
+      return label.includes(search);
+    })
+    .sort((a, b) => {
+      const moduleA = getModuleName(
+        modules.find((m) => String(m.id) === String(a.moduleId || a.module_id))
+      );
+      const moduleB = getModuleName(
+        modules.find((m) => String(m.id) === String(b.moduleId || b.module_id))
+      );
+      const moduleCompare = moduleA.localeCompare(moduleB);
+      if (moduleCompare !== 0) return moduleCompare;
+      return getDomainName(a).localeCompare(getDomainName(b));
+    });
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!name.trim() || !domainId) {
-      toast.error("Program name and domain are required");
+    if (!name.trim()) {
+      toast.error("Program name is required");
+      return;
+    }
+    if (!domainId) {
+      toast.error("Please select a domain");
       return;
     }
 
-    try {
-      if (isEditMode) {
-        // 🔸 Update existing program
-        const updatedProgram = {
-          ...editingProgram,
-          name: name.trim(),
-          description: description.trim(),
-          domainId: domainId,
-        };
-        await onEdit(updatedProgram);
-        // toast.success("Program updated successfully!");
-      } else {
-        // 🔹 Add new program
-        const newProgram = {
-          id: `program_${Date.now()}`,
-          domainId,
-          name: name.trim(),
-          description: description.trim(),
-          status: "Active",
-          archived: 0,
-        };
-        await onAdd(newProgram);
-        // toast.success("Program added successfully!");
-      }
+    const payload = {
+      id: editingProgram?.id || generateId(),
+      name: name.trim(),
+      description: description.trim(),
+      domainId: domainId,
+      status: status,
+      archived: 0,
+      ...(selectedClientValue !== "generic"
+        ? { client_id: selectedClientObj?.id || selectedClientValue }
+        : {}),
+    };
 
-      // Reset and close modal
-      setName("");
-      setDescription("");
-      setDomainId("");
+    try {
+      if (isEditing) {
+        await onEdit(payload);
+      } else {
+        await onAdd(payload);
+      }
       onClose();
-    } catch (error) {
-      console.error("Error saving program:", error);
+    } catch (err) {
+      console.error(err);
       toast.error("Failed to save program");
     }
   };
-  const [domainSearch, setDomainSearch] = useState("");
-  const selectedDomainObj = domains.find(
-    (d) => String(d.id) === String(domainId)
-  );
-
-  const selectedDomainLabel = selectedDomainObj
-    ? `${
-        modules.find((m) => m.id === selectedDomainObj.moduleId)?.name ||
-        "Module"
-      } - ${selectedDomainObj.name}`
-    : "";
-  const sortedFilteredDomains = [...domains]
-    .filter((d) => d.id && String(d.id).trim() !== "")
-    .sort((a, b) => {
-      const moduleA = modules.find((m) => m.id === a.moduleId)?.name || "";
-      const moduleB = modules.find((m) => m.id === b.moduleId)?.name || "";
-
-      // 🔹 Step 1: Compare modules
-      const moduleCompare = moduleA.localeCompare(moduleB);
-      if (moduleCompare !== 0) return moduleCompare;
-
-      // 🔹 Step 2: If same module → sort by domain name
-      return a.name.localeCompare(b.name);
-    })
-    .filter((d) => {
-      const label = `${
-        modules.find((m) => m.id === d.moduleId)?.name || ""
-      } - ${d.name}`;
-      return label.toLowerCase().includes(domainSearch.toLowerCase());
-    });
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-xl">
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          {/* ---- Dynamic Title ---- */}
-          <DialogTitle className="flex flex-col items-center text-center capitalize">
-            <span className="text-lg font-semibold">
-              {isEditMode ? "Edit Program" : "Add Program"}
-            </span>
-
+          <DialogTitle className="text-center">
+            <div className="text-lg font-semibold">
+              {isEditing ? "Edit Program" : "Add New Program"}
+            </div>
             {selectedModule && selectedDomain && (
-              <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
-                <span className="font-medium">{selectedModule.name}</span>
-                <ChevronRight size={18} className="text-muted-foreground" />
-                <span className="font-medium">{selectedDomain.name}</span>
+              <div className="flex items-center justify-center gap-2 mt-3 text-sm text-muted-foreground">
+                <span className="font-medium">{selectedModuleName}</span>
+                <ChevronRight className="h-4 w-4" />
+                <span className="font-medium">{selectedDomainName}</span>
                 {name && (
                   <>
-                    <ChevronRight size={18} className="text-muted-foreground" />
-                    <span className="font-medium">{name}</span>
+                    <ChevronRight className="h-4 w-4" />
+                    <span className="font-medium text-teal-600 truncate max-w-[200px]">
+                      {name}
+                    </span>
                   </>
                 )}
               </div>
@@ -167,55 +212,86 @@ export default function AddProgramModal({
           </DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Domain Selection */}
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Client Selector */}
           <div className="space-y-2">
-            <Label htmlFor="domain-select">Select Domain</Label>
-
+            <Label>Assign to Client</Label>
             <Select
-              value={domainId}
-              onValueChange={(value) => {
-                setDomainId(value);
-                setDomainSearch(""); // Clear search on selection
-              }}
-              disabled={loading}
-              >
-              <SelectTrigger id="domain-select">
+              value={selectedClientValue === "generic" ? "generic" : selectedClientValue}
+              onValueChange={(val) => setSelectedClientValue(val === "generic" ? "generic" : val)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Generic (no client)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="generic">Generic (no client)</SelectItem>
+                {clients
+                  .filter((client) => client.id != null && String(client.id).trim() !== "")
+                  .map((client) => {
+                    const displayName =
+                      `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
+                      client.name ||
+                      "Unnamed Client";
+                    return (
+                      <SelectItem key={client.id} value={String(client.id)}>
+                        {displayName}
+                      </SelectItem>
+                    );
+                  })}
+              </SelectContent>
+            </Select>
+
+            {selectedClientObj && (
+              <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded-md text-sm">
+                <div className="font-medium text-purple-900">
+                  {selectedClientObj.first_name || ""} {selectedClientObj.last_name || ""}
+                </div>
+                {selectedClientObj.email && (
+                  <div className="text-purple-700">Email: {selectedClientObj.email}</div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Domain Selector */}
+          <div className="space-y-2">
+            <Label>Domain *</Label>
+            <Select value={domainId} onValueChange={setDomainId} disabled={loading}>
+              <SelectTrigger>
                 <SelectValue placeholder="Choose a domain">
-                  {selectedDomainLabel}
+                  {selectedModuleName && selectedDomainName
+                    ? `${selectedModuleName} - ${selectedDomainName}`
+                    : "Select a domain"}
                 </SelectValue>
               </SelectTrigger>
-
               <SelectContent>
-                {/* Search box */}
-                <div className="px-2 py-2 sticky top-0 bg-white z-10">
+                <div className="p-2 sticky top-0 bg-white border-b z-10">
                   <Input
-                    placeholder="Search domain..."
+                    placeholder="Search domains..."
                     value={domainSearch}
                     onChange={(e) => setDomainSearch(e.target.value)}
                     className="h-8"
-                    onKeyDown={(e) => e.stopPropagation()} // ← FIX
+                    onClick={(e) => e.stopPropagation()}
                   />
                 </div>
 
-                {/* Domain list */}
-                {sortedFilteredDomains.length > 0 ? (
-                  sortedFilteredDomains.map((domain) => {
-                    const module = modules.find(
-                      (m) => m.id === domain.moduleId
-                    );
-                    const label = `${module?.name} - ${domain.name}`;
-
-                    return (
-                      <SelectItem key={domain.id} value={String(domain.id)}>
-                        {label}
-                      </SelectItem>
-                    );
-                  })
-                ) : (
-                  <div className="py-2 px-3 text-sm text-muted-foreground">
+                {filteredDomains.length === 0 ? (
+                  <div className="p-4 text-center text-muted-foreground">
                     No domains found
                   </div>
+                ) : (
+                  filteredDomains
+                    .filter((dom) => dom.id != null && String(dom.id).trim() !== "")
+                    .map((dom) => {
+                      const mod = modules.find((m) => String(m.id) === String(dom.moduleId || dom.module_id));
+                      const modName = mod ? getModuleName(mod) : "";
+                      const label = `${modName} - ${getDomainName(dom)}`;
+                      return (
+                        <SelectItem key={dom.id} value={String(dom.id)}>
+                          {label}
+                        </SelectItem>
+                      );
+                    })
                 )}
               </SelectContent>
             </Select>
@@ -223,46 +299,50 @@ export default function AddProgramModal({
 
           {/* Program Name */}
           <div className="space-y-2">
-            <Label htmlFor="program-name">Program Name</Label>
+            <Label>Program Name *</Label>
             <Input
-              id="program-name"
-              placeholder="Enter program name"
+              placeholder="e.g., Matching Objects"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              required
               disabled={loading}
             />
           </div>
 
-          {/* Program Description */}
+          {/* Description */}
           <div className="space-y-2">
-            <Label htmlFor="program-description">Description (optional)</Label>
+            <Label>Description (optional)</Label>
             <Textarea
-              id="program-description"
-              placeholder="Enter program description"
+              placeholder="Brief description..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              rows={3}
               disabled={loading}
             />
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex gap-2 justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={loading}
-            >
+          {/* Status on edit */}
+          {isEditing && (
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Active">Active</SelectItem>
+                  <SelectItem value="Inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-4">
+            <Button type="button" variant="outline" onClick={onClose} disabled={loading}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
-              {loading
-                ? isEditMode
-                  ? "Updating..."
-                  : "Adding..."
-                : isEditMode
-                ? "Save Changes"
-                : "Add Program"}
+            <Button type="submit" disabled={loading} className="bg-teal-600 hover:bg-teal-700">
+              {loading ? "Saving..." : isEditing ? "Update Program" : "Add Program"}
             </Button>
           </div>
         </form>
