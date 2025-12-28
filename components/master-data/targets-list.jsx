@@ -81,25 +81,34 @@ export default function TargetsList() {
   const fetchClientSpecificData = async () => {
     try {
       setLoadingClientData(true);
-      const res = await fetch(`${baseUrl}/get-all.php`);
+      const selectedClientObj =
+        selectedClient === "all"
+          ? null
+          : clients.find((c) => String(c?.NAME || c?.name || "").trim() === selectedClient);
+
+      const selectedClientId =
+        selectedClientObj?.client_id || selectedClientObj?.id || selectedClientObj?.clientId || null;
+
+      // If a specific client is selected, prefer client-modules.php so we get per-client activities (+ tasks/prompts if backend supports)
+      const url = selectedClientId
+        ? `${baseUrl}/client-modules.php?client_id=${encodeURIComponent(String(selectedClientId))}`
+        : `${baseUrl}/get-all.php`;
+
+      const res = await fetch(url);
       const data = await res.json();
+
       if (data && data.success) {
+        const payload = data.data ?? data; // client-modules.php returns {data:{...}}, get-all.php returns top-level arrays
         setClientTargetsData({
-          modules: Array.isArray(data.modules) ? data.modules : [],
-          domains: Array.isArray(data.domains) ? data.domains : [],
-          programs: Array.isArray(data.programs) ? data.programs : [],
-          targets:
-            Array.isArray(data.targets || data.activities) // support either key
-              ? (data.targets || data.activities)
-              : [],
+          modules: Array.isArray(payload.modules) ? payload.modules : [],
+          domains: Array.isArray(payload.domains) ? payload.domains : [],
+          programs: Array.isArray(payload.programs) ? payload.programs : [],
+          targets: Array.isArray(payload.targets || payload.activities)
+            ? (payload.targets || payload.activities)
+            : [],
         });
       } else {
-        setClientTargetsData({
-          modules: [],
-          domains: [],
-          programs: [],
-          targets: [],
-        });
+        setClientTargetsData({ modules: [], domains: [], programs: [], targets: [] });
       }
     } catch (err) {
       console.error(err);
@@ -119,7 +128,7 @@ export default function TargetsList() {
     if (viewMode === "client" || viewMode === "all") {
       fetchClientSpecificData();
     }
-  }, [viewMode]);
+  }, [viewMode, selectedClient, clients]);
 
   // Check for pending client from client view navigation
   useEffect(() => {
@@ -168,6 +177,7 @@ export default function TargetsList() {
         goalDescription: a.goalDescription || a.goal_description || "",
         activityType: a.activityType || a.activity_type || "",
         trials: a.trials,
+        instructions: a.instructions || a.INSTRUCTIONS || "",
         status: a.status || a.STATUS || "Active",
         archived: !!a.archived,
         programId: a.programId || a.program_id,
@@ -264,6 +274,7 @@ export default function TargetsList() {
         goalDescription: a.goal_description || a.goalDescription || "",
         activityType: a.activity_type || a.activityType || "",
         trials: a.trials,
+        instructions: a.instructions || a.INSTRUCTIONS || "",
         status: a.status || a.STATUS || "Active",
         archived: a.archived === 1 || a.archived === true,
         programId: targetProgramId,

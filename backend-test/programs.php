@@ -494,26 +494,14 @@ function handlePut($conn, $input)
         return;
     }
 
-    // Handle module updates (moduleId format from frontend)
-    if (isset($input['moduleId'])) {
-        $moduleId = $conn->real_escape_string($input['moduleId']);
-        $name = $conn->real_escape_string($input['name'] ?? '');
-        $description = $conn->real_escape_string($input['description'] ?? '');
-        $status = $conn->real_escape_string($input['status'] ?? 'Active');
-        $archived = (int)($input['archived'] ?? 0);
 
-        $query = "UPDATE master_modules SET name='$name', description='$description', status='$status', archived=$archived WHERE id='$moduleId'";
-        if ($conn->query($query)) {
-            echo json_encode(['success' => true, 'message' => 'Module updated successfully']);
-        } else {
-            http_response_code(500);
-            echo json_encode(['success' => false, 'message' => $conn->error]);
-        }
-        return;
-    }
 
     // Handle domain updates (domainId format from frontend)
-    if (isset($input['domainId']) && !isset($input['programId'])) {
+    // Handle domain updates (domainId format from frontend) - CHECK DOMAINS FIRST!
+    // Replace the domain update section in handlePut() with this:
+
+    // Handle domain updates (domainId format from frontend)
+    if (isset($input['domainId']) && !isset($input['programId']) && !isset($input['activityId'])) {
         $domainId = $conn->real_escape_string($input['domainId']);
         $moduleId = $conn->real_escape_string($input['moduleId'] ?? '');
         $name = $conn->real_escape_string($input['name'] ?? '');
@@ -524,6 +512,24 @@ function handlePut($conn, $input)
         $query = "UPDATE master_domains SET module_id='$moduleId', name='$name', description='$description', status='$status', archived=$archived WHERE id='$domainId'";
         if ($conn->query($query)) {
             echo json_encode(['success' => true, 'message' => 'Domain updated successfully']);
+        } else {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'message' => $conn->error]);
+        }
+        return;
+    }
+
+    // Handle module updates (moduleId format from frontend - ONLY if domainId is NOT present)
+    if (isset($input['moduleId']) && !isset($input['domainId'])) {
+        $moduleId = $conn->real_escape_string($input['moduleId']);
+        $name = $conn->real_escape_string($input['name'] ?? '');
+        $description = $conn->real_escape_string($input['description'] ?? '');
+        $status = $conn->real_escape_string($input['status'] ?? 'Active');
+        $archived = (int)($input['archived'] ?? 0);
+
+        $query = "UPDATE master_modules SET name='$name', description='$description', status='$status', archived=$archived WHERE id='$moduleId'";
+        if ($conn->query($query)) {
+            echo json_encode(['success' => true, 'message' => 'Module updated successfully']);
         } else {
             http_response_code(500);
             echo json_encode(['success' => false, 'message' => $conn->error]);

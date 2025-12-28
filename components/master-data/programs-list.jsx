@@ -73,13 +73,26 @@ export default function ProgramsList() {
   const fetchClientSpecificData = async () => {
     try {
       setLoadingClientData(true);
-      const res = await fetch(`${baseUrl}/get-all.php`);
+      const selectedClientObj =
+        selectedClient === "all"
+          ? null
+          : clients.find((c) => String(c?.NAME || c?.name || "").trim() === selectedClient);
+
+      const selectedClientId =
+        selectedClientObj?.client_id || selectedClientObj?.id || selectedClientObj?.clientId || null;
+
+      const url = selectedClientId
+        ? `${baseUrl}/client-modules.php?client_id=${encodeURIComponent(String(selectedClientId))}`
+        : `${baseUrl}/get-all.php`;
+
+      const res = await fetch(url);
       const data = await res.json();
       if (data && data.success) {
+        const payload = data.data ?? data;
         setClientProgramsData({
-          modules: Array.isArray(data.modules) ? data.modules : [],
-          domains: Array.isArray(data.domains) ? data.domains : [],
-          programs: Array.isArray(data.programs) ? data.programs : [],
+          modules: Array.isArray(payload.modules) ? payload.modules : [],
+          domains: Array.isArray(payload.domains) ? payload.domains : [],
+          programs: Array.isArray(payload.programs) ? payload.programs : [],
         });
       } else {
         setClientProgramsData({ modules: [], domains: [], programs: [] });
@@ -97,7 +110,7 @@ export default function ProgramsList() {
     if (viewMode === "client" || viewMode === "all") {
       fetchClientSpecificData();
     }
-  }, [viewMode]);
+  }, [viewMode, selectedClient, clients]);
 
   // Check for pending client from client view navigation
   useEffect(() => {

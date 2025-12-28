@@ -80,6 +80,7 @@ export default function ModulesList() {
   const dispatch = useAppDispatch();
   const programsData = useAppSelector((state) => state.programs.items);
   const loading = useAppSelector((state) => state.programs.loading);
+  const clients = useAppSelector((state) => state.clients?.items || []);
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
@@ -91,12 +92,32 @@ export default function ModulesList() {
   const fetchClientSpecificData = async () => {
     try {
       setLoadingClientData(true);
-      const res = await fetch(`${baseUrl}/get-all.php`);
+      const selectedClientObj =
+        selectedClient === "all"
+          ? null
+          : clients.find((c) => {
+              // Match by full name (first_name + last_name) or by name field
+              const fullName = c?.first_name && c?.last_name 
+                ? `${c.first_name} ${c.last_name}`.trim()
+                : (c?.NAME || c?.name || "").trim();
+              return fullName === selectedClient;
+            });
+
+      const selectedClientId =
+        selectedClientObj?.client_id || selectedClientObj?.id || selectedClientObj?.clientId || null;
+
+      // If a specific client is selected, use client-modules.php for accurate per-client data
+      const url = selectedClientId
+        ? `${baseUrl}/client-modules.php?client_id=${encodeURIComponent(String(selectedClientId))}`
+        : `${baseUrl}/get-all.php`;
+
+      const res = await fetch(url);
       const data = await res.json();
 
       if (data && data.success) {
+        const payload = data.data ?? data;
         setClientModulesData({
-          modules: Array.isArray(data.modules) ? data.modules : [],
+          modules: Array.isArray(payload.modules) ? payload.modules : [],
         });
       } else {
         setClientModulesData({ modules: [] });
@@ -122,7 +143,7 @@ export default function ModulesList() {
     if (viewMode === "client" || viewMode === "all") {
       fetchClientSpecificData();
     }
-  }, [viewMode]);
+  }, [viewMode, selectedClient, clients]);
 
   // Check for pending client from client view navigation
   useEffect(() => {
@@ -321,8 +342,7 @@ export default function ModulesList() {
         onAdd={handleAddModule}
         loading={loading}
         editingModule={editingModule}
-        clients={clientNames}
-        
+        clients={clients}
       />
 
       <DeleteConfirmModal

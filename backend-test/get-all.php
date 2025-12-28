@@ -180,6 +180,80 @@ try {
         ];
     }
 
+    // Attach tasks/prompts to targets if tables exist (non-breaking additive fields)
+    $targetIds = array_map(function($t) { return $t['id']; }, $targets);
+
+    // Tasks
+    $tasksByActivity = [];
+    if (!empty($targetIds)) {
+        $tableCheck = $conn->query("SHOW TABLES LIKE 'client_target_tasks'");
+        if ($tableCheck && $tableCheck->num_rows > 0) {
+            $escapedIds = array_map([$conn, 'real_escape_string'], $targetIds);
+            $idsList = "'" . implode("','", $escapedIds) . "'";
+
+            $tasksQuery = "
+                SELECT id, client_id, activity_id, name, step_order
+                FROM client_target_tasks
+                WHERE activity_id IN ($idsList)
+                ORDER BY activity_id, step_order
+            ";
+            $tasksResult = $conn->query($tasksQuery);
+            if ($tasksResult) {
+                while ($task = $tasksResult->fetch_assoc()) {
+                    $tasksByActivity[$task['activity_id']][] = [
+                        'id' => $task['id'],
+                        'activity_id' => $task['activity_id'],
+                        'client_id' => $task['client_id'],
+                        'name' => $task['name'],
+                        'step_order' => (int)$task['step_order']
+                    ];
+                }
+            }
+        }
+    }
+
+    // Prompts
+    $promptsByTarget = [];
+    if (!empty($targetIds)) {
+        $tableCheck = $conn->query("SHOW TABLES LIKE 'client_target_prompts'");
+        if ($tableCheck && $tableCheck->num_rows > 0) {
+            $columnCheck = $conn->query("SHOW COLUMNS FROM client_target_prompts LIKE 'prompt_id'");
+            if ($columnCheck && $columnCheck->num_rows > 0) {
+                $escapedIds = array_map([$conn, 'real_escape_string'], $targetIds);
+                $idsList = "'" . implode("','", $escapedIds) . "'";
+
+                $promptRes = $conn->query(
+                    "SELECT tp.target_id, mp.id, mp.prompt_name, mp.max_score, mp.score_as_independent, mp.dtt, mp.ta, mp.maintenance, mp.status
+                     FROM client_target_prompts tp
+                     JOIN master_prompts mp ON tp.prompt_id = mp.id
+                     WHERE tp.target_id IN ($idsList)
+                     ORDER BY tp.target_id"
+                );
+                if ($promptRes) {
+                    while ($p = $promptRes->fetch_assoc()) {
+                        $promptsByTarget[$p['target_id']][] = [
+                            'id' => $p['id'],
+                            'prompt_name' => $p['prompt_name'],
+                            'max_score' => $p['max_score'],
+                            'score_as_independent' => $p['score_as_independent'],
+                            'dtt' => $p['dtt'],
+                            'ta' => $p['ta'],
+                            'maintenance' => $p['maintenance'],
+                            'status' => $p['status']
+                        ];
+                    }
+                }
+            }
+        }
+    }
+
+    // Merge into targets
+    foreach ($targets as $i => $t) {
+        $tid = $t['id'];
+        $targets[$i]['tasks'] = $tasksByActivity[$tid] ?? [];
+        $targets[$i]['prompts'] = $promptsByTarget[$tid] ?? [];
+    }
+
     echo json_encode([
         'success'  => true,
         'modules'  => $modules,

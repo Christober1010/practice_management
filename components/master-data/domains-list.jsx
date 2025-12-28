@@ -70,12 +70,25 @@ export default function DomainsList() {
   const fetchClientData = async () => {
     try {
       setLoadingClientData(true);
-      const res = await fetch(`${baseUrl}/get-all.php`);
+      const selectedClientObj =
+        selectedClient === "all"
+          ? null
+          : clients.find((c) => String(c?.NAME || c?.name || "").trim() === selectedClient);
+
+      const selectedClientId =
+        selectedClientObj?.client_id || selectedClientObj?.id || selectedClientObj?.clientId || null;
+
+      const url = selectedClientId
+        ? `${baseUrl}/client-modules.php?client_id=${encodeURIComponent(String(selectedClientId))}`
+        : `${baseUrl}/get-all.php`;
+
+      const res = await fetch(url);
       const data = await res.json();
       if (data?.success) {
+        const payload = data.data ?? data;
         setClientData({
-          modules: data.modules || [],
-          domains: data.domains || [],
+          modules: payload.modules || [],
+          domains: payload.domains || [],
         });
       }
     } catch (err) {
@@ -89,7 +102,7 @@ export default function DomainsList() {
     if (viewMode === "client" || viewMode === "all") {
       fetchClientData();
     }
-  }, [viewMode]);
+  }, [viewMode, selectedClient, clients]);
 
   // Check for pending client from client view navigation
   useEffect(() => {
