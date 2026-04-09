@@ -71,7 +71,6 @@ try {
         SELECT 
             d.id,
             d.client_id,
-            d.module_id,
             d.NAME,
             d.description,
             d.STATUS,
@@ -92,7 +91,6 @@ try {
         $domains[] = [
             'id'          => $row['id'],
             'client_id'   => $row['client_id'],
-            'module_id'   => $row['module_id'],
             'name'        => $row['NAME'] ?? 'Unnamed Domain',
             'description' => $row['description'] ?? '',
             'status'      => $row['STATUS'] ?? 'Active',

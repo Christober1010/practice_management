@@ -1,0 +1,5 @@
+-- If client_status is an ENUM that omits workflow values (e.g. "Active Treatment", "Reauthorization"),
+-- MySQL may reject or coerce updates. Run this on production to allow any workflow label:
+--
+-- ALTER TABLE clients
+--   MODIFY COLUMN client_status VARCHAR(64) NOT NULL DEFAULT 'New';

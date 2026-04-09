@@ -1,12 +1,21 @@
 <?php
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Content-Type: application/json");
 
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
     exit();
+}
+
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$user = getAuthenticatedUser();
+if ($user && !rbac_user_has_permission_key($user['role'], 'clients.write', 'mahaverse')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Permission denied']);
+    exit;
 }
 
 $host = "db5018266079.hosting-data.io";
@@ -18,14 +27,12 @@ try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Decode JSON input
     $input = json_decode(file_get_contents("php://input"), true);
 
-    // --- DEBUGGING: Log the received input data ---
+    // --- DEBUGGING ---
     error_log("Received input for update-clients.php: " . print_r($input, true));
-    // --- END DEBUGGING ---
+    // -----------------
 
-    // Validate required fields
     $required = ["client_id", "first_name", "last_name", "date_of_birth"];
     foreach ($required as $field) {
         if (empty($input[$field])) {
@@ -37,7 +44,6 @@ try {
 
     $clientId = $input["client_id"];
 
-    // Begin transaction for atomic operations
     $conn->beginTransaction();
 
     // Check if client exists
@@ -45,65 +51,74 @@ try {
     $stmtCheck->execute([":client_id" => $clientId]);
     $exists = $stmtCheck->fetchColumn() > 0;
 
-    if ($exists) {
-        // Update client
-        $sql = "UPDATE clients SET
-            client_uuid = :client_uuid,
-            client_status = :client_status,
-            wait_list_status = :wait_list_status,
-            first_name = :first_name,
-            middle_name = :middle_name,
-            last_name = :last_name,
-            date_of_birth = :date_of_birth,
-            gender = :gender,
-            preferred_language = :preferred_language,
-            phone = :phone,
-            email = :email,
-            appointment_reminder = :appointment_reminder,
-            address_line_1 = :address_line_1,
-            address_line_2 = :address_line_2,
-            city = :city,
-            state = :state,
-            zipcode = :zipcode,
-            country = :country,
-            service_location = :service_location,
-            parent_first_name = :parent_first_name,
-            parent_last_name = :parent_last_name,
-            relationship_to_insured = :relationship_to_insured,
-            relation_other = :relation_other,
-            emergency_contact_name = :emergency_contact_name,
-            emg_relationship = :emg_relationship,
-            emg_phone = :emg_phone,
-            emg_email = :emg_email,
-            client_notes = :client_notes,
-            other_information = :other_information,
-            archived = :archived,
-            updated_at = CURRENT_TIMESTAMP
-            WHERE client_id = :client_id";
-    } else {
-        // Insert new client
-        $sql = "INSERT INTO clients (
-            client_id, client_uuid, client_status, wait_list_status,
-            first_name, middle_name, last_name, date_of_birth, gender,
-            preferred_language, phone, email, appointment_reminder,
-            address_line_1, address_line_2, city, state, zipcode, country, service_location,
-            parent_first_name, parent_last_name, relationship_to_insured, relation_other,
-            emergency_contact_name, emg_relationship, emg_phone, emg_email,
-            client_notes, other_information, archived
-        ) VALUES (
-            :client_id, :client_uuid, :client_status, :wait_list_status,
-            :first_name, :middle_name, :last_name, :date_of_birth, :gender,
-            :preferred_language, :phone, :email, :appointment_reminder,
-            :address_line_1, :address_line_2, :city, :state, :zipcode, :country, :service_location,
-            :parent_first_name, :parent_last_name, :relationship_to_insured, :relation_other,
-            :emergency_contact_name, :emg_relationship, :emg_phone, :emg_email,
-            :client_notes, :other_information, :archived
-        )";
+    $hasIsActive = false;
+    try {
+        $colStmt = $conn->query("SHOW COLUMNS FROM clients LIKE 'is_active'");
+        $hasIsActive = $colStmt && $colStmt->rowCount() > 0;
+    } catch (Exception $e) {
+        $hasIsActive = false;
     }
+
+    if ($exists) {
+        $sql = "UPDATE clients SET
+        client_uuid = :client_uuid,
+        client_status = :client_status,
+        wait_list_status = :wait_list_status,
+        first_name = :first_name,
+        middle_name = :middle_name,
+        last_name = :last_name,
+        date_of_birth = :date_of_birth,
+        gender = :gender,
+        preferred_language = :preferred_language,
+        phone = :phone,
+        email = :email,
+        appointment_reminder = :appointment_reminder,
+        parent_first_name = :parent_first_name,
+        parent_last_name = :parent_last_name,
+        relationship_to_insured = :relationship_to_insured,
+        relation_other = :relation_other,
+        emergency_contact_name = :emergency_contact_name,
+        emg_relationship = :emg_relationship,
+        emg_phone = :emg_phone,
+        emg_email = :emg_email,
+        client_notes = :client_notes,
+        other_information = :other_information,
+        archived = :archived,";
+        if ($hasIsActive) {
+            $sql .= "
+        is_active = :is_active,";
+        }
+        $sql .= "
+        updated_at = CURRENT_TIMESTAMP
+        WHERE client_id = :client_id";
+    } else {
+        $insertCols = "client_id, client_uuid, client_status, wait_list_status,
+        first_name, middle_name, last_name, date_of_birth, gender,
+        preferred_language, phone, email, appointment_reminder,
+        parent_first_name, parent_last_name, relationship_to_insured, relation_other,
+        emergency_contact_name, emg_relationship, emg_phone, emg_email,
+        client_notes, other_information, archived";
+        $insertVals = ":client_id, :client_uuid, :client_status, :wait_list_status,
+        :first_name, :middle_name, :last_name, :date_of_birth, :gender,
+        :preferred_language, :phone, :email, :appointment_reminder,
+        :parent_first_name, :parent_last_name, :relationship_to_insured, :relation_other,
+        :emergency_contact_name, :emg_relationship, :emg_phone, :emg_email,
+        :client_notes, :other_information, :archived";
+        if ($hasIsActive) {
+            $insertCols .= ", is_active";
+            $insertVals .= ", :is_active";
+        }
+        $sql = "INSERT INTO clients (
+        $insertCols
+    ) VALUES (
+        $insertVals
+    )";
+    }
+
+
 
     $stmt = $conn->prepare($sql);
 
-    // Prepare parameters for execution
     $params = [
         ":client_id" => $clientId,
         ":client_uuid" => $input["client_uuid"] ?? '',
@@ -118,13 +133,6 @@ try {
         ":phone" => $input["phone"] ?? '',
         ":email" => $input["email"] ?? '',
         ":appointment_reminder" => $input["appointment_reminder"] ?? '',
-        ":address_line_1" => $input["address_line_1"] ?? '',
-        ":address_line_2" => $input["address_line_2"] ?? '',
-        ":city" => $input["city"] ?? '',
-        ":state" => $input["state"] ?? '',
-        ":zipcode" => $input["zipcode"] ?? '',
-        ":country" => $input["country"] ?? 'USA',
-        ":service_location" => $input["service_location"] ?? 'Home',
         ":parent_first_name" => $input["parent_first_name"] ?? '',
         ":parent_last_name" => $input["parent_last_name"] ?? '',
         ":relationship_to_insured" => $input["relationship_to_insured"] ?? '',
@@ -138,42 +146,47 @@ try {
         ":archived" => $input["archived"] ?? 0
     ];
 
-    // --- DEBUGGING: Log parameters before execution ---
+    if ($hasIsActive) {
+        $params[":is_active"] = isset($input["is_active"]) ? ((int)(bool)$input["is_active"]) : 1;
+    }
+
     error_log("Executing SQL with parameters: " . print_r($params, true));
-    // --- END DEBUGGING ---
-
     $stmt->execute($params);
+    // ------------------------
+    // Handle addresses in new table
+    // ------------------------
+    $conn->prepare("DELETE FROM client_addresses WHERE client_id = ?")->execute([$clientId]);
 
-    // Handle additional addresses (clear and recreate approach)
-    if (isset($input["addresses"]) && is_array($input["addresses"]) && count($input["addresses"]) > 1) {
-        // Clear existing additional addresses
-        $conn->prepare("DELETE FROM client_addresses WHERE client_id = ?")->execute([$clientId]);
-
-        // Insert additional addresses (skip first one as it's stored in main client table)
+    if (isset($input["addresses"]) && is_array($input["addresses"])) {
         $addressStmt = $conn->prepare("INSERT INTO client_addresses (
-            client_id, service_location, address_line_1, address_line_2, 
-            city, state, zipcode, country
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+        client_id, service_location, location, address_line_1, address_line_2, city, state, zipcode, country
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
-        for ($i = 1; $i < count($input["addresses"]); $i++) {
-            $addr = $input["addresses"][$i];
+        // Get the top-level location field (this is what you want to store)
+        $topLevelLocation = $input["location"] ?? null;
+
+        foreach ($input["addresses"] as $addr) {
             $addressStmt->execute([
                 $clientId,
                 $addr["service_location"] ?? 'Home',
+                $topLevelLocation,  // <-- Use the top-level location field
                 $addr["address_line_1"] ?? '',
                 $addr["address_line_2"] ?? '',
                 $addr["city"] ?? '',
                 $addr["state"] ?? '',
                 $addr["zipcode"] ?? '',
-                $addr["country"] === "Other" ? $addr["countryOther"] : ($addr["country"] ?? 'USA')
+                $addr["country"] === "Other" ? ($addr["countryOther"] ?? 'USA') : ($addr["country"] ?? 'USA')
             ]);
         }
     }
+    // ------------------------
 
+    // --- keep all your insurance, authorization, document, availability handling below unchanged ---
+    // (your code here for insurances, client_auth, documents, availability...)
     // Clear existing insurances & related data to prevent orphans
     $conn->prepare("DELETE FROM client_auth WHERE insurance_id IN (SELECT insurance_id FROM client_insurance WHERE client_id = ?)")->execute([$clientId]);
     $conn->prepare("DELETE FROM client_insurance WHERE client_id = ?")->execute([$clientId]);
-    
+
     // Clear documents (check if table exists first)
     try {
         $conn->prepare("DELETE FROM client_documents WHERE client_id = ?")->execute([$clientId]);
@@ -189,19 +202,213 @@ try {
     $insuranceIds = [];
     // Insert insurances and record their IDs
     if (isset($input["insurances"]) && is_array($input["insurances"])) {
-        $stmtIns = $conn->prepare("INSERT INTO client_insurance (
-            client_id, description, insurance_type, insurance_provider, treatment_type, rendering_provider, start_date, end_date,
-            authorization_number, insurance_id_number, group_number, diagnosis_1, diagnosis_2, diagnosis_3, diagnosis_4, diagnosis_5,
-            coinsurance, deductible, copay_per, copay_rate
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        // Check if insurance_document_path and insurance_document_filename columns exist
+        $checkColumns = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'insurance_document_path'");
+        $hasDocumentColumns = $checkColumns->rowCount() > 0;
+
+        $checkProviderStaffIdColumn = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'provider_staff_id'");
+        $hasProviderStaffIdColumn = $checkProviderStaffIdColumn->rowCount() > 0;
         
+        $checkProviderIdColumn = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'insurance_provider_id'");
+        $hasProviderIdColumn = $checkProviderIdColumn->rowCount() > 0;
+        
+        $checkPrimaryDiagnosisColumn = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'primary_diagnosis'");
+        $hasPrimaryDiagnosisColumn = $checkPrimaryDiagnosisColumn->rowCount() > 0;
+        
+        // Check for new insurance form fields
+        $checkCarrierPayerId = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'carrier_payer_id'");
+        $hasCarrierPayerId = $checkCarrierPayerId->rowCount() > 0;
+        
+        $checkInsuranceCompanyAddress = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'insurance_company_address'");
+        $hasInsuranceCompanyAddress = $checkInsuranceCompanyAddress->rowCount() > 0;
+        
+        $checkInsuranceIssueDate = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'insurance_issue_date'");
+        $hasInsuranceIssueDate = $checkInsuranceIssueDate->rowCount() > 0;
+        
+        $checkInsurancePlanName = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'insurance_plan_name'");
+        $hasInsurancePlanName = $checkInsurancePlanName->rowCount() > 0;
+        
+        $checkDateOfSignature = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'date_of_signature'");
+        $hasDateOfSignature = $checkDateOfSignature->rowCount() > 0;
+        
+        $checkAuthorizedPaymentBox13 = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'authorized_payment_box13'");
+        $hasAuthorizedPaymentBox13 = $checkAuthorizedPaymentBox13->rowCount() > 0;
+        
+        $checkAuthorizedReleaseBox12 = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'authorized_release_box12'");
+        $hasAuthorizedReleaseBox12 = $checkAuthorizedReleaseBox12->rowCount() > 0;
+        
+        $checkAuthorizedReleaseBox17 = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'authorized_release_box17'");
+        $hasAuthorizedReleaseBox17 = $checkAuthorizedReleaseBox17->rowCount() > 0;
+        
+        $checkAdditionalClaimInfoBox19 = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'additional_claim_info_box19'");
+        $hasAdditionalClaimInfoBox19 = $checkAdditionalClaimInfoBox19->rowCount() > 0;
+        
+        $checkDoNotAcceptAssignmentBox27 = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'do_not_accept_assignment_box27'");
+        $hasDoNotAcceptAssignmentBox27 = $checkDoNotAcceptAssignmentBox27->rowCount() > 0;
+        
+        $checkInsuranceNotes = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'insurance_notes'");
+        $hasInsuranceNotes = $checkInsuranceNotes->rowCount() > 0;
+        
+        $checkPrimaryInsuranceNotes = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'primary_insurance_notes'");
+        $hasPrimaryInsuranceNotes = $checkPrimaryInsuranceNotes->rowCount() > 0;
+        
+        $checkInsuredSameAsClient = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'insured_same_as_client'");
+        $hasInsuredSameAsClient = $checkInsuredSameAsClient->rowCount() > 0;
+        
+        $checkInsuredPersonFields = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'insured_first_name'");
+        $hasInsuredPersonFields = $checkInsuredPersonFields->rowCount() > 0;
+        
+        $checkInsuranceInactive = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'insurance_inactive'");
+        $hasInsuranceInactive = $checkInsuranceInactive->rowCount() > 0;
+        
+        $checkDeleteInsurance = $conn->query("SHOW COLUMNS FROM client_insurance LIKE 'delete_insurance'");
+        $hasDeleteInsurance = $checkDeleteInsurance->rowCount() > 0;
+        
+        // Build base columns
+        $insuranceCols = "client_id, description, insurance_type, insurance_provider";
+        $insuranceVals = "?, ?, ?, ?";
+        
+        if ($hasProviderIdColumn) {
+            $insuranceCols .= ", insurance_provider_id";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasPrimaryDiagnosisColumn) {
+            $insuranceCols .= ", primary_diagnosis";
+            $insuranceVals .= ", ?";
+        }
+        
+        $insuranceCols .= ", treatment_type";
+        $insuranceVals .= ", ?";
+        
+        if ($hasProviderStaffIdColumn) {
+            $insuranceCols .= ", provider_staff_id";
+            $insuranceVals .= ", ?";
+        }
+        
+        $insuranceCols .= ", rendering_provider, start_date, end_date,
+            authorization_number, insurance_id_number, group_number, diagnosis_1, diagnosis_2, diagnosis_3, diagnosis_4, diagnosis_5,
+            coinsurance, deductible, copay_per, copay_rate";
+        $insuranceVals .= ", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
+        
+        // Add new insurance form fields if columns exist
+        if ($hasCarrierPayerId) {
+            $insuranceCols .= ", carrier_payer_id";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasInsuranceCompanyAddress) {
+            $insuranceCols .= ", insurance_company_address";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasInsuranceIssueDate) {
+            $insuranceCols .= ", insurance_issue_date";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasInsurancePlanName) {
+            $insuranceCols .= ", insurance_plan_name";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasDateOfSignature) {
+            $insuranceCols .= ", date_of_signature";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasAuthorizedPaymentBox13) {
+            $insuranceCols .= ", authorized_payment_box13";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasAuthorizedReleaseBox12) {
+            $insuranceCols .= ", authorized_release_box12";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasAuthorizedReleaseBox17) {
+            $insuranceCols .= ", authorized_release_box17";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasAdditionalClaimInfoBox19) {
+            $insuranceCols .= ", additional_claim_info_box19";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasDoNotAcceptAssignmentBox27) {
+            $insuranceCols .= ", do_not_accept_assignment_box27";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasInsuranceNotes) {
+            $insuranceCols .= ", insurance_notes";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasPrimaryInsuranceNotes) {
+            $insuranceCols .= ", primary_insurance_notes";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasInsuredSameAsClient) {
+            $insuranceCols .= ", insured_same_as_client";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasInsuredPersonFields) {
+            $insuranceCols .= ", insured_first_name, insured_last_name, insured_dob, insured_gender, insured_relationship, insured_address, insured_city, insured_state, insured_zipcode, insured_phone, insured_id_number";
+            $insuranceVals .= ", ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
+        }
+        
+        if ($hasInsuranceInactive) {
+            $insuranceCols .= ", insurance_inactive";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasDeleteInsurance) {
+            $insuranceCols .= ", delete_insurance";
+            $insuranceVals .= ", ?";
+        }
+        
+        if ($hasDocumentColumns) {
+            $insuranceCols .= ", insurance_document_path, insurance_document_filename";
+            $insuranceVals .= ", ?, ?";
+        }
+
+        $stmtIns = $conn->prepare("INSERT INTO client_insurance ($insuranceCols) VALUES ($insuranceVals)");
+
         foreach ($input["insurances"] as $ins) {
-            $stmtIns->execute([
+            // Skip insurance if delete_insurance is checked
+            if ($hasDeleteInsurance && isset($ins["delete_insurance"]) && $ins["delete_insurance"]) {
+                continue;
+            }
+            
+            $insuranceParams = [
                 $clientId,
                 $ins["description"] ?? '',
                 $ins["insurance_type"] ?? 'Primary',
                 $ins["insurance_provider"] ?? '',
-                $ins["treatment_type"] ?? '',
+            ];
+            
+            if ($hasProviderIdColumn) {
+                $insuranceParams[] = $ins["insurance_provider_id"] ?? null;
+            }
+            
+            if ($hasPrimaryDiagnosisColumn) {
+                $insuranceParams[] = $ins["primary_diagnosis"] ?? null;
+            }
+            
+            $insuranceParams[] = $ins["treatment_type"] ?? '';
+            
+            if ($hasProviderStaffIdColumn) {
+                // Convert empty string to NULL to satisfy foreign key constraint
+                $providerStaffId = $ins["provider_staff_id"] ?? null;
+                $insuranceParams[] = ($providerStaffId === '' || $providerStaffId === null) ? null : $providerStaffId;
+            }
+            
+            $insuranceParams = array_merge($insuranceParams, [
                 $ins["rendering_provider"] ?? '',
                 empty($ins["start_date"]) ? null : $ins["start_date"],
                 empty($ins["end_date"]) ? null : $ins["end_date"],
@@ -216,8 +423,90 @@ try {
                 $ins["coinsurance"] ?? '',
                 $ins["deductible"] ?? '',
                 $ins["copay_per"] ?? 'hr',
-                empty($ins["copay_rate"]) ? null : $ins["copay_rate"]
+                empty($ins["copay_rate"]) ? null : $ins["copay_rate"],
             ]);
+            
+            // Add new insurance form fields if columns exist
+            if ($hasCarrierPayerId) {
+                $insuranceParams[] = $ins["carrier_payer_id"] ?? null;
+            }
+            
+            if ($hasInsuranceCompanyAddress) {
+                $insuranceParams[] = $ins["insurance_company_address"] ?? null;
+            }
+            
+            if ($hasInsuranceIssueDate) {
+                $insuranceParams[] = empty($ins["insurance_issue_date"]) ? null : $ins["insurance_issue_date"];
+            }
+            
+            if ($hasInsurancePlanName) {
+                $insuranceParams[] = $ins["insurance_plan_name"] ?? null;
+            }
+            
+            if ($hasDateOfSignature) {
+                $insuranceParams[] = empty($ins["date_of_signature"]) ? null : $ins["date_of_signature"];
+            }
+            
+            if ($hasAuthorizedPaymentBox13) {
+                $insuranceParams[] = $ins["authorized_payment_box13"] ?? 'Signature on File';
+            }
+            
+            if ($hasAuthorizedReleaseBox12) {
+                $insuranceParams[] = $ins["authorized_release_box12"] ?? 'Signature on File';
+            }
+            
+            if ($hasAuthorizedReleaseBox17) {
+                $insuranceParams[] = $ins["authorized_release_box17"] ?? 'Signature on File';
+            }
+            
+            if ($hasAdditionalClaimInfoBox19) {
+                $insuranceParams[] = $ins["additional_claim_info_box19"] ?? null;
+            }
+            
+            if ($hasDoNotAcceptAssignmentBox27) {
+                $insuranceParams[] = isset($ins["do_not_accept_assignment_box27"]) ? ($ins["do_not_accept_assignment_box27"] ? 1 : 0) : 0;
+            }
+            
+            if ($hasInsuranceNotes) {
+                $insuranceParams[] = $ins["insurance_notes"] ?? null;
+            }
+            
+            if ($hasPrimaryInsuranceNotes) {
+                $insuranceParams[] = $ins["primary_insurance_notes"] ?? null;
+            }
+            
+            if ($hasInsuredSameAsClient) {
+                $insuranceParams[] = isset($ins["insured_same_as_client"]) ? ($ins["insured_same_as_client"] ? 1 : 0) : 1;
+            }
+            
+            if ($hasInsuredPersonFields) {
+                $insuranceParams[] = $ins["insured_first_name"] ?? '';
+                $insuranceParams[] = $ins["insured_last_name"] ?? '';
+                $insuranceParams[] = empty($ins["insured_dob"]) ? null : $ins["insured_dob"];
+                $insuranceParams[] = $ins["insured_gender"] ?? '';
+                $insuranceParams[] = $ins["insured_relationship"] ?? '';
+                $insuranceParams[] = $ins["insured_address"] ?? '';
+                $insuranceParams[] = $ins["insured_city"] ?? '';
+                $insuranceParams[] = $ins["insured_state"] ?? '';
+                $insuranceParams[] = $ins["insured_zipcode"] ?? '';
+                $insuranceParams[] = $ins["insured_phone"] ?? '';
+                $insuranceParams[] = $ins["insured_id_number"] ?? '';
+            }
+            
+            if ($hasInsuranceInactive) {
+                $insuranceParams[] = isset($ins["insurance_inactive"]) ? ($ins["insurance_inactive"] ? 1 : 0) : 0;
+            }
+            
+            if ($hasDeleteInsurance) {
+                $insuranceParams[] = isset($ins["delete_insurance"]) ? ($ins["delete_insurance"] ? 1 : 0) : 0;
+            }
+            
+            if ($hasDocumentColumns) {
+                $insuranceParams[] = $ins["insurance_document_path"] ?? '';
+                $insuranceParams[] = $ins["insurance_document_filename"] ?? '';
+            }
+            
+            $stmtIns->execute($insuranceParams);
             $insuranceIds[] = $conn->lastInsertId();
         }
     }
@@ -228,23 +517,23 @@ try {
             auth_uuid, insurance_id, authorization_number, billing_codes,
             units_approved_per_15_min, units_serviced, balance_units, start_date, end_date, status
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        
+
         foreach ($input["authorizations"] as $auth) {
             // Map insurance_id from frontend to actual database insurance_id
             $linkedInsuranceId = null;
-            
+
             if (isset($auth["insurance_id"]) && $auth["insurance_id"] !== "0" && $auth["insurance_id"] !== "") {
                 $insuranceIndex = intval($auth["insurance_id"]);
                 if ($insuranceIndex >= 0 && isset($insuranceIds[$insuranceIndex])) {
                     $linkedInsuranceId = $insuranceIds[$insuranceIndex];
                 }
             }
-            
+
             // If no valid insurance link and we have at least one insurance, use the first one
             if (!$linkedInsuranceId && !empty($insuranceIds)) {
                 $linkedInsuranceId = $insuranceIds[0];
             }
-            
+
             // Skip authorization if we can't link it to an insurance
             if (!$linkedInsuranceId) {
                 error_log("Skipping authorization - no valid insurance link: " . print_r($auth, true));
@@ -271,11 +560,28 @@ try {
         $docTableExists = false;
         $docStmt = null;
         
+        // Check optional columns in client_documents
+        $checkColumns = $conn->query("SHOW COLUMNS FROM client_documents LIKE 'document_path'");
+        $hasPathColumns = $checkColumns->rowCount() > 0;
+
+        $checkOrigName = $conn->query("SHOW COLUMNS FROM client_documents LIKE 'document_original_filename'");
+        $hasOriginalFilename = $checkOrigName->rowCount() > 0;
+        
         // Try client_documents first
         try {
-            $docStmt = $conn->prepare("INSERT INTO client_documents (
-                client_id, doc_uuid, document_type, file_url
-            ) VALUES (?, ?, ?, ?)");
+            if ($hasPathColumns && $hasOriginalFilename) {
+                $docStmt = $conn->prepare("INSERT INTO client_documents (
+                    client_id, doc_uuid, document_type, file_url, document_path, document_filename, document_original_filename
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            } elseif ($hasPathColumns) {
+                $docStmt = $conn->prepare("INSERT INTO client_documents (
+                    client_id, doc_uuid, document_type, file_url, document_path, document_filename
+                ) VALUES (?, ?, ?, ?, ?, ?)");
+            } else {
+                $docStmt = $conn->prepare("INSERT INTO client_documents (
+                    client_id, doc_uuid, document_type, file_url
+                ) VALUES (?, ?, ?, ?)");
+            }
             $docTableExists = true;
         } catch (PDOException $e) {
             // Try client_doc instead
@@ -292,12 +598,53 @@ try {
         if ($docTableExists && $docStmt) {
             foreach ($input["documents"] as $doc) {
                 $docUuid = !empty($doc["doc_uuid"]) ? $doc["doc_uuid"] : uniqid("doc_", true);
-                $docStmt->execute([
-                    $clientId,
-                    $docUuid,
-                    $doc["document_type"] ?? 'misc',
-                    $doc["file_url"] ?? $doc["document_path"] ?? ''
-                ]);
+                if ($hasPathColumns) {
+                    // Normalize document_path/document_filename for legacy payloads.
+                    // - Drive: legacy stored drive://<folderId> in document_path, but actual fileId is in document_filename.
+                    //   Canonicalize to drive://<fileId>.
+                    // - Local: legacy stored uploads/.../documents (folder). If document_filename exists, append it.
+                    $docPath = $doc["document_path"] ?? $doc["file_url"] ?? '';
+                    $docFilename = $doc["document_filename"] ?? '';
+
+                    if (!empty($docPath) && is_string($docPath) && (substr($docPath, 0, 8) === 'drive://') && !empty($docFilename)) {
+                        $docPath = 'drive://' . $docFilename;
+                    }
+
+                    if (!empty($docPath) && is_string($docPath) && (substr($docPath, 0, 8) === 'uploads/') && !empty($docFilename)) {
+                        if (preg_match('#/documents/?$#', $docPath) === 1) {
+                            $docPath = rtrim($docPath, "/") . "/" . $docFilename;
+                        }
+                    }
+
+                    $docOriginal = $doc["document_original_filename"] ?? null;
+                    if ($hasOriginalFilename) {
+                        $docStmt->execute([
+                            $clientId,
+                            $docUuid,
+                            $doc["document_type"] ?? 'misc',
+                            $doc["file_url"] ?? $docPath,
+                            $docPath,
+                            $docFilename,
+                            $docOriginal
+                        ]);
+                    } else {
+                        $docStmt->execute([
+                            $clientId,
+                            $docUuid,
+                            $doc["document_type"] ?? 'misc',
+                            $doc["file_url"] ?? $docPath,
+                            $docPath,
+                            $docFilename
+                        ]);
+                    }
+                } else {
+                    $docStmt->execute([
+                        $clientId,
+                        $docUuid,
+                        $doc["document_type"] ?? 'misc',
+                        $doc["file_url"] ?? $doc["document_path"] ?? ''
+                    ]);
+                }
             }
         }
     }
@@ -319,13 +666,11 @@ try {
             ]);
         }
     }
-
     $conn->commit();
     echo json_encode([
         "success" => true,
         "message" => $exists ? "Client updated successfully" : "Client added successfully"
     ]);
-
 } catch (PDOException $e) {
     if ($conn && $conn->inTransaction()) {
         $conn->rollBack();
@@ -337,4 +682,3 @@ try {
         "message" => "Server error: " . $e->getMessage()
     ]);
 }
-?>

@@ -1,12 +1,21 @@
 <?php
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Content-Type: application/json");
 
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
     exit();
+}
+
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$user = getAuthenticatedUser();
+if ($user && !rbac_user_has_permission_key($user['role'], 'users.write', 'mahaverse')) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Permission denied']);
+    exit;
 }
 
 $host = "db5018266079.hosting-data.io";
@@ -47,12 +56,12 @@ try {
             last_name = :last_name,
             is_active = :is_active,
             updated_at = CURRENT_TIMESTAMP";
-
+        
         // Handle password only if provided
         if (!empty($input["PASSWORD"])) {
             $sql .= ", PASSWORD = :PASSWORD";
         }
-
+        
         $sql .= " WHERE id = :id";
     } else {
         // Insert new user (require password for create)
@@ -61,7 +70,7 @@ try {
             echo json_encode(["success" => false, "message" => "Password is required for new users"]);
             exit();
         }
-
+        
         $sql = "INSERT INTO users (
             id, email, PASSWORD, role, first_name, last_name, is_active
         ) VALUES (
@@ -101,3 +110,4 @@ try {
         "message" => "Server error: " . $e->getMessage()
     ]);
 }
+?>

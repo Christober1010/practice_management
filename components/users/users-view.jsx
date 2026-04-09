@@ -192,6 +192,8 @@ export default function UsersView() {
         return "bg-green-100 text-green-800";
       case "rbt":
         return "bg-yellow-100 text-yellow-800";
+      case "biller":
+        return "bg-fuchsia-100 text-fuchsia-800";
       case "parent":
         return "bg-purple-100 text-purple-800";
       default:
@@ -265,6 +267,7 @@ export default function UsersView() {
                 <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="bcba">BCBA</SelectItem>
                 <SelectItem value="rbt">RBT</SelectItem>
+                <SelectItem value="biller">Biller</SelectItem>
                 <SelectItem value="parent">Parent</SelectItem>
               </SelectContent>
             </Select>

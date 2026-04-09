@@ -1,7 +1,17 @@
 // utils/fetchClients.js
+function authHeaders() {
+  if (typeof window === 'undefined') return {}
+  const token = localStorage.getItem('aba_token')
+  if (!token) return {}
+  return {
+    Authorization: `Bearer ${token}`,
+    'X-Auth-Token': token,
+  }
+}
+
 export async function fetchClientsUtil() {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
-  const res = await fetch(`${baseUrl}/get-clients.php`)
+  const res = await fetch(`${baseUrl}/get-clients.php`, { headers: { ...authHeaders() } })
   const json = await res.json()
 
   if (!json.success || !Array.isArray(json.clients)) {

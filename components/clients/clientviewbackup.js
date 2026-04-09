@@ -138,18 +138,53 @@ export default function ClientsView() {
     newClient.client_id = newClient.id;
 
     try {
+      // Upload queued document files ONLY on Save
+      const docs = Array.isArray(newClient.documents) ? newClient.documents : [];
+      const docsUploaded = await Promise.all(
+        docs.map(async (doc) => {
+          const file = doc?.document_file;
+          if (!file) return doc;
+
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("doc_uuid", doc.doc_uuid || "");
+          fd.append("client_id", newClient.client_id);
+
+          const upRes = await fetch(`${baseUrl}/upload-client-document.php`, {
+            method: "POST",
+            body: fd,
+          });
+          const upJson = await upRes.json().catch(() => ({}));
+          if (!upRes.ok || !upJson?.success) {
+            throw new Error(upJson?.message || "Failed to upload client document");
+          }
+
+          return {
+            ...doc,
+            document_path: upJson.document_path || "",
+            document_filename: upJson.document_filename || "",
+            document_file: null,
+          };
+        })
+      );
+
+      const clientToSend = {
+        ...newClient,
+        documents: docsUploaded.map(({ document_file, ...rest }) => rest),
+      };
+
       const res = await fetch(`${baseUrl}/update-clients.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...newClient,
+          ...clientToSend,
           archived: 0,
         }),
       });
       const result = await res.json();
       if (result.success) {
         // Optimistic: update Redux
-        dispatch(addClientAction(newClient));
+        dispatch(addClientAction(clientToSend));
         setIsAddModalOpen(false);
         // Optional: re-sync from backend to ensure server truth
         fetchClients();
@@ -167,18 +202,53 @@ export default function ClientsView() {
 
   const handleEditClient = async (clientData) => {
     try {
+      // Upload queued document files ONLY on Save
+      const docs = Array.isArray(clientData.documents) ? clientData.documents : [];
+      const docsUploaded = await Promise.all(
+        docs.map(async (doc) => {
+          const file = doc?.document_file;
+          if (!file) return doc;
+
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("doc_uuid", doc.doc_uuid || "");
+          fd.append("client_id", clientData.client_id || clientData.id || "");
+
+          const upRes = await fetch(`${baseUrl}/upload-client-document.php`, {
+            method: "POST",
+            body: fd,
+          });
+          const upJson = await upRes.json().catch(() => ({}));
+          if (!upRes.ok || !upJson?.success) {
+            throw new Error(upJson?.message || "Failed to upload client document");
+          }
+
+          return {
+            ...doc,
+            document_path: upJson.document_path || "",
+            document_filename: upJson.document_filename || "",
+            document_file: null,
+          };
+        })
+      );
+
+      const clientToSend = {
+        ...clientData,
+        documents: docsUploaded.map(({ document_file, ...rest }) => rest),
+      };
+
       const res = await fetch(`${baseUrl}/update-clients.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...clientData,
-          archived: clientData.archived ? 1 : 0,
+          ...clientToSend,
+          archived: clientToSend.archived ? 1 : 0,
         }),
       });
       const result = await res.json();
       if (result.success) {
-        dispatch(updateClientAction(clientData));
-        setEditingClient(clientData);
+        dispatch(updateClientAction(clientToSend));
+        setEditingClient(clientToSend);
         dispatch(fetchClients());
         toast.success("Client updated successfully!");
       } else {

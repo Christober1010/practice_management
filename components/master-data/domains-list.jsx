@@ -131,9 +131,6 @@ export default function DomainsList() {
   const genericDomains = useMemo(() => {
     if (!programsData.domains) return [];
     return programsData.domains.map((d) => {
-      const module = programsData.modules?.find(
-        (m) => String(m.id) === String(d.module_id || d.moduleId)
-      );
       return {
         id: `generic-${d.id}`,
         rawId: d.id,
@@ -141,8 +138,6 @@ export default function DomainsList() {
         description: d.description || "",
         status: d.status || d.STATUS || "Active",
         archived: !!d.archived,
-        moduleId: d.module_id || d.moduleId,
-        moduleName: module?.name || module?.NAME || "—",
         type: "generic",
       };
     });
@@ -164,10 +159,6 @@ export default function DomainsList() {
     });
 
     return clientData.domains.map((d) => {
-      const module = clientData.modules.find(
-        (m) => String(m.id) === String(d.module_id || d.moduleId)
-      );
-
       const clientName = clientMap[String(d.client_id)] || "Unknown Client";
 
       return {
@@ -177,14 +168,12 @@ export default function DomainsList() {
         description: d.description || "",
         status: d.status || d.STATUS || "Active",
         archived: d.archived === 1 || d.archived === true,
-        moduleId: d.module_id || d.moduleId,
-        moduleName: module?.name || module?.NAME || "—",
         client_name: clientName, // This will now show real name
         client_id: d.client_id,
         type: "client",
       };
     });
-  }, [clientData.domains, clientData.modules, clients]);
+  }, [clientData.domains, clients]);
 
   const clientNames = useMemo(() => {
     const names = clientDomains.map((d) => d.client_name).filter(Boolean);
@@ -203,7 +192,7 @@ export default function DomainsList() {
 
     return list
       .filter((d) => {
-        const matchesSearch = [d.name, d.description, d.moduleName].some((v) =>
+        const matchesSearch = [d.name, d.description].some((v) =>
           String(v || "")
             .toLowerCase()
             .includes(searchTerm.toLowerCase())
@@ -233,7 +222,6 @@ export default function DomainsList() {
           domains: [
             {
               id: domain.id,
-              moduleId: domain.moduleId,
               name: domain.name,
               description: domain.description || "",
               status: domain.status || "Active",
@@ -245,7 +233,6 @@ export default function DomainsList() {
           domains: [
             {
               id: domain.id,
-              moduleId: domain.moduleId,
               name: domain.name,
               description: domain.description || "",
               status: domain.status || "Active",
@@ -255,7 +242,7 @@ export default function DomainsList() {
         };
 
     try {
-      const url = isClientDomain ? "/client-domain.php" : "/programs.php";
+      const url = isClientDomain ? "/client-modules.php" : "/programs.php";
       const res = await fetch(`${baseUrl}${url}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -447,7 +434,6 @@ export default function DomainsList() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50">
-                    <TableHead className="px-2">Module Name</TableHead>
                     <TableHead className="px-2">Domain Name</TableHead>
                     <TableHead className="px-2">Type</TableHead>
                     <TableHead className="hidden sm:table-cell">
@@ -460,11 +446,6 @@ export default function DomainsList() {
                 <TableBody>
                   {displayedDomains.map((domain) => (
                     <TableRow key={domain.id} className="hover:bg-slate-50">
-                      {/* Module */}
-                      <TableCell className="font-medium p-2">
-                        {domain.moduleName}
-                      </TableCell>
-
                       {/* Domain name + Archived badge */}
                       <TableCell className="font-medium p-2">
                         {domain.name}

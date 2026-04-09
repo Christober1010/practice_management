@@ -543,10 +543,11 @@ export default function SchedulingView() {
     setDeleteModalOpen(true);
   };
 
-  const confirmDeleteSession = async () => {
+  const confirmDeleteSession = async (editModeOverride = null) => {
     if (!sessionToDelete) return;
     setDeletingSessionId(sessionToDelete.sessionId);
     try {
+      const editMode = editModeOverride || sessionToDelete.editMode || "single";
       const resp = await fetch(`${baseUrl}/add-session.php`, {
         method: "DELETE",
         headers: {
@@ -556,10 +557,7 @@ export default function SchedulingView() {
         },
         body: JSON.stringify({
           session_id: sessionToDelete.sessionId,
-          editMode: sessionToDelete.editMode || "single",
-          cancelledBy: sessionToDelete.cancelledBy || "Staff",
-          cancelledReason:
-            sessionToDelete.cancelledReason || "Session cancelled",
+          editMode,
         }),
         cache: "no-store",
         mode: "cors",
@@ -579,16 +577,16 @@ export default function SchedulingView() {
         setDeleteModalOpen(false);
         setSessionToDelete(null);
         toast.success(
-          `Session${data.rows_affected > 1 ? "s" : ""} cancelled successfully!`
+          `Session${data.rows_affected > 1 ? "s" : ""} deleted successfully!`
         );
         await refreshSessions();
       } else {
-        throw new Error(data.error || "Failed to cancel session");
+        throw new Error(data.error || "Failed to delete session");
       }
     } catch (err) {
       console.error("Error deleting session:", err);
       toast.error(
-        `Failed to cancel session: ${err.message}. Please try again.`
+        `Failed to delete session: ${err.message}. Please try again.`
       );
     } finally {
       setDeletingSessionId(null);
@@ -1645,14 +1643,8 @@ export default function SchedulingView() {
       <DeleteConfirmationModal
         isOpen={deleteModalOpen}
         onClose={closeDeleteModal}
-        onConfirm={(cancelledBy, cancelledReason, editMode) => {
-          setSessionToDelete((prev) => ({
-            ...prev,
-            cancelledBy,
-            cancelledReason,
-            editMode,
-          }));
-          confirmDeleteSession();
+        onConfirm={(editMode) => {
+          confirmDeleteSession(editMode);
         }}
         sessionData={sessionToDelete}
         isDeleting={!!deletingSessionId}

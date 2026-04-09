@@ -6,7 +6,8 @@
 // ---- CORS (adjust allowed origins) ----
 $allowed_origins = [
     'http://localhost:3000',
-    'http://mahaverse.dev.mahabehavioralhealth.com/', // change to your real domain
+    'http://mahaverse-dev.mahabehavioralhealth.com/', // change to your real domain
+    'https://mahaverse-dev.mahabehavioralhealth.com/', // HTTPS version
     'http://mahaverse.mahabehavioralhealth.com/', // TODO: replace with your Next.js domain
 ];
 

@@ -1,0 +1,28 @@
+# Backend environment variables
+# RENAME THIS FILE TO: .env
+# Then fill in your actual values below
+
+# -----------------------------
+# Google Drive integration
+# -----------------------------
+GOOGLE_DRIVE_ENABLED=true
+
+# Auth mode: oauth
+GOOGLE_DRIVE_AUTH_MODE=oauth
+
+# Root folder ID in Drive (get from Google Drive folder URL)
+GOOGLE_DRIVE_ROOT_FOLDER_ID=
+
+# -----------------------------
+# OAuth "Connect Drive" - FILL THESE IN!
+# -----------------------------
+GOOGLE_DRIVE_OAUTH_CLIENT_ID=YOUR_CLIENT_ID.apps.googleusercontent.com
+GOOGLE_DRIVE_OAUTH_CLIENT_SECRET=
+GOOGLE_DRIVE_OAUTH_REDIRECT_URI=https://launchpad.mahabehavioralhealth.com/backend/drive_oauth_callback.php
+
+# Generate encryption key with: python3 -c "import os, base64; print(base64.b64encode(os.urandom(32)).decode())"
+GOOGLE_DRIVE_TOKEN_ENCRYPTION_KEY=
+
+# Encrypt SSNs at rest (same format as above)
+SSN_ENCRYPTION_KEY=
+

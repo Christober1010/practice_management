@@ -13,6 +13,20 @@ const config: Config = {
         
       },
       colors: {
+        brand: {
+          50: "#f0f9ff",
+          100: "#e0f2fe",
+          500: "#0ea5e9",
+          600: "#0284c7",
+          800: "#075985",
+          900: "#0c4a6e",
+        },
+        neutral: {
+          bg: "#f8fafc",
+          card: "#ffffff",
+          text: "#334155",
+        },
+        mandatory: "#ef4444",
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {

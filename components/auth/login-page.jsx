@@ -16,8 +16,32 @@ import { Eye, EyeOff, Shield, Heart } from "lucide-react";
 import DashboardLayout from "@/components/layout/dashboard-layout";
 import img from "../../public/favicon.ico";
 import Image from "next/image";
+import { getMahaverseAuthHeaders } from "@/lib/api-auth";
+import { MAHAVERSE_PERMISSIONS_REFRESH_EVENT } from "@/lib/mahaverse-permissions-events";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
+
+async function fetchMahaversePermissionKeysFromApi() {
+  if (!API_BASE_URL) return null;
+  const token = localStorage.getItem("aba_token");
+  if (!token) return null;
+  try {
+    const res = await fetch(`${API_BASE_URL}/me-permissions.php?scope=mahaverse`, {
+      headers: getMahaverseAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!data.success || !Array.isArray(data.permissions)) return null;
+    return data.permissions;
+  } catch (e) {
+    console.warn("me-permissions:", e);
+    return null;
+  }
+}
+// Old Launchpad backend base URL (so Launchpad doesn't use localhost in dev)
+const LAUNCHPAD_API_BASE_URL =
+  process.env.NEXT_PUBLIC_LAUNCHPAD_API_URL ||
+  process.env.NEXT_PUBLIC_API_URL ||
+  "https://launchpad.mahabehavioralhealth.com";
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [user, setUser] = useState(null); // Removed TypeScript type annotation
@@ -61,6 +85,52 @@ export default function LoginPage() {
     checkExistingSession();
   }, []);
 
+  // Always sync RBAC from the server on load so Role Access / DB changes apply after refresh
+  // (stored user.permissions from login would otherwise stay stale forever).
+  useEffect(() => {
+    if (isCheckingAuth || !user) return;
+    const expectedId = user.id;
+    let cancelled = false;
+    (async () => {
+      const perms = await fetchMahaversePermissionKeysFromApi();
+      if (cancelled || !perms) return;
+      setUser((u) => {
+        if (!u || u.id !== expectedId) return u;
+        if (JSON.stringify(u.permissions || []) === JSON.stringify(perms)) return u;
+        const next = { ...u, permissions: perms };
+        localStorage.setItem("aba_user", JSON.stringify(next));
+        return next;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isCheckingAuth, user?.id]);
+
+  useEffect(() => {
+    const onRefresh = async () => {
+      const raw = localStorage.getItem("aba_user");
+      if (!raw) return;
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      if (!parsed?.id) return;
+      const perms = await fetchMahaversePermissionKeysFromApi();
+      if (!perms) return;
+      setUser((u) => {
+        if (!u || u.id !== parsed.id) return u;
+        const next = { ...u, permissions: perms };
+        localStorage.setItem("aba_user", JSON.stringify(next));
+        return next;
+      });
+    };
+    window.addEventListener(MAHAVERSE_PERMISSIONS_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(MAHAVERSE_PERMISSIONS_REFRESH_EVENT, onRefresh);
+  }, []);
+
   const handleSignIn = async () => {
     setIsLoading(true);
     setLoginError("");
@@ -91,10 +161,51 @@ export default function LoginPage() {
         localStorage.setItem("aba_token", data.token);
         localStorage.setItem("aba_token_expiry", data.expires_at);
 
+        // Single-login bridge for Launchpad:
+        // attempt to log into Launchpad backend with the same credentials and store Launchpad auth keys.
+        // This removes the need for a separate Launchpad login screen.
+        try {
+          const lpResp = await fetch(`${LAUNCHPAD_API_BASE_URL}/backend/login.php`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              email: email.trim(),
+              password: password,
+            }),
+          });
+          const lpData = await lpResp.json();
+          if (lpResp.ok && lpData.success) {
+            localStorage.setItem("auth_token", lpData.token);
+            localStorage.setItem("auth_user", JSON.stringify(lpData.user));
+            localStorage.setItem("auth_expires_at", lpData.expires_at);
+          } else {
+            // If Launchpad login fails, make sure we don't leave stale tokens around.
+            localStorage.removeItem("auth_token");
+            localStorage.removeItem("auth_user");
+            localStorage.removeItem("auth_expires_at");
+          }
+        } catch (e) {
+          // Network/CORS issues shouldn't block Mahaverse login.
+          localStorage.removeItem("auth_token");
+          localStorage.removeItem("auth_user");
+          localStorage.removeItem("auth_expires_at");
+        }
+
         // Set user state to trigger dashboard render
         setUser(data.user);
 
         toast.success(`Welcome back, ${data.user.first_name}!`);
+
+        // If we were asked to redirect (e.g., Launchpad sync), navigate after login.
+        const params = new URLSearchParams(
+          typeof window !== "undefined" ? window.location.search || "" : ""
+        );
+        const redirectParam = params.get("redirect");
+        if (redirectParam && redirectParam.startsWith("/")) {
+          // Use hard navigation since Mahaverse isn't router-based
+          window.location.href = redirectParam;
+        }
       } else {
         setLoginError(data.error || "Login failed. Please try again.");
       }
@@ -113,6 +224,11 @@ export default function LoginPage() {
     localStorage.removeItem("aba_user");
     localStorage.removeItem("aba_token");
     localStorage.removeItem("aba_token_expiry");
+
+    // Also clear Launchpad auth
+    localStorage.removeItem("auth_token");
+    localStorage.removeItem("auth_user");
+    localStorage.removeItem("auth_expires_at");
 
     // Reset state
     setUser(null);

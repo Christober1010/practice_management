@@ -10,7 +10,8 @@ error_reporting(E_ALL);
 // ---- CORS ----
 $allowed_origins = [
   'http://localhost:3000',
-  'http://mahaverse.dev.mahabehavioralhealth.com/', // change to your real domain
+  'http://mahaverse-dev.mahabehavioralhealth.com/', // change to your real domain
+  'https://mahaverse-dev.mahabehavioralhealth.com/', // HTTPS version
   'http://mahaverse.mahabehavioralhealth.com/'
 ];
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
@@ -30,9 +31,9 @@ header("Content-Type: application/json");
 
 // ---- DB CONFIG ----
 $host = "db5018266079.hosting-data.io";
-$dbname = "dbs14484433";
 $user = "dbu3321929";
 $pass = "M@h@B3h@v1or@lH3@lth4@ut1sm";
+$dbname = "dbs14484433";
 
 // ---- Connect ----
 $conn = new mysqli($host, $user, $pass, $dbname);

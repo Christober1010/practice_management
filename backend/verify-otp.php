@@ -6,7 +6,8 @@
 // ---- CORS (adjust allowed origins) ----
 $allowed_origins = [
     'http://localhost:3000',
-    'http://mahaverse.dev.mahabehavioralhealth.com/', // change to your real domain
+    'http://mahaverse-dev.mahabehavioralhealth.com/', // change to your real domain
+    'https://mahaverse-dev.mahabehavioralhealth.com/', // HTTPS version
     'http://mahaverse.mahabehavioralhealth.com/', // TODO: replace with your Next.js domain
 ];
 
@@ -37,10 +38,10 @@ header("Content-Type: application/json");
 // error_reporting(E_ALL);
 
 // ---- DB connection (mysqli) ----
-$host = "db5018266079.hosting-data.io";
-$dbname = "dbs14484433";
-$user = "dbu3321929";
-$pass = "M@h@B3h@v1or@lH3@lth4@ut1sm";                    // TODO: use your DB name
+$host = "db5018266079.hosting-data.io";      // TODO: use your DB host
+$user = "dbu3321929";                         // TODO: use your DB user
+$pass = "M@h@B3h@v1or@lH3@lth4@ut1sm";        // TODO: use your DB password
+$dbname = "dbs14484433";                      // TODO: use your DB name
 
 $conn = @new mysqli($host, $user, $pass, $dbname);
 if ($conn->connect_error) {

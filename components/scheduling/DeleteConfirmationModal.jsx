@@ -1,8 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Input } from "@/components/ui/input";
 import { AlertTriangle, X } from "lucide-react";
 
 const DeleteConfirmationModal = ({
@@ -12,23 +11,16 @@ const DeleteConfirmationModal = ({
   sessionData,
   isDeleting = false,
 }) => {
-  const [cancelledBy, setCancelledBy] = useState("Staff");
-  const [cancelledReason, setCancelledReason] = useState("");
   const [editMode, setEditMode] = useState("single");
+
+  useEffect(() => {
+    if (isOpen) setEditMode("single");
+  }, [isOpen, sessionData?.sessionId]);
 
   if (!isOpen) return null;
 
   const handleConfirm = () => {
-    // Validate inputs
-    if (!cancelledBy) {
-      alert("Please select who cancelled the session.");
-      return;
-    }
-    if (!cancelledReason.trim()) {
-      alert("Please provide a cancellation reason.");
-      return;
-    }
-    onConfirm(cancelledBy, cancelledReason, editMode);
+    onConfirm(editMode);
   };
 
   const handleCancel = () => {
@@ -51,7 +43,7 @@ const DeleteConfirmationModal = ({
           <div className="flex items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-lg font-semibold text-red-600">
               <AlertTriangle className="h-5 w-5" />
-              Cancel Session
+              Delete Session
             </CardTitle>
             <Button
               variant="ghost"
@@ -68,7 +60,10 @@ const DeleteConfirmationModal = ({
         <CardContent className="space-y-4">
           <div className="text-gray-700">
             <p className="mb-3">
-              Are you sure you want to cancel this session? This action cannot be undone.
+              Are you sure you want to delete this session? This will remove it from Scheduling and cannot be undone.
+            </p>
+            <p className="text-sm text-gray-600 mb-3">
+              Use <strong>Edit</strong> to cancel or update sessions.
             </p>
 
             {sessionData && (
@@ -99,12 +94,12 @@ const DeleteConfirmationModal = ({
             )}
           </div>
 
-          {/* Input Fields */}
+          {/* Scope */}
           <div className="space-y-4">
             {sessionData?.recurring && sessionData.recurring !== "No" && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Apply cancellation to
+                  Apply deletion to
                 </label>
                 <Select
                   value={editMode}
@@ -121,37 +116,6 @@ const DeleteConfirmationModal = ({
                 </Select>
               </div>
             )}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Cancelled By
-              </label>
-              <Select
-                value={cancelledBy}
-                onValueChange={setCancelledBy}
-                disabled={isDeleting}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select who cancelled" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Client">Client</SelectItem>
-                  <SelectItem value="Staff">Staff</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Cancellation Reason
-              </label>
-              <Input
-                type="text"
-                value={cancelledReason}
-                onChange={(e) => setCancelledReason(e.target.value)}
-                placeholder="Enter cancellation reason"
-                disabled={isDeleting}
-                className="w-full"
-              />
-            </div>
           </div>
 
           <div className="flex gap-3 pt-4">
@@ -172,10 +136,10 @@ const DeleteConfirmationModal = ({
               {isDeleting ? (
                 <div className="flex items-center gap-2">
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  Cancelling...
+                  Deleting...
                 </div>
               ) : (
-                "Cancel Session"
+                "Delete Session"
               )}
             </Button>
           </div>

@@ -5,10 +5,10 @@ header("Access-Control-Allow-Methods: POST");
 header("Content-Type: application/json");
 
 // ====== DB CONFIG (replace with your actual credentials) ======
-$host = "db5018266079.hosting-data.io";
+$host   = "db5018266079.hosting-data.io"; 
+$user   = "dbu3321929";
+$pass   = "M@h@B3h@v1or@lH3@lth4@ut1sm";
 $dbname = "dbs14484433";
-$user = "dbu3321929";
-$pass = "M@h@B3h@v1or@lH3@lth4@ut1sm";
 
 $conn = new mysqli($host, $user, $pass, $dbname);
 

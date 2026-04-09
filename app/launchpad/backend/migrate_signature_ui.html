@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Migrate Signature to Drive</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #0d9488;
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        .radio-group {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+        }
+        .radio-group label {
+            font-weight: normal;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        button {
+            background-color: #0d9488;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+        }
+        button:hover {
+            background-color: #0f766e;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .result.success {
+            background-color: #d1fae5;
+            border: 1px solid #10b981;
+            color: #065f46;
+        }
+        .result.error {
+            background-color: #fee2e2;
+            border: 1px solid #ef4444;
+            color: #991b1b;
+        }
+        .result pre {
+            background: rgba(0,0,0,0.05);
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .info {
+            background-color: #eff6ff;
+            border: 1px solid #3b82f6;
+            color: #1e40af;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .info strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Migrate Signature to Drive</h1>
+        
+        <div class="info">
+            <strong>Gabriel's Information:</strong>
+            Staff ID: 78<br>
+            Attachment ID: 57<br>
+            Email: gabrielgarcia0206@gmail.com
+        </div>
+
+        <form id="migrationForm">
+            <div class="form-group">
+                <label for="staff_id">Staff ID (optional if using Attachment ID):</label>
+                <input type="number" id="staff_id" name="staff_id" placeholder="e.g., 78">
+            </div>
+
+            <div class="form-group">
+                <label for="attachment_id">Attachment ID (optional if using Staff ID):</label>
+                <input type="number" id="attachment_id" name="attachment_id" placeholder="e.g., 57">
+            </div>
+
+            <div class="form-group">
+                <label>Delete Local File After Migration?</label>
+                <div class="radio-group">
+                    <label>
+                        <input type="radio" name="delete_local" value="false" checked>
+                        No (Keep as backup)
+                    </label>
+                    <label>
+                        <input type="radio" name="delete_local" value="true">
+                        Yes (Remove local file)
+                    </label>
+                </div>
+            </div>
+
+            <button type="submit" id="submitBtn">Migrate to Drive</button>
+        </form>
+
+        <div id="result" class="result"></div>
+    </div>
+
+    <script>
+        document.getElementById('migrationForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const resultDiv = document.getElementById('result');
+            
+            // Get form values
+            const staffId = document.getElementById('staff_id').value;
+            const attachmentId = document.getElementById('attachment_id').value;
+            const deleteLocal = document.querySelector('input[name="delete_local"]:checked').value === 'true';
+            
+            if (!staffId && !attachmentId) {
+                resultDiv.className = 'result error';
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = '<strong>Error:</strong> Please provide either Staff ID or Attachment ID';
+                return;
+            }
+            
+            // Build payload
+            const payload = { delete_local: deleteLocal };
+            if (staffId) payload.staff_id = parseInt(staffId);
+            if (attachmentId) payload.attachment_id = parseInt(attachmentId);
+            
+            // Disable button
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Migrating...';
+            resultDiv.style.display = 'none';
+            
+            try {
+                const response = await fetch('migrate_signature_to_drive.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include', // Include cookies for authentication
+                    body: JSON.stringify(payload)
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    resultDiv.className = 'result success';
+                    resultDiv.innerHTML = `
+                        <strong>Success!</strong><br>
+                        ${data.message}<br><br>
+                        <strong>Details:</strong>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                } else {
+                    resultDiv.className = 'result error';
+                    resultDiv.innerHTML = `
+                        <strong>Error:</strong><br>
+                        ${data.message || 'Migration failed'}
+                    `;
+                }
+            } catch (error) {
+                resultDiv.className = 'result error';
+                resultDiv.innerHTML = `
+                    <strong>Error:</strong><br>
+                    ${error.message}
+                `;
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Migrate to Drive';
+                resultDiv.style.display = 'block';
+            }
+        });
+    </script>
+</body>
+</html>
+

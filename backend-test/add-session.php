@@ -381,12 +381,7 @@ try {
                 exit();
             }
 
-            $status = 'Scheduled';
-            if (!in_array($status, ['Scheduled', 'Rendered', 'Cancelled'])) {
-                http_response_code(400);
-                echo json_encode(["error" => "Invalid status. Must be 'Scheduled', 'Rendered', or 'Cancelled'"]);
-                exit();
-            }
+
 
             $startMySQL = convertToMySQLDateTime($input['startDateTime']);
             $endMySQL = convertToMySQLDateTime($input['endDateTime']);
@@ -394,8 +389,33 @@ try {
             $endTz = isset($input['endTZ']) ? (string)$input['endTZ'] : null;
             $authCode = isset($input['authCode']) ? (string)$input['authCode'] : null;
             $locationAddress = isset($input['locationAddress']) ? (string)$input['locationAddress'] : null;
-            $quickNote = isset($input['quickNote']) ? (string)$input['quickNote'] : null;
 
+            $quickNote = isset($input['quickNote']) ? (string)$input['quickNote'] : null;
+            $quickNoteContent = trim(string: $quickNote ?? '');
+            $submittedStatus = $input['STATUS'] ?? $input['status'] ?? null;
+
+            // 1. Default to 'Scheduled' or respect the submitted status.
+            $status = !empty($submittedStatus) ? $submittedStatus : 'Scheduled';
+
+            // 2. Upgrade to 'Rendered' if notes are present.
+            if (!empty($quickNoteContent)) {
+                $status = 'Rendered';
+            }
+
+            // 3. Ensure 'Cancelled' status is preserved.
+            if (strtoupper($submittedStatus) === 'CANCELLED') {
+                $status = $submittedStatus;
+            }
+
+            // 4. Finalize $quickNote value for SQL bind
+            $quickNote = $quickNoteContent ?: null;
+            // --- END: STATUS DETERMINATION ---
+
+            if (!in_array($status, ['Scheduled', 'Rendered', 'Cancelled'])) {
+                http_response_code(400);
+                echo json_encode(["error" => "Invalid status. Must be 'Scheduled', 'Rendered', or 'Cancelled'"]);
+                exit();
+            }
             $authorizedHours = isset($input['authorizedHours']) ? (string)floatval($input['authorizedHours']) : null;
             $scheduledHours = isset($input['scheduledHours']) ? (string)floatval($input['scheduledHours']) : null;
             $renderedHours = isset($input['renderedHours']) ? (string)floatval($input['renderedHours']) : '0.00';
@@ -535,7 +555,7 @@ try {
             INSERT INTO sessions (
                 client_id, provider_id, provider_name, supervising_provider_id, supervising_provider_name,
                 start_utc, end_utc, start_tz, end_tz, auth_code, recurring, recurring_days, place_of_service,
-                location_address, quick_note, STATUS, authorized_hours, scheduled_hours, rendered_hours,
+                location_address, quick_note, status, authorized_hours, scheduled_hours, rendered_hours,
                 recurring_id, auth_id
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
@@ -549,7 +569,7 @@ try {
                     $recurring_id = $recurringFrequency !== 'No' ? $recurringId : null;
 
                     $stmt->bind_param(
-                        "sssssssssssssssdddiis",
+                        "ssssssssssssssssdddii",
                         $clientId,
                         $provider,
                         $providerName,
@@ -572,6 +592,7 @@ try {
                         $recurring_id,
                         $authId
                     );
+
 
                     if ($stmt->execute()) {
                         $sessionIds[] = $stmt->insert_id;
@@ -792,16 +813,19 @@ try {
             try {
                 $sessionsToUpdate = [];
                 if ($editMode === 'recurring' && !empty($currentSession['recurring_id'])) {
-                    $stmt = $conn->prepare("SELECT session_id, start_utc, end_utc, scheduled_hours FROM sessions WHERE recurring_id = ?");
+                    $stmt = $conn->prepare("SELECT session_id, client_id, auth_id, start_utc, end_utc, scheduled_hours, status FROM sessions WHERE recurring_id = ?");
                     $stmt->bind_param("i", $currentSession['recurring_id']);
                     $stmt->execute();
                     $result = $stmt->get_result();
                     while ($row = $result->fetch_assoc()) {
                         $sessionsToUpdate[] = [
                             'session_id' => $row['session_id'],
+                            'client_id' => $row['client_id'],
+                            'auth_id' => $row['auth_id'],
                             'start_utc' => $row['start_utc'],
                             'end_utc' => $row['end_utc'],
-                            'scheduled_hours' => $row['scheduled_hours']
+                            'scheduled_hours' => $row['scheduled_hours'],
+                            'status' => $row['status']
                         ];
                     }
                     $stmt->close();
@@ -809,15 +833,23 @@ try {
                 } else {
                     $sessionsToUpdate[] = [
                         'session_id' => $sessionId,
+                        'client_id' => $currentSession['client_id'],
+                        'auth_id' => $currentSession['auth_id'],
                         'start_utc' => $currentSession['start_utc'],
                         'end_utc' => $currentSession['end_utc'],
-                        'scheduled_hours' => $currentSession['scheduled_hours']
+                        'scheduled_hours' => $currentSession['scheduled_hours'],
+                        'status' => $currentSession['status']
                     ];
                     file_put_contents('debug.log', "Edit Mode: SINGLE - Updating session_id: $sessionId\n", FILE_APPEND);
                 }
 
                 $rowsAffected = 0;
                 $totalHoursChange = 0;
+                $totalAuthDelta = 0;
+                $includeCancelFields =
+                    array_key_exists('cancelledBy', $input) ||
+                    array_key_exists('cancelledReason', $input) ||
+                    (isset($input['status']) && strcasecmp((string)$input['status'], 'Cancelled') === 0);
 
                 foreach ($sessionsToUpdate as $session) {
                     $sessionId = (int)$session['session_id'];
@@ -839,7 +871,11 @@ try {
                         $status = 'Rendered';
                     } else {
                         // Keep current status if quickNote is not being updated
-                        $status = isset($input['status']) ? (string)$input['status'] : $currentSession['status'];
+                        if (isset($input['status'])) {
+                            $status = ucfirst(strtolower((string)$input['status']));
+                        } else {
+                            $status = $currentSession['status'];
+                        }
                     }
                     $authorizedHours = isset($input['authorizedHours']) ? floatval($input['authorizedHours']) : floatval($currentSession['authorized_hours'] ?? '0.00');
                     $scheduledHours = isset($input['scheduledHours']) ? floatval($input['scheduledHours']) : floatval($currentSession['scheduled_hours']);
@@ -906,6 +942,23 @@ try {
 
                     file_put_contents('debug.log', "Updating session_id: $sessionId with hours change: $hoursChange\n", FILE_APPEND);
 
+                    // Auth balance delta must reflect both hours changes and cancellation/uncancellation.
+                    $originalStatus = ucfirst(strtolower((string)($session['status'] ?? $currentSession['status'] ?? 'Scheduled')));
+                    $newStatus = ucfirst(strtolower((string)($status ?? 'Scheduled')));
+                    $oldActive = strtolower($originalStatus) !== 'cancelled';
+                    $newActive = strtolower($newStatus) !== 'cancelled';
+
+                    if ($oldActive && $newActive) {
+                        // still active: only adjust by the scheduled hours difference
+                        $totalAuthDelta += -($scheduledHours - $originalScheduledHours);
+                    } elseif ($oldActive && !$newActive) {
+                        // cancelling: return the previously scheduled hours
+                        $totalAuthDelta += $originalScheduledHours;
+                    } elseif (!$oldActive && $newActive) {
+                        // un-cancelling: reserve hours again
+                        $totalAuthDelta += -$scheduledHours;
+                    }
+
                     $updateSql = "
                 UPDATE sessions SET
                     client_id = ?,
@@ -922,6 +975,7 @@ try {
                     location_address = ?,
                     quick_note = ?,
                     STATUS = ?,
+                    " . ($includeCancelFields ? "cancelled_by = ?, cancelled_reason = ?," : "") . "
                     authorized_hours = ?,
                     scheduled_hours = ?,
                     rendered_hours = ?
@@ -933,27 +987,68 @@ try {
                         throw new Exception("Prepare failed: " . $conn->error);
                     }
 
-                    $updateStmt->bind_param(
-                        "ssssssssssssssdddi",
-                        $clientId,
-                        $provider,
-                        $providerName,
-                        $supervisingProvider,
-                        $supervisingProviderName,
-                        $startUtc,
-                        $endUtc,
-                        $startTz,
-                        $endTz,
-                        $authCode,
-                        $placeOfService,
-                        $locationAddress,
-                        $quickNote,
-                        $status,
-                        $authorizedHours,
-                        $scheduledHours,
-                        $renderedHours,
-                        $sessionId
-                    );
+                    if ($includeCancelFields) {
+                        $cancelledBy = isset($input['cancelledBy']) ? (string)$input['cancelledBy'] : null;
+                        $cancelledReason = isset($input['cancelledReason']) ? (string)$input['cancelledReason'] : null;
+                        if (strtolower($newStatus) === 'cancelled') {
+                            if (empty(trim((string)$cancelledReason))) {
+                                throw new Exception("Cancellation reason is required when setting status to Cancelled");
+                            }
+                            if (!in_array($cancelledBy, ['Client', 'Staff'], true)) {
+                                throw new Exception("Invalid cancelledBy value. Must be 'Client' or 'Staff'");
+                            }
+                        } else {
+                            // For non-cancelled updates, don't change these fields unless explicitly cancelling.
+                            $cancelledBy = null;
+                            $cancelledReason = null;
+                        }
+
+                        $updateStmt->bind_param(
+                            "ssssssssssssssssdddi",
+                            $clientId,
+                            $provider,
+                            $providerName,
+                            $supervisingProvider,
+                            $supervisingProviderName,
+                            $startUtc,
+                            $endUtc,
+                            $startTz,
+                            $endTz,
+                            $authCode,
+                            $placeOfService,
+                            $locationAddress,
+                            $quickNote,
+                            $status,
+                            $cancelledBy,
+                            $cancelledReason,
+                            $authorizedHours,
+                            $scheduledHours,
+                            $renderedHours,
+                            $sessionId
+                        );
+                    } else {
+                        $updateStmt->bind_param(
+                            "ssssssssssssssdddi",
+                            $clientId,
+                            $provider,
+                            $providerName,
+                            $supervisingProvider,
+                            $supervisingProviderName,
+                            $startUtc,
+                            $endUtc,
+                            $startTz,
+                            $endTz,
+                            $authCode,
+                            $placeOfService,
+                            $locationAddress,
+                            $quickNote,
+                            $status,
+                            $authorizedHours,
+                            $scheduledHours,
+                            $renderedHours,
+                            $sessionId
+                        );
+                    }
 
                     if (!$updateStmt->execute()) {
                         throw new Exception("Failed to update session_id: $sessionId - " . $updateStmt->error);
@@ -964,14 +1059,14 @@ try {
                     file_put_contents('debug.log', "Successfully updated session_id: $sessionId\n", FILE_APPEND);
                 }
 
-                // Update auth balance if hours changed
+                // Update auth balance based on active-session delta (covers cancel/uncancel and hour changes)
                 $authId = isset($input['authId']) && $input['authId'] !== null ? (int)$input['authId'] : $currentSession['auth_id'];
-                if ($totalHoursChange != 0 && !empty($authId)) {
-                    if (!updateClientAuthUnitsScheduled($conn, $currentSession['client_id'], $authId, -$totalHoursChange)) {
+                if ($totalAuthDelta != 0 && !empty($authId)) {
+                    if (!updateClientAuthUnitsScheduled($conn, $currentSession['client_id'], $authId, $totalAuthDelta)) {
                         throw new Exception("Failed to update client_auth balance_units");
                     }
                 } else {
-                    file_put_contents('debug.log', "Skipped updateClientAuthUnitsScheduled: auth_id=$authId or no hours change ($totalHoursChange)\n", FILE_APPEND);
+                    file_put_contents('debug.log', "Skipped updateClientAuthUnitsScheduled: auth_id=$authId or no auth delta ($totalAuthDelta)\n", FILE_APPEND);
                 }
 
                 // Send notification emails
@@ -1031,7 +1126,7 @@ try {
             }
             break;
 
-        // DELETE Case: Cancel single or recurring sessions
+        // DELETE Case: Hard delete single or recurring sessions
         case "DELETE":
             if (!isset($input['session_id'])) {
                 http_response_code(400);
@@ -1040,25 +1135,11 @@ try {
             }
 
             $sessionId = (int)$input['session_id'];
-            $cancelledBy = isset($input['cancelledBy']) ? (string)$input['cancelledBy'] : 'Staff';
-            $cancelledReason = isset($input['cancelledReason']) ? (string)$input['cancelledReason'] : '';
             $editMode = isset($input['editMode']) ? (string)$input['editMode'] : 'single';
-
-            if (!in_array($cancelledBy, ['Client', 'Staff'])) {
-                http_response_code(400);
-                echo json_encode(["error" => "Invalid cancelledBy value. Must be 'Client' or 'Staff'"]);
-                exit();
-            }
-
-            if (empty($cancelledReason)) {
-                http_response_code(400);
-                echo json_encode(["error" => "Cancellation reason is required"]);
-                exit();
-            }
 
             $conn->begin_transaction();
             try {
-                $stmt = $conn->prepare("SELECT client_id, auth_id, recurring_id, start_utc, end_utc, provider_id, provider_name, location_address, quick_note, start_tz, scheduled_hours, rendered_hours FROM sessions WHERE session_id = ?");
+                $stmt = $conn->prepare("SELECT session_id, client_id, auth_id, recurring_id, scheduled_hours, status FROM sessions WHERE session_id = ?");
                 $stmt->bind_param("i", $sessionId);
                 $stmt->execute();
                 $result = $stmt->get_result();
@@ -1071,102 +1152,90 @@ try {
                     exit();
                 }
 
-                $sessionsToUpdate = [];
+                $sessionsToDelete = [];
                 if ($editMode === 'recurring' && !empty($currentSession['recurring_id'])) {
-                    $stmt = $conn->prepare("SELECT session_id, scheduled_hours, rendered_hours FROM sessions WHERE recurring_id = ? AND status != 'cancelled'");
+                    $stmt = $conn->prepare("SELECT session_id, client_id, auth_id, scheduled_hours, status FROM sessions WHERE recurring_id = ?");
                     $stmt->bind_param("i", $currentSession['recurring_id']);
                     $stmt->execute();
                     $result = $stmt->get_result();
                     while ($row = $result->fetch_assoc()) {
-                        $sessionsToUpdate[] = [
-                            'session_id' => $row['session_id'],
-                            'scheduled_hours' => $row['scheduled_hours'],
-                            'rendered_hours' => $row['rendered_hours']
-                        ];
+                        $sessionsToDelete[] = $row;
                     }
                     $stmt->close();
-                    file_put_contents('debug.log', "DELETE Mode: RECURRING - Found " . count($sessionsToUpdate) . " sessions to cancel with recurring_id: {$currentSession['recurring_id']}\n", FILE_APPEND);
+                    file_put_contents('debug.log', "DELETE Mode: RECURRING - Found " . count($sessionsToDelete) . " sessions to delete with recurring_id: {$currentSession['recurring_id']}\n", FILE_APPEND);
                 } else {
-                    $sessionsToUpdate[] = [
-                        'session_id' => $sessionId,
-                        'scheduled_hours' => $currentSession['scheduled_hours'],
-                        'rendered_hours' => $currentSession['rendered_hours']
-                    ];
-                    file_put_contents('debug.log', "DELETE Mode: SINGLE - Cancelling session_id: $sessionId\n", FILE_APPEND);
+                    $sessionsToDelete[] = $currentSession;
+                    file_put_contents('debug.log', "DELETE Mode: SINGLE - Deleting session_id: $sessionId\n", FILE_APPEND);
                 }
 
-                $stmt = $conn->prepare("UPDATE sessions SET status = ?, cancelled_by = ?, cancelled_reason = ?, updated_at = NOW() WHERE session_id = ?");
-                $status = 'Cancelled';
-                $rowsAffected = 0;
-                $totalHoursChange = 0;
+                // Return scheduled hours to authorization balance for sessions that are not already cancelled
+                $hoursReturnByAuth = []; // key: client_id|auth_id => float hours
+                foreach ($sessionsToDelete as $s) {
+                    $clientId = (string)($s['client_id'] ?? '');
+                    $authId = isset($s['auth_id']) ? (int)$s['auth_id'] : 0;
+                    if (!$clientId || !$authId) continue;
 
-                foreach ($sessionsToUpdate as $session) {
-                    $stmt->bind_param("sssi", $status, $cancelledBy, $cancelledReason, $session['session_id']);
-                    if ($stmt->execute()) {
-                        $rowsAffected += $stmt->affected_rows;
-                        $totalHoursChange += (float)$session['scheduled_hours'];
-                        file_put_contents('debug.log', "Cancelled session_id: {$session['session_id']}\n", FILE_APPEND);
-                    } else {
-                        throw new Exception("Failed to cancel session_id: {$session['session_id']} - " . $stmt->error);
+                    $status = strtolower(trim((string)($s['status'] ?? '')));
+                    if ($status === 'cancelled') {
+                        continue; // avoid double returning hours
                     }
+
+                    $hrs = (float)($s['scheduled_hours'] ?? 0);
+                    if ($hrs == 0) continue;
+                    $key = $clientId . '|' . $authId;
+                    $hoursReturnByAuth[$key] = ($hoursReturnByAuth[$key] ?? 0) + $hrs;
                 }
-                $stmt->close();
 
-                if ($totalHoursChange != 0 && !updateClientAuthUnitsScheduled($conn, $currentSession['client_id'], $currentSession['auth_id'], $totalHoursChange)) {
-                    throw new Exception("Failed to update client_auth balance_units");
+                // Delete sessions
+                $rowsAffected = 0;
+                $deletedIds = array_map(function ($s) {
+                    return (int)$s['session_id'];
+                }, $sessionsToDelete);
+
+                if ($editMode === 'recurring' && !empty($currentSession['recurring_id'])) {
+                    $stmt = $conn->prepare("DELETE FROM sessions WHERE recurring_id = ?");
+                    $stmt->bind_param("i", $currentSession['recurring_id']);
+                    if (!$stmt->execute()) {
+                        throw new Exception("Failed to delete recurring sessions: " . $stmt->error);
+                    }
+                    $rowsAffected = $stmt->affected_rows;
+                    $stmt->close();
+                } else {
+                    $stmt = $conn->prepare("DELETE FROM sessions WHERE session_id = ?");
+                    $stmt->bind_param("i", $sessionId);
+                    if (!$stmt->execute()) {
+                        throw new Exception("Failed to delete session: " . $stmt->error);
+                    }
+                    $rowsAffected = $stmt->affected_rows;
+                    $stmt->close();
                 }
 
-                $adminEmail = "christoberedward@gmail.com";
-                $adminName = "Admin";
-                $emailData = getEmailRecipients($conn, $currentSession['client_id'], $currentSession['provider_id']);
-
-                if ($emailData) {
-                    $clientName = $emailData['clientName'];
-                    $recipients = $emailData['recipients'];
-
-                    foreach ($sessionsToUpdate as $session) {
-                        $localStartDt = convertUtcToTz($currentSession['start_utc'], $currentSession['start_tz'] ?: 'UTC');
-                        $localEndDt = convertUtcToTz($currentSession['end_utc'], $currentSession['start_tz'] ?: 'UTC');
-                        $displayStart = $localStartDt ? $localStartDt->format('Y-m-d g:i A') : $currentSession['start_utc'];
-                        $displayEnd = $localEndDt ? $localEndDt->format('Y-m-d g:i A') : $currentSession['end_utc'];
-
-                        $subject = "Session Cancelled - Mahaverse";
-                        $body = '
-                        <div style="background-color: #ffffff; padding: 15px; border: 1px solid #e0e0e0; border-radius: 5px;">
-                            <p style="margin: 10px 0;"><strong>Client:</strong> ' . htmlspecialchars($clientName) . '</p>
-                            <p style="margin: 10px 0;"><strong>Provider:</strong> ' . htmlspecialchars($currentSession['provider_name']) . '</p>
-                            <p style="margin: 10px 0;"><strong>Start:</strong> ' . htmlspecialchars($displayStart) . ' (' . htmlspecialchars($currentSession['start_tz'] ?: 'UTC') . ')</p>
-                            <p style="margin: 10px 0;"><strong>End:</strong> ' . htmlspecialchars($displayEnd) . ' (' . htmlspecialchars($currentSession['start_tz'] ?: 'UTC') . ')</p>
-                            <p style="margin: 10px 0;"><strong>Location:</strong> ' . htmlspecialchars($currentSession['location_address'] ?? 'Not specified') . '</p>
-                            <p style="margin: 10px 0;"><strong>Notes:</strong> ' . htmlspecialchars($currentSession['quick_note'] ?? 'None') . '</p>
-                            <p style="margin: 10px 0;"><strong>Cancelled By:</strong> ' . htmlspecialchars($cancelledBy) . '</p>
-                            <p style="margin: 10px 0;"><strong>Cancellation Reason:</strong> ' . htmlspecialchars($cancelledReason) . '</p>
-                        </div>';
-
-                        $icsContent = generateICS($clientName, $currentSession['provider_name'], $currentSession['start_utc'], $currentSession['end_utc'], $currentSession['location_address'], $currentSession['quick_note'], $currentSession['start_tz']);
-
-                        foreach ($recipients as $recipient) {
-                            $emailSent = sendEmail($recipient['email'], $recipient['name'], $subject, $body, $icsContent);
-                            file_put_contents('debug.log', ucfirst($recipient['type']) . " Email Sent to: {$recipient['email']} ({$recipient['name']}) - " . ($emailSent ? 'Success' : 'Failed') . "\n", FILE_APPEND);
+                // Update auth balances
+                $totalHoursReturned = 0;
+                foreach ($hoursReturnByAuth as $key => $hrs) {
+                    [$clientId, $authIdStr] = explode('|', $key);
+                    $authId = (int)$authIdStr;
+                    if ($hrs != 0) {
+                        $totalHoursReturned += (float)$hrs;
+                        if (!updateClientAuthUnitsScheduled($conn, $clientId, $authId, (float)$hrs)) {
+                            throw new Exception("Failed to update client_auth balance_units for auth_id=$authId");
                         }
-
-                        $adminEmailSent = sendEmail($adminEmail, $adminName, $subject, $body, $icsContent);
-                        file_put_contents('debug.log', "Admin Email Sent: " . ($adminEmailSent ? 'Success' : 'Failed') . "\n", FILE_APPEND);
                     }
                 }
 
                 $conn->commit();
                 echo json_encode([
                     "success" => true,
-                    "message" => "Session(s) cancelled successfully",
+                    "message" => "Session(s) deleted successfully",
                     "rows_affected" => $rowsAffected,
                     "edit_mode" => $editMode,
-                    "sessions_cancelled" => array_column($sessionsToUpdate, 'session_id')
+                    "sessions_deleted" => $deletedIds,
+                    "total_hours_returned" => $totalHoursReturned
                 ]);
             } catch (Exception $e) {
                 $conn->rollback();
                 http_response_code(500);
-                echo json_encode(["error" => "Failed to cancel session(s): " . $e->getMessage()]);
+                echo json_encode(["error" => "Failed to delete session(s): " . $e->getMessage()]);
                 file_put_contents('debug.log', "DELETE Transaction failed: " . $e->getMessage() . "\n", FILE_APPEND);
                 exit();
             }

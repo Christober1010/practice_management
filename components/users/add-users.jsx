@@ -221,6 +221,7 @@ export default function AddUserModal({ isOpen, onClose, onSave, editingUser }) {
                 <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="bcba">BCBA</SelectItem>
                 <SelectItem value="rbt">RBT</SelectItem>
+                <SelectItem value="biller">Biller</SelectItem>
                 <SelectItem value="parent">Parent</SelectItem>
               </>,
               "Select role"

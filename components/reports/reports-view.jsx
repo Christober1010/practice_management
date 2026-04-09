@@ -1,0 +1,843 @@
+"use client";
+
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  FileText,
+  Plus,
+  Search,
+  Edit,
+  Archive,
+  ArchiveRestore,
+  Eye,
+  EyeOff,
+  MoreVertical,
+  Calendar,
+  User,
+  MapPin,
+  Clock,
+  CheckCircle,
+  XCircle,
+} from "lucide-react";
+import toast, { Toaster } from "react-hot-toast";
+import AddReportModal from "./add-report-modal";
+
+export default function ReportsView() {
+  const [reports, setReports] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [showArchived, setShowArchived] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editingReport, setEditingReport] = useState(null);
+  const [expandedReport, setExpandedReport] = useState(null);
+
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
+
+  const activeReportCount = useMemo(
+    () => reports.filter((r) => !r.archived).length,
+    [reports]
+  );
+  const archivedReportCount = useMemo(
+    () => reports.filter((r) => r.archived).length,
+    [reports]
+  );
+
+  const filteredReports = useMemo(() => {
+    return reports.filter((report) => {
+      const matchesSearch = Object.values(report).some((value) =>
+        typeof value === "string"
+          ? value.toLowerCase().includes(searchTerm.toLowerCase())
+          : typeof value === "number"
+          ? String(value).includes(searchTerm)
+          : false
+      );
+      const matchesStatus =
+        statusFilter === "all" || report.status === statusFilter;
+      const matchesArchived = report.archived === showArchived;
+      return matchesSearch && matchesStatus && matchesArchived;
+    });
+  }, [reports, searchTerm, statusFilter, showArchived]);
+
+  const fetchReports = async () => {
+    try {
+      setLoading(true);
+      const archived = showArchived ? 1 : 0;
+      const res = await fetch(`${baseUrl}/reports.php?archived=${archived}`);
+      const result = await res.json();
+      if (result.success) {
+        setReports(result.data || []);
+      } else {
+        toast.error(`Failed to fetch reports: ${result.message}`);
+      }
+    } catch (err) {
+      console.error("Error fetching reports:", err);
+      toast.error("An error occurred while fetching reports.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReports();
+  }, [showArchived, baseUrl]);
+
+  const handleAddReport = async (reportData) => {
+    try {
+      // Check if it's an array (Excel import) or single report
+      const isArray = Array.isArray(reportData);
+      const dataToSend = isArray ? reportData : [reportData];
+
+      const res = await fetch(`${baseUrl}/reports.php`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dataToSend),
+      });
+      const result = await res.json();
+      if (result.success) {
+        setIsAddModalOpen(false);
+        fetchReports();
+        if (isArray) {
+          toast.success(`${reportData.length} reports added successfully!`);
+        } else {
+          toast.success("Report added successfully!");
+        }
+      } else {
+        toast.error(
+          `Failed to add report${isArray ? "s" : ""}: ${result.message || "Unknown error"}`
+        );
+      }
+    } catch (err) {
+      console.error("Error adding report:", err);
+      toast.error("An error occurred while adding the report.");
+    }
+  };
+
+  const handleEditReport = async (reportData) => {
+    try {
+      const res = await fetch(`${baseUrl}/reports.php`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reportData),
+      });
+      const result = await res.json();
+      if (result.success) {
+        setEditingReport(null);
+        setIsAddModalOpen(false);
+        fetchReports();
+        toast.success("Report updated successfully!");
+      } else {
+        toast.error(
+          `Failed to update report: ${result.message || "Unknown error"}`
+        );
+      }
+    } catch (err) {
+      console.error("Error updating report:", err);
+      toast.error("An error occurred while updating the report.");
+    }
+  };
+
+  const handleOpenEditModal = (report) => {
+    setEditingReport(report);
+    setIsAddModalOpen(true);
+  };
+
+  const handleArchiveReport = async (reportId) => {
+    const reportToUpdate = reports.find((r) => r.id === reportId);
+    if (!reportToUpdate) return;
+
+    const archived = !reportToUpdate.archived;
+
+    try {
+      const res = await fetch(`${baseUrl}/reports.php`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: reportId,
+          archived: archived ? 1 : 0,
+        }),
+      });
+      const result = await res.json();
+      if (res.ok && result.success) {
+        toast.success(
+          archived ? "Report archived!" : "Report restored!"
+        );
+        fetchReports();
+      } else {
+        toast.error(
+          `Failed to update report: ${result.message || "Unknown error"}`
+        );
+      }
+    } catch (err) {
+      console.error("Error archiving/restoring report:", err);
+      toast.error("An error occurred while updating report status.");
+    }
+  };
+
+  const toggleExpanded = (reportId) => {
+    setExpandedReport(expandedReport === reportId ? null : reportId);
+  };
+
+  const getStatusColor = (status) => {
+    switch (status?.toLowerCase()) {
+      case "rendered":
+      case "completed":
+        return "bg-green-100 text-green-800";
+      case "scheduled":
+        return "bg-blue-100 text-blue-800";
+      case "cancelled":
+        return "bg-red-100 text-red-800";
+      case "pending":
+        return "bg-yellow-100 text-yellow-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return "N/A";
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const formatDateTime = (dateString) => {
+    if (!dateString) return "N/A";
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <Toaster />
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row lg:justify-between sm:justify-center sm:items-center">
+        <div>
+          <h2 className="text-3xl font-bold text-slate-800">Reports</h2>
+          <p className="text-slate-600 mt-1">
+            Manage session reports and records
+          </p>
+        </div>
+        <div className="flex flex-row flex-wrap gap-2 sm:items-center sm:space-x-3 sm:justify-end">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowArchived(!showArchived)}
+            className="border-slate-300"
+          >
+            {showArchived ? (
+              <>
+                <ArchiveRestore className="h-4 w-4 mr-2" /> Show Active (
+                {activeReportCount})
+              </>
+            ) : (
+              <>
+                <Archive className="h-4 w-4 mr-2" /> Show Archived (
+                {archivedReportCount})
+              </>
+            )}
+          </Button>
+          <Button
+            onClick={() => {
+              setEditingReport(null);
+              setIsAddModalOpen(true);
+            }}
+            size="sm"
+            className="bg-teal-600 hover:bg-teal-700 shadow-lg"
+          >
+            <Plus className="h-4 w-4 mr-2" /> Add Report
+          </Button>
+        </div>
+      </div>
+
+      {/* Search and Filters */}
+      <Card className="shadow-lg border-0">
+        <CardContent className="p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:space-x-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Input
+                placeholder="Search reports..."
+                className="pl-10 border-slate-200 focus:border-teal-500 focus:ring-teal-500"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-full sm:w-48 border-slate-200">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="Rendered">Rendered</SelectItem>
+                <SelectItem value="Scheduled">Scheduled</SelectItem>
+                <SelectItem value="Cancelled">Cancelled</SelectItem>
+                <SelectItem value="Pending">Pending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Reports Table */}
+      {loading ? (
+        <div className="h-64 w-64 mx-auto">
+          <p className="text-center animate-pulse text-gray-500">
+            Fetching reports...
+          </p>
+        </div>
+      ) : (
+        <Card className="shadow-lg border-0">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-slate-800 flex items-center">
+              <FileText className="h-5 w-5 mr-2 text-teal-600" />
+              {showArchived ? "Archived" : "Active"} Reports (
+              {filteredReports.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-slate-50 border-b">
+                    <TableHead className="font-semibold text-slate-700">
+                      Client / Staff
+                    </TableHead>
+                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                      Date of Service
+                    </TableHead>
+                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                      Status
+                    </TableHead>
+                    <TableHead className="hidden md:table-cell font-semibold text-slate-700">
+                      Payer / Auth #
+                    </TableHead>
+                    <TableHead className="font-semibold text-slate-700 lg:text-center text-right">
+                      Actions
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredReports.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-8">
+                        <p className="text-slate-500">
+                          No {showArchived ? "archived" : "active"} reports found
+                        </p>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredReports.map((report) => {
+                      const isExpanded = expandedReport === report.id;
+                      const clientName = `${report.client_first_name || ""} ${
+                        report.client_last_name || ""
+                      }`.trim();
+                      const staffName = `${report.staff_first_name || ""} ${
+                        report.staff_last_name || ""
+                      }`.trim();
+
+                      return (
+                        <Fragment key={report.id}>
+                          {/* Main Row */}
+                          <TableRow className="hover:bg-slate-50 transition-colors border-b">
+                            <TableCell className="lg:px-4 sm:px-2 py-4">
+                              <div className="flex items-center space-x-3">
+                                <span className="hidden sm:inline-block">
+                                  <div className="bg-teal-100 p-2 rounded-lg flex-shrink-0">
+                                    <FileText className="h-4 w-4 text-teal-600" />
+                                  </div>
+                                </span>
+                                <div>
+                                  <div className="font-semibold text-slate-800">
+                                    {clientName || "N/A"}
+                                  </div>
+                                  <div className="text-sm text-slate-600 mt-1">
+                                    Staff: {staffName || "N/A"}
+                                  </div>
+                                  {report.archived && (
+                                    <Badge
+                                      variant="outline"
+                                      className="border-amber-300 text-amber-700 text-xs mt-1"
+                                    >
+                                      Archived
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-4 hidden sm:table-cell">
+                              <div className="text-sm">
+                                <div className="font-medium">
+                                  {formatDate(report.dos)}
+                                </div>
+                                {report.rendered_date && (
+                                  <div className="text-slate-600 text-xs mt-1">
+                                    Rendered: {formatDate(report.rendered_date)}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell py-4">
+                              <Badge className={getStatusColor(report.status)}>
+                                {report.status || "N/A"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="hidden md:table-cell py-4">
+                              <div className="text-sm">
+                                <div>{report.payer || "N/A"}</div>
+                                {report.authorization_number && (
+                                  <div className="text-slate-600 text-xs mt-1 font-mono">
+                                    {report.authorization_number}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-4">
+                              <div className="flex items-center justify-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => toggleExpanded(report.id)}
+                                  className="border-slate-300"
+                                >
+                                  {isExpanded ? (
+                                    <span title="Hide">
+                                      <EyeOff className="h-3 w-3" />
+                                    </span>
+                                  ) : (
+                                    <span title="View">
+                                      <Eye className="h-3 w-3" />
+                                    </span>
+                                  )}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleOpenEditModal(report)}
+                                  className="border-slate-300"
+                                >
+                                  <span title="Edit">
+                                    <Edit className="h-4 w-4" />
+                                  </span>
+                                </Button>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      title="Options"
+                                      variant="outline"
+                                      size="sm"
+                                      className="border-slate-300 bg-transparent"
+                                    >
+                                      <MoreVertical className="h-3 w-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent
+                                    align="end"
+                                    className="w-48"
+                                  >
+                                    <DropdownMenuItem
+                                      onClick={() =>
+                                        handleArchiveReport(report.id)
+                                      }
+                                      className={
+                                        report.archived
+                                          ? "text-green-600"
+                                          : "text-amber-600"
+                                      }
+                                    >
+                                      {report.archived ? (
+                                        <>
+                                          <ArchiveRestore className="h-4 w-4 mr-2" />{" "}
+                                          Restore Report
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Archive className="h-4 w-4 mr-2" />{" "}
+                                          Archive Report
+                                        </>
+                                      )}
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+
+                          {/* Expanded Details Row */}
+                          {isExpanded && (
+                            <TableRow className="bg-slate-50">
+                              <TableCell colSpan={5} className="px-6 py-6">
+                                <div className="space-y-6">
+                                  {/* Client & Staff Information */}
+                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <Card className="border-slate-200">
+                                      <CardHeader className="pb-3">
+                                        <CardTitle className="flex items-center gap-2 text-base">
+                                          <User className="h-4 w-4 text-teal-600" />{" "}
+                                          Client Information
+                                        </CardTitle>
+                                      </CardHeader>
+                                      <CardContent className="space-y-3 text-sm">
+                                        <div className="grid grid-cols-2 gap-3">
+                                          <div>
+                                            <p className="text-slate-500 mb-1">
+                                              First Name
+                                            </p>
+                                            <p className="font-medium">
+                                              {report.client_first_name || "N/A"}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <p className="text-slate-500 mb-1">
+                                              Last Name
+                                            </p>
+                                            <p className="font-medium">
+                                              {report.client_last_name || "N/A"}
+                                            </p>
+                                          </div>
+                                          {report.client_middle_name && (
+                                            <div>
+                                              <p className="text-slate-500 mb-1">
+                                                Middle Name
+                                              </p>
+                                              <p className="font-medium">
+                                                {report.client_middle_name}
+                                              </p>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </CardContent>
+                                    </Card>
+
+                                    <Card className="border-slate-200">
+                                      <CardHeader className="pb-3">
+                                        <CardTitle className="flex items-center gap-2 text-base">
+                                          <User className="h-4 w-4 text-blue-600" />{" "}
+                                          Staff Information
+                                        </CardTitle>
+                                      </CardHeader>
+                                      <CardContent className="space-y-3 text-sm">
+                                        <div className="grid grid-cols-2 gap-3">
+                                          <div>
+                                            <p className="text-slate-500 mb-1">
+                                              First Name
+                                            </p>
+                                            <p className="font-medium">
+                                              {report.staff_first_name || "N/A"}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <p className="text-slate-500 mb-1">
+                                              Last Name
+                                            </p>
+                                            <p className="font-medium">
+                                              {report.staff_last_name || "N/A"}
+                                            </p>
+                                          </div>
+                                          {report.name_of_rbt_supervised && (
+                                            <div className="col-span-2">
+                                              <p className="text-slate-500 mb-1">
+                                                RBT Supervised
+                                              </p>
+                                              <p className="font-medium">
+                                                {report.name_of_rbt_supervised}
+                                              </p>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </CardContent>
+                                    </Card>
+                                  </div>
+
+                                  {/* Service Details */}
+                                  <Card className="border-slate-200">
+                                    <CardHeader className="pb-3">
+                                      <CardTitle className="flex items-center gap-2 text-base">
+                                        <Calendar className="h-4 w-4 text-indigo-600" />{" "}
+                                        Service Details
+                                      </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="space-y-3 text-sm">
+                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Date of Service
+                                          </p>
+                                          <p className="font-medium">
+                                            {formatDate(report.dos)}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Activity Type
+                                          </p>
+                                          <p className="font-medium">
+                                            {report.activity_type || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Status
+                                          </p>
+                                          <Badge
+                                            className={getStatusColor(
+                                              report.status
+                                            )}
+                                          >
+                                            {report.status || "N/A"}
+                                          </Badge>
+                                        </div>
+                                      </div>
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Scheduled Time
+                                          </p>
+                                          <p className="font-medium">
+                                            {report.apt_start_time
+                                              ? formatDateTime(report.apt_start_time)
+                                              : "N/A"}{" "}
+                                            -{" "}
+                                            {report.apt_end_time
+                                              ? formatDateTime(report.apt_end_time)
+                                              : "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Rendered Time
+                                          </p>
+                                          <p className="font-medium">
+                                            {report.rendered_start_time
+                                              ? formatDateTime(
+                                                  report.rendered_start_time
+                                                )
+                                              : "N/A"}{" "}
+                                            -{" "}
+                                            {report.rendered_end_time
+                                              ? formatDateTime(
+                                                  report.rendered_end_time
+                                                )
+                                              : "N/A"}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Scheduled Duration
+                                          </p>
+                                          <p className="font-medium">
+                                            {report.duration_schedule_in_hrs ||
+                                              report.duration_schedule_in_min
+                                              ? `${report.duration_schedule_in_hrs || 0} hrs ${report.duration_schedule_in_min || 0} min`
+                                              : "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Rendered Duration
+                                          </p>
+                                          <p className="font-medium">
+                                            {report.duration_render_in_hrs ||
+                                              report.duration_render_in_min
+                                              ? `${report.duration_render_in_hrs || 0} hrs ${report.duration_render_in_min || 0} min`
+                                              : "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Billable
+                                          </p>
+                                          <div className="flex items-center gap-2">
+                                            {report.billable ? (
+                                              <CheckCircle className="h-4 w-4 text-green-600" />
+                                            ) : (
+                                              <XCircle className="h-4 w-4 text-red-600" />
+                                            )}
+                                            <span className="font-medium">
+                                              {report.billable ? "Yes" : "No"}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </CardContent>
+                                  </Card>
+
+                                  {/* Billing & Authorization */}
+                                  <Card className="border-slate-200">
+                                    <CardHeader className="pb-3">
+                                      <CardTitle className="flex items-center gap-2 text-base">
+                                        <FileText className="h-4 w-4 text-emerald-600" />{" "}
+                                        Billing & Authorization
+                                      </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="space-y-3 text-sm">
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Payer
+                                          </p>
+                                          <p className="font-medium">
+                                            {report.payer || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Authorization Number
+                                          </p>
+                                          <p className="font-medium font-mono">
+                                            {report.authorization_number || "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Service Code
+                                          </p>
+                                          <p className="font-medium font-mono">
+                                            {report.service_code_with_modifiers ||
+                                              "N/A"}
+                                          </p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Location Code
+                                          </p>
+                                          <p className="font-medium">
+                                            {report.location_code || "N/A"}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      {report.address && (
+                                        <div>
+                                          <p className="text-slate-500 mb-1">
+                                            Address
+                                          </p>
+                                          <p className="font-medium">
+                                            {report.address}
+                                          </p>
+                                        </div>
+                                      )}
+                                    </CardContent>
+                                  </Card>
+
+                                  {/* Additional Information */}
+                                  {(report.notes ||
+                                    report.non_billable_notes ||
+                                    report.make_up_session) && (
+                                    <Card className="border-slate-200">
+                                      <CardHeader className="pb-3">
+                                        <CardTitle className="flex items-center gap-2 text-base">
+                                          <FileText className="h-4 w-4 text-purple-600" />{" "}
+                                          Additional Information
+                                        </CardTitle>
+                                      </CardHeader>
+                                      <CardContent className="space-y-3 text-sm">
+                                        {report.notes && (
+                                          <div>
+                                            <p className="text-slate-500 mb-1">
+                                              Notes
+                                            </p>
+                                            <p className="font-medium">
+                                              {report.notes}
+                                            </p>
+                                          </div>
+                                        )}
+                                        {report.non_billable_notes && (
+                                          <div>
+                                            <p className="text-slate-500 mb-1">
+                                              Non-Billable Notes
+                                            </p>
+                                            <p className="font-medium text-amber-700">
+                                              {report.non_billable_notes}
+                                            </p>
+                                          </div>
+                                        )}
+                                        {report.make_up_session && (
+                                          <div>
+                                            <p className="text-slate-500 mb-1">
+                                              Make-Up Session
+                                            </p>
+                                            <p className="font-medium">
+                                              Yes
+                                              {report.make_up_session_hours &&
+                                                ` (${report.make_up_session_hours} hours)`}
+                                            </p>
+                                          </div>
+                                        )}
+                                      </CardContent>
+                                    </Card>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </Fragment>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Add/Edit Report Modal */}
+      {isAddModalOpen && (
+        <AddReportModal
+          isOpen={isAddModalOpen}
+          onClose={() => {
+            setIsAddModalOpen(false);
+            setEditingReport(null);
+          }}
+          onSave={editingReport ? handleEditReport : handleAddReport}
+          editingReport={editingReport}
+        />
+      )}
+    </div>
+  );
+}
+

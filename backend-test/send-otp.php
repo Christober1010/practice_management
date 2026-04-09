@@ -10,7 +10,8 @@ error_reporting(E_ALL);
 // ---- CORS ----
 $allowed_origins = [
   'http://localhost:3000',
-  'http://mahaverse.dev.mahabehavioralhealth.com/', // change to your real domain
+  'http://mahaverse-dev.mahabehavioralhealth.com/', // change to your real domain
+  'https://mahaverse-dev.mahabehavioralhealth.com/', // HTTPS version
   'http://mahaverse.mahabehavioralhealth.com/'
 ];
 $origin = $_SERVER['HTTP_ORIGIN'] ?? '';

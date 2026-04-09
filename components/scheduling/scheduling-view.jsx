@@ -14,6 +14,7 @@ import {
   Clock,
   List,
   Trash2,
+  BookOpen,
 } from "lucide-react";
 import {
   Select,
@@ -25,6 +26,7 @@ import {
 import NewSessionFormModal from "./new-session-form-modal";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 import ViewSessionModal from "./ViewSessionModal";
+import SessionNotesModal from "../clients/session-notes-modal";
 import { toast } from "sonner";
 import { formatTime12hFromUTC, toMinutes12h } from "@/lib/time-utils";
 
@@ -240,6 +242,8 @@ export default function SchedulingView() {
   const [deletingSessionId, setDeletingSessionId] = useState(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState(null);
+  const [isSessionNotesModalOpen, setIsSessionNotesModalOpen] = useState(false);
+  const [sessionNotesClient, setSessionNotesClient] = useState(null);
 
   useEffect(() => {
     const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -543,6 +547,20 @@ export default function SchedulingView() {
     setIsViewModalOpen(true);
   };
 
+  const handleOpenSessionNotes = (session) => {
+    // Create a minimal client object from session data
+    const clientNameParts = (session.clientName || "").split(" ");
+    const client = {
+      id: session.clientId,
+      client_id: session.clientId,
+      first_name: clientNameParts[0] || "",
+      last_name: clientNameParts.slice(1).join(" ") || "",
+      middle_name: "",
+    };
+    setSessionNotesClient(client);
+    setIsSessionNotesModalOpen(true);
+  };
+
   const handleDeleteSession = async (sessionData) => {
     const determinedEditMode = sessionData.recurring ? "recurring" : "single";
     setSessionToDelete({
@@ -552,10 +570,11 @@ export default function SchedulingView() {
     setDeleteModalOpen(true);
   };
 
-  const confirmDeleteSession = async () => {
+  const confirmDeleteSession = async (editModeOverride = null) => {
     if (!sessionToDelete) return;
     setDeletingSessionId(sessionToDelete.sessionId);
     try {
+      const editMode = editModeOverride || sessionToDelete.editMode || "single";
       const resp = await fetch(`${baseUrl}/add-session.php`, {
         method: "DELETE",
         headers: {
@@ -565,10 +584,7 @@ export default function SchedulingView() {
         },
         body: JSON.stringify({
           session_id: sessionToDelete.sessionId,
-          editMode: sessionToDelete.editMode || "single",
-          cancelledBy: sessionToDelete.cancelledBy || "Staff",
-          cancelledReason:
-            sessionToDelete.cancelledReason || "Session cancelled",
+          editMode,
         }),
         cache: "no-store",
         mode: "cors",
@@ -588,16 +604,16 @@ export default function SchedulingView() {
         setDeleteModalOpen(false);
         setSessionToDelete(null);
         toast.success(
-          `Session${data.rows_affected > 1 ? "s" : ""} cancelled successfully!`
+          `Session${data.rows_affected > 1 ? "s" : ""} deleted successfully!`
         );
         await refreshSessions();
       } else {
-        throw new Error(data.error || "Failed to cancel session");
+        throw new Error(data.error || "Failed to delete session");
       }
     } catch (err) {
       console.error("Error deleting session:", err);
       toast.error(
-        `Failed to cancel session: ${err.message}. Please try again.`
+        `Failed to delete session: ${err.message}. Please try again.`
       );
     } finally {
       setDeletingSessionId(null);
@@ -1044,8 +1060,21 @@ export default function SchedulingView() {
                               handleViewSession(s);
                             }}
                             className="bg-white/90 hover:bg-white border-slate-300 text-slate-700 h-7 text-xs px-2"
+                            title="View Session"
                           >
                             <Eye className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenSessionNotes(s);
+                            }}
+                            className="bg-white/90 hover:bg-white border-slate-300 text-teal-600 hover:text-teal-700 h-7 text-xs px-2"
+                            title="Session Notes"
+                          >
+                            <BookOpen className="h-3 w-3" />
                           </Button>
                           <Button
                             variant="outline"
@@ -1055,6 +1084,7 @@ export default function SchedulingView() {
                               handleEditSession(s);
                             }}
                             className="bg-white/90 hover:bg-white border-slate-300 text-slate-700 h-7 text-xs px-2"
+                            title="Edit Session"
                           >
                             <Edit className="h-3 w-3" />
                           </Button>
@@ -1067,6 +1097,7 @@ export default function SchedulingView() {
                             }}
                             disabled={deletingSessionId === s.sessionId}
                             className="bg-red-50 hover:bg-red-100 border-slate-300 text-red-500 hover:text-red-700 h-7 text-xs px-2"
+                            title="Delete Session"
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
@@ -1338,6 +1369,32 @@ export default function SchedulingView() {
                                     Note: {s.quickNote}
                                   </p>
                                 )}
+                                <div className="flex gap-2 pt-2 border-t mt-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleViewSession(s);
+                                    }}
+                                    className="flex-1 text-xs"
+                                  >
+                                    <Eye className="h-3 w-3 mr-1" />
+                                    View
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenSessionNotes(s);
+                                    }}
+                                    className="flex-1 text-xs text-teal-600 hover:text-teal-700"
+                                  >
+                                    <BookOpen className="h-3 w-3 mr-1" />
+                                    Notes
+                                  </Button>
+                                </div>
                               </div>
                             </div>
                           )}
@@ -1785,14 +1842,8 @@ export default function SchedulingView() {
       <DeleteConfirmationModal
         isOpen={deleteModalOpen}
         onClose={closeDeleteModal}
-        onConfirm={(cancelledBy, cancelledReason, editMode) => {
-          setSessionToDelete((prev) => ({
-            ...prev,
-            cancelledBy,
-            cancelledReason,
-            editMode,
-          }));
-          confirmDeleteSession();
+        onConfirm={(editMode) => {
+          confirmDeleteSession(editMode);
         }}
         sessionData={sessionToDelete}
         isDeleting={!!deletingSessionId}
@@ -1814,6 +1865,16 @@ export default function SchedulingView() {
           setViewedSession(null);
           handleDeleteSession(sess);
         }}
+      />
+
+      {/* Session Notes Modal */}
+      <SessionNotesModal
+        isOpen={isSessionNotesModalOpen}
+        onClose={() => {
+          setIsSessionNotesModalOpen(false);
+          setSessionNotesClient(null);
+        }}
+        client={sessionNotesClient}
       />
     </div>
   );

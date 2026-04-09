@@ -53,8 +53,12 @@ import {
   ListChecks,
   Target,
   SquareTerminal,
+  BookOpen,
+  Download,
 } from "lucide-react";
 import AddClientModal from "./add-client-modal";
+import SessionNotesModal from "./session-notes-modal";
+import DocumentViewerModal from "./DocumentViewerModal";
 import toast, { Toaster } from "react-hot-toast";
 
 // Redux hooks and actions
@@ -90,10 +94,15 @@ export default function ClientsView() {
   // UI-only state
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [activeInactiveFilter, setActiveInactiveFilter] = useState("all");
+  const [modalInitialTab, setModalInitialTab] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [expandedClient, setExpandedClient] = useState(null);
+  const [sessionNotesClient, setSessionNotesClient] = useState(null);
+  const [isSessionNotesModalOpen, setIsSessionNotesModalOpen] = useState(false);
+  const [viewingDocument, setViewingDocument] = useState(null);
   const [staffList, setStaffList] = useState([]); // Initialize as empty array
 
   // Redux
@@ -107,11 +116,11 @@ export default function ClientsView() {
 
   const activeClientCount = useMemo(
     () => clients.filter((c) => !c.archived).length,
-    [clients]
+    [clients],
   );
   const archivedClientCount = useMemo(
     () => clients.filter((c) => c.archived).length,
-    [clients]
+    [clients],
   );
 
   const filteredClients = useMemo(() => {
@@ -120,15 +129,28 @@ export default function ClientsView() {
         typeof value === "string"
           ? value.toLowerCase().includes(searchTerm.toLowerCase())
           : typeof value === "number"
-          ? String(value).includes(searchTerm)
-          : false
+            ? String(value).includes(searchTerm)
+            : false,
       );
       const matchesStatus =
         statusFilter === "all" || client.client_status === statusFilter;
+      const isClientActive =
+        client.is_active !== false &&
+        client.is_active !== 0 &&
+        client.is_active !== "0";
+      const matchesActiveInactive =
+        activeInactiveFilter === "all" ||
+        (activeInactiveFilter === "active" && isClientActive) ||
+        (activeInactiveFilter === "inactive" && !isClientActive);
       const matchesArchived = client.archived === showArchived;
-      return matchesSearch && matchesStatus && matchesArchived;
+      return (
+        matchesSearch &&
+        matchesStatus &&
+        matchesActiveInactive &&
+        matchesArchived
+      );
     });
-  }, [clients, searchTerm, statusFilter, showArchived]);
+  }, [clients, searchTerm, statusFilter, activeInactiveFilter, showArchived]);
 
   const handleAddClient = async (clientData) => {
     const newClient = {
@@ -141,25 +163,67 @@ export default function ClientsView() {
     newClient.client_id = newClient.id;
 
     try {
+      // Upload any queued document files ONLY on Save (not on file select)
+      const docs = Array.isArray(newClient.documents)
+        ? newClient.documents
+        : [];
+      const docsUploaded = await Promise.all(
+        docs.map(async (doc) => {
+          const file = doc?.document_file;
+          if (!file) return doc;
+
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("doc_uuid", doc.doc_uuid || "");
+          fd.append("client_id", newClient.client_id);
+
+          const upRes = await fetch(`${baseUrl}/upload-client-document.php`, {
+            method: "POST",
+            body: fd,
+          });
+          const upJson = await upRes.json().catch(() => ({}));
+          if (!upRes.ok || !upJson?.success) {
+            throw new Error(
+              upJson?.message || "Failed to upload client document to Drive",
+            );
+          }
+
+          return {
+            ...doc,
+            document_path: upJson.document_path || "",
+            document_filename: upJson.document_filename || "",
+            document_original_filename:
+              doc.document_original_filename || upJson.filename || "",
+            // Clear file object so JSON.stringify doesn't break
+            document_file: null,
+          };
+        }),
+      );
+
+      const clientToSend = {
+        ...newClient,
+        documents: docsUploaded.map(({ document_file, ...rest }) => rest),
+      };
+
       const res = await fetch(`${baseUrl}/update-clients.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...newClient,
+          ...clientToSend,
           archived: 0,
         }),
       });
       const result = await res.json();
       if (result.success) {
         // Optimistic: update Redux
-        dispatch(addClientAction(newClient));
+        dispatch(addClientAction(clientToSend));
         setIsAddModalOpen(false);
         // Optional: re-sync from backend to ensure server truth
         fetchClients();
         toast.success("Client added successfully!");
       } else {
         toast.error(
-          `Failed to add client: ${result.message || "Unknown error"}`
+          `Failed to add client: ${result.message || "Unknown error"}`,
         );
       }
     } catch (err) {
@@ -170,23 +234,64 @@ export default function ClientsView() {
 
   const handleEditClient = async (clientData) => {
     try {
+      // Upload any queued document files ONLY on Save (not on file select)
+      const docs = Array.isArray(clientData.documents)
+        ? clientData.documents
+        : [];
+      const docsUploaded = await Promise.all(
+        docs.map(async (doc) => {
+          const file = doc?.document_file;
+          if (!file) return doc;
+
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("doc_uuid", doc.doc_uuid || "");
+          fd.append("client_id", clientData.client_id || clientData.id || "");
+
+          const upRes = await fetch(`${baseUrl}/upload-client-document.php`, {
+            method: "POST",
+            body: fd,
+          });
+          const upJson = await upRes.json().catch(() => ({}));
+          if (!upRes.ok || !upJson?.success) {
+            throw new Error(
+              upJson?.message || "Failed to upload client document to Drive",
+            );
+          }
+
+          return {
+            ...doc,
+            document_path: upJson.document_path || "",
+            document_filename: upJson.document_filename || "",
+            document_original_filename:
+              doc.document_original_filename || upJson.filename || "",
+            document_file: null,
+          };
+        }),
+      );
+
+      const clientToSend = {
+        ...clientData,
+        documents: docsUploaded.map(({ document_file, ...rest }) => rest),
+      };
+
       const res = await fetch(`${baseUrl}/update-clients.php`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...clientData,
-          archived: clientData.archived ? 1 : 0,
+          ...clientToSend,
+          archived: clientToSend.archived ? 1 : 0,
         }),
       });
       const result = await res.json();
       if (result.success) {
-        dispatch(updateClientAction(clientData));
-        setEditingClient(clientData);
+        dispatch(updateClientAction(clientToSend));
+        setEditingClient(clientToSend);
         dispatch(fetchClients());
         toast.success("Client updated successfully!");
       } else {
         toast.error(
-          `Failed to update client: ${result.message || "Unknown error"}`
+          `Failed to update client: ${result.message || "Unknown error"}`,
         );
       }
     } catch (err) {
@@ -196,6 +301,7 @@ export default function ClientsView() {
   };
 
   const handleOpenEditModal = (client) => {
+    setModalInitialTab(null);
     setEditingClient(client);
     setIsAddModalOpen(true);
   };
@@ -204,10 +310,11 @@ export default function ClientsView() {
     const clientToUpdate = clients.find((c) => c.id === clientId);
     if (!clientToUpdate) return;
 
+    const nextArchived = !clientToUpdate.archived;
     const updatedClient = {
       ...clientToUpdate,
-      archived: !clientToUpdate.archived,
-      client_status: !clientToUpdate.archived ? "Inactive" : "Active",
+      archived: nextArchived,
+      is_active: nextArchived ? false : true,
     };
 
     try {
@@ -217,6 +324,7 @@ export default function ClientsView() {
         body: JSON.stringify({
           ...updatedClient,
           archived: updatedClient.archived ? 1 : 0,
+          is_active: updatedClient.is_active ? 1 : 0,
         }),
       });
       const result = await res.json();
@@ -225,15 +333,15 @@ export default function ClientsView() {
           toggleArchiveAction({
             id: clientId,
             archived: updatedClient.archived,
-            client_status: updatedClient.client_status,
-          })
+            is_active: updatedClient.is_active,
+          }),
         );
         toast.success(
-          updatedClient.archived ? "Client archived!" : "Client restored!"
+          updatedClient.archived ? "Client archived!" : "Client restored!",
         );
       } else {
         toast.error(
-          `Failed to update client: ${result.message || "Unknown error"}`
+          `Failed to update client: ${result.message || "Unknown error"}`,
         );
       }
     } catch (err) {
@@ -258,6 +366,12 @@ export default function ClientsView() {
         return "bg-purple-100 text-purple-800";
       case "Pending Authorization":
         return "bg-orange-100 text-orange-800";
+      case "Initial Authorization":
+        return "bg-cyan-100 text-cyan-800";
+      case "Active Treatment":
+        return "bg-emerald-100 text-emerald-800";
+      case "Reauthorization":
+        return "bg-violet-100 text-violet-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -302,7 +416,7 @@ export default function ClientsView() {
   }, [baseUrl]);
 
   const filteredStaff = staffList.filter(
-    (staff) => staff.staffType === "BCBA" || staff.staffType === "BCaBA"
+    (staff) => staff.staffType === "BCBA" || staff.staffType === "BCaBA",
   );
   const toggleExpanded = (clientId) => {
     setExpandedClient((prev) => (prev === clientId ? null : clientId));
@@ -320,12 +434,12 @@ export default function ClientsView() {
 
   // Inside the ClientsView component, after your state declarations
   const masterDataSubItems = [
-    {
-      id: "modules",
-      label: "Modules",
-      icon: FolderKanban,
-      color: "text-blue-600",
-    },
+    // {
+    //   id: "modules",
+    //   label: "Modules",
+    //   icon: FolderKanban,
+    //   color: "text-blue-600",
+    // },
     { id: "domains", label: "Domains", icon: Layers, color: "text-indigo-600" },
     {
       id: "programs",
@@ -409,7 +523,7 @@ export default function ClientsView() {
     setProgramsLoading(true);
     try {
       const res = await fetch(
-        `${baseUrl}/client-modules.php?client_id=${clientId}`
+        `${baseUrl}/client-modules.php?client_id=${clientId}`,
       );
       const result = await res.json();
 
@@ -422,7 +536,6 @@ export default function ClientsView() {
         const normalizedDomains = domains.map((d) => ({
           id: d.id,
           name: d.NAME || d.name || "Unnamed Domain",
-          module_id: d.module_id || d.moduleid,
           description: d.description || "",
         }));
 
@@ -479,17 +592,25 @@ export default function ClientsView() {
     // Store client info in localStorage for the master data component to pick up
     const clientInfo = {
       id: client.id,
-      name: `${client.first_name || ""} ${client.last_name || ""}`.trim() || client.name || "Unknown Client",
+      name:
+        `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
+        client.name ||
+        "Unknown Client",
       first_name: client.first_name,
       last_name: client.last_name,
     };
-    localStorage.setItem("pendingClientForMasterData", JSON.stringify(clientInfo));
+    localStorage.setItem(
+      "pendingClientForMasterData",
+      JSON.stringify(clientInfo),
+    );
     localStorage.setItem("pendingAction", "add"); // Indicate we want to add new item
     localStorage.setItem("pendingMasterDataType", itemId); // Store which type (modules/domains/programs/targets)
-    
+
     // Navigate to the appropriate master data view using custom event
     localStorage.setItem("currentView", itemId);
-    window.dispatchEvent(new CustomEvent("navigateToView", { detail: { view: itemId } }));
+    window.dispatchEvent(
+      new CustomEvent("navigateToView", { detail: { view: itemId } }),
+    );
   };
 
   const handleAddProgram = async (payload) => {
@@ -635,7 +756,11 @@ export default function ClientsView() {
             )}
           </Button>
           <Button
-            onClick={() => setIsAddModalOpen(true)}
+            onClick={() => {
+              setEditingClient(null);
+              setModalInitialTab(null);
+              setIsAddModalOpen(true);
+            }}
             size="sm"
             className="bg-teal-600 hover:bg-teal-700 shadow-lg"
           >
@@ -658,14 +783,12 @@ export default function ClientsView() {
               />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-48 border-slate-200">
-                <SelectValue placeholder="Filter by status" />
+              <SelectTrigger className="w-full sm:w-52 border-slate-200">
+                <SelectValue placeholder="Workflow status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="all">All Statuses</SelectItem>
                 <SelectItem value="New">New</SelectItem>
-                <SelectItem value="Active">Active</SelectItem>
-                <SelectItem value="Inactive">Inactive</SelectItem>
                 <SelectItem value="Benefits Verification">
                   Benefits Verification
                 </SelectItem>
@@ -678,6 +801,28 @@ export default function ClientsView() {
                 <SelectItem value="Pending Authorization">
                   Pending Authorization
                 </SelectItem>
+                <SelectItem value="Initial Authorization">
+                  Initial Authorization
+                </SelectItem>
+                <SelectItem value="Active Treatment">
+                  Active Treatment
+                </SelectItem>
+                <SelectItem value="Reauthorization">
+                  Reauthorization
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={activeInactiveFilter}
+              onValueChange={setActiveInactiveFilter}
+            >
+              <SelectTrigger className="w-full sm:w-44 border-slate-200">
+                <SelectValue placeholder="Active / Inactive" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All clients</SelectItem>
+                <SelectItem value="active">Active only</SelectItem>
+                <SelectItem value="inactive">Inactive only</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -707,16 +852,25 @@ export default function ClientsView() {
                 <TableHeader>
                   <TableRow className="bg-slate-50 border-b">
                     <TableHead className="font-semibold text-slate-700">
-                      Client
+                      Client - fullname
                     </TableHead>
-                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
-                      Client ID
+                    <TableHead className="hidden md:table-cell font-semibold text-slate-700">
+                      Contact and Email
                     </TableHead>
-                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                    <TableHead className="hidden md:table-cell font-semibold text-slate-700">
+                      City and Zip code
+                    </TableHead>
+                    <TableHead className="hidden lg:table-cell font-semibold text-slate-700">
+                      Active/Inactive
+                    </TableHead>
+                    <TableHead className="hidden lg:table-cell font-semibold text-slate-700">
                       Status
                     </TableHead>
-                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
-                      Contact
+                    <TableHead className="hidden xl:table-cell font-semibold text-slate-700 ">
+                      Provider
+                    </TableHead>
+                    <TableHead className="hidden xl:table-cell font-semibold text-slate-700">
+                      Insurance ID
                     </TableHead>
                     <TableHead className="font-semibold text-slate-700 lg:text-center text-right">
                       Actions
@@ -728,6 +882,15 @@ export default function ClientsView() {
                     .sort((a, b) => a.first_name.localeCompare(b.first_name))
                     .map((client) => {
                       const isExpanded = expandedClient === client.id;
+                      const insurances = Array.isArray(client.insurances)
+                        ? client.insurances
+                        : [];
+                      const primaryInsurance =
+                        insurances.find(
+                          (ins) => ins?.insurance_type === "Primary",
+                        ) ||
+                        insurances[0] ||
+                        null;
                       return (
                         <Fragment key={client.id}>
                           {/* Main Row */}
@@ -765,19 +928,7 @@ export default function ClientsView() {
                                 </div>
                               </div>
                             </TableCell>
-                            <TableCell className="py-4 hidden sm:table-cell">
-                              <span className="font-mono text-sm">
-                                {client.client_uuid}
-                              </span>
-                            </TableCell>
-                            <TableCell className="hidden sm:table-cell py-4">
-                              <Badge
-                                className={getStatusColor(client.client_status)}
-                              >
-                                {client.client_status}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="hidden sm:table-cell py-4">
+                            <TableCell className="hidden md:table-cell py-4">
                               <div className="text-sm">
                                 {client.phone && (
                                   <div className="flex items-center gap-1">
@@ -792,50 +943,65 @@ export default function ClientsView() {
                                 )}
                               </div>
                             </TableCell>
+                            <TableCell className="hidden md:table-cell py-4">
+                              <div className="text-sm text-slate-700">
+                                {client.city || client.zipcode ? (
+                                  <div className="flex items-center gap-1">
+                                    <MapPin className="h-3 w-3 text-slate-400" />
+                                    <span>
+                                      {client.city || "—"}
+                                      {client.zipcode
+                                        ? `, ${client.zipcode}`
+                                        : ""}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-500">—</span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="hidden lg:table-cell py-4">
+                              <Badge
+                                variant="outline"
+                                className={
+                                  client.is_active === false ||
+                                  client.is_active === 0 ||
+                                  client.is_active === "0"
+                                    ? "border-gray-300 text-gray-700"
+                                    : "border-green-300 text-green-700"
+                                }
+                              >
+                                {client.is_active === false ||
+                                client.is_active === 0 ||
+                                client.is_active === "0"
+                                  ? "Inactive"
+                                  : "Active"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="hidden lg:table-cell py-4">
+                              <Badge
+                                className={getStatusColor(client.client_status)}
+                              >
+                                {client.client_status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="hidden xl:table-cell py-4">
+                              <span
+                                className="text-sm text-slate-700 block "
+                                title={
+                                  primaryInsurance?.insurance_provider || ""
+                                }
+                              >
+                                {primaryInsurance?.insurance_provider || "—"}
+                              </span>
+                            </TableCell>
+                            <TableCell className="hidden xl:table-cell py-4">
+                              <span className="text-sm text-slate-700">
+                                {primaryInsurance?.insurance_id_number || "—"}
+                              </span>
+                            </TableCell>
                             <TableCell className="py-4">
                               <div className="flex items-center justify-center gap-2">
-                                {/* Master Data Dropdown Menu */}
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="border-slate-300"
-                                      title="Master Data"
-                                    >
-                                      <ListPlus className="h-4 w-4" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent
-                                    align="end"
-                                    className="w-48"
-                                  >
-                                    <DropdownMenuLabel className="text-xs text-slate-500 font-semibold p-1">
-                                      Add Master Data
-                                    </DropdownMenuLabel>
-                                    <DropdownMenuSeparator />
-                                    {masterDataSubItems.map((subItem) => {
-                                      const SubIcon = subItem.icon;
-                                      return (
-                                        <DropdownMenuItem
-                                          key={subItem.id}
-                                          onClick={() =>
-                                            handleMasterDataSelect(
-                                              subItem.id,
-                                              client
-                                            )
-                                          }
-                                          className="cursor-pointer text-xs"
-                                        >
-                                          <SubIcon
-                                            className={`h-4 w-4 mr-2 ${subItem.color}`}
-                                          />
-                                          {subItem.label}
-                                        </DropdownMenuItem>
-                                      );
-                                    })}
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
                                 <Button
                                   variant="outline"
                                   size="sm"
@@ -843,13 +1009,14 @@ export default function ClientsView() {
                                     toggleExpanded(client.id || "")
                                   }
                                   className="border-slate-300"
+                                  title={isExpanded ? "View less" : "View more"}
                                 >
                                   {isExpanded ? (
-                                    <span title="Hide">
+                                    <span>
                                       <EyeOff className="h-3 w-3" />
                                     </span>
                                   ) : (
-                                    <span title="View">
+                                    <span>
                                       <Eye className="h-3 w-3" />
                                     </span>
                                   )}
@@ -859,8 +1026,9 @@ export default function ClientsView() {
                                   size="sm"
                                   onClick={() => handleOpenEditModal(client)}
                                   className="border-slate-300"
+                                  title="Edit"
                                 >
-                                  <span title="Edit">
+                                  <span>
                                     <Edit className="h-4 w-4" />
                                   </span>
                                 </Button>
@@ -877,12 +1045,58 @@ export default function ClientsView() {
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent
                                     align="end"
-                                    className="w-48"
+                                    className="w-56"
                                   >
-                                    <DropdownMenuItem>
-                                      <Calendar className="h-4 w-4 mr-2" />{" "}
-                                      Schedule Appointment
+                                    <DropdownMenuLabel className="text-xs text-slate-500 font-semibold p-1">
+                                      Actions
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        setSessionNotesClient(client);
+                                        setIsSessionNotesModalOpen(true);
+                                      }}
+                                      className="cursor-pointer"
+                                    >
+                                      <BookOpen className="h-4 w-4 mr-2" />
+                                      Session Notes
                                     </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuLabel className="text-xs text-slate-500 font-semibold p-1">
+                                      Data Collection
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuItem
+                                      onClick={() => {
+                                        setModalInitialTab("configureData");
+                                        setEditingClient(client);
+                                        setIsAddModalOpen(true);
+                                      }}
+                                      className="cursor-pointer"
+                                    >
+                                      <ListChecks className="h-4 w-4 mr-2 text-teal-600" />
+                                      Configure data
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    {masterDataSubItems.map((subItem) => {
+                                      const SubIcon = subItem.icon;
+                                      return (
+                                        <DropdownMenuItem
+                                          key={subItem.id}
+                                          onClick={() =>
+                                            handleMasterDataSelect(
+                                              subItem.id,
+                                              client,
+                                            )
+                                          }
+                                          className="cursor-pointer text-xs"
+                                        >
+                                          <SubIcon
+                                            className={`h-4 w-4 mr-2 ${subItem.color}`}
+                                          />
+                                          {subItem.label}
+                                        </DropdownMenuItem>
+                                      );
+                                    })}
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem
                                       onClick={() =>
@@ -915,7 +1129,7 @@ export default function ClientsView() {
                           {/* Expanded Details Row */}
                           {isExpanded && (
                             <TableRow className="bg-slate-50">
-                              <TableCell colSpan={6} className="px-6 py-6">
+                              <TableCell colSpan={8} className="px-6 py-6">
                                 <div className="space-y-6">
                                   {/* Personal Information Section */}
                                   <Card className="border-slate-200">
@@ -1107,7 +1321,7 @@ export default function ClientsView() {
                                                   </div>
                                                 </div>
                                               </div>
-                                            )
+                                            ),
                                           )
                                         ) : (
                                           <div>
@@ -1296,19 +1510,29 @@ export default function ClientsView() {
                                                     </div>
                                                     <div>
                                                       <p className="text-slate-500 mb-1">
-                                                        Rendering provider
+                                                        Carrier Payer ID
                                                       </p>
                                                       <p className="font-medium">
-                                                        {insurance.provider_name ||
+                                                        {insurance.carrier_payer_id ||
                                                           "Not specified"}
                                                       </p>
                                                     </div>
                                                     <div>
                                                       <p className="text-slate-500 mb-1">
-                                                        Treatment Type
+                                                        Insurance Plan Name
                                                       </p>
                                                       <p className="font-medium">
-                                                        {insurance.treatment_type ||
+                                                        {insurance.insurance_plan_name ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Insurance Company
+                                                        Address
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.insurance_company_address ||
                                                           "Not specified"}
                                                       </p>
                                                     </div>
@@ -1332,6 +1556,25 @@ export default function ClientsView() {
                                                     </div>
                                                     <div>
                                                       <p className="text-slate-500 mb-1">
+                                                        Rendering provider
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.provider_name ||
+                                                          insurance.rendering_provider ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Treatment Type
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.treatment_type ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
                                                         Coinsurance
                                                       </p>
                                                       <p className="font-medium">
@@ -1346,6 +1589,77 @@ export default function ClientsView() {
                                                       <p className="font-medium">
                                                         {insurance.deductible ||
                                                           "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Copay Rate
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.copay_rate ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Authorized Payment (Box
+                                                        13)
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.authorized_payment_box13 ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Authorization Release
+                                                        (Box 12)
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.authorized_release_box12 ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Authorization Release
+                                                        (Box 17)
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.authorized_release_box17 ||
+                                                          "Not specified"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Do Not Accept Assignment
+                                                        (Box 27)
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.do_not_accept_assignment_box27
+                                                          ? "Yes"
+                                                          : "No"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Insured Same as Client
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {insurance.insured_same_as_client !==
+                                                        false
+                                                          ? "Yes"
+                                                          : "No"}
+                                                      </p>
+                                                    </div>
+                                                    <div>
+                                                      <p className="text-slate-500 mb-1">
+                                                        Insurance Inactive
+                                                      </p>
+                                                      <p className="font-medium">
+                                                        {(insurance.insurance_inactive === 1 || insurance.insurance_inactive === "1" || insurance.insurance_inactive === true)
+                                                          ? "Yes"
+                                                          : "No"}
                                                       </p>
                                                     </div>
                                                   </div>
@@ -1368,10 +1682,72 @@ export default function ClientsView() {
                                                             "Ongoing"}
                                                         </p>
                                                       </div>
+                                                      <div>
+                                                        <p className="text-slate-500 mb-1">
+                                                          Insurance Issue Date
+                                                        </p>
+                                                        <p className="font-medium">
+                                                          {insurance.insurance_issue_date ||
+                                                            "Not specified"}
+                                                        </p>
+                                                      </div>
+                                                      <div>
+                                                        <p className="text-slate-500 mb-1">
+                                                          Date of Signature
+                                                        </p>
+                                                        <p className="font-medium">
+                                                          {insurance.date_of_signature ||
+                                                            "Not specified"}
+                                                        </p>
+                                                      </div>
+                                                    </div>
+                                                  )}
+                                                  {(insurance.additional_claim_info_box19 ||
+                                                    insurance.insurance_notes ||
+                                                    insurance.primary_insurance_notes) && (
+                                                    <div className="mt-3 space-y-2 text-sm">
+                                                      {insurance.additional_claim_info_box19 && (
+                                                        <div>
+                                                          <p className="text-slate-500 mb-1">
+                                                            Additional Claim
+                                                            Information (Box 19)
+                                                          </p>
+                                                          <p className="font-medium">
+                                                            {
+                                                              insurance.additional_claim_info_box19
+                                                            }
+                                                          </p>
+                                                        </div>
+                                                      )}
+                                                      {insurance.primary_insurance_notes && (
+                                                        <div>
+                                                          <p className="text-slate-500 mb-1">
+                                                            Primary Insurance
+                                                            Notes
+                                                          </p>
+                                                          <p className="font-medium whitespace-pre-wrap">
+                                                            {
+                                                              insurance.primary_insurance_notes
+                                                            }
+                                                          </p>
+                                                        </div>
+                                                      )}
+                                                      {insurance.insurance_notes && (
+                                                        <div>
+                                                          <p className="text-slate-500 mb-1">
+                                                            Insurance Notes
+                                                          </p>
+                                                          <p className="font-medium whitespace-pre-wrap">
+                                                            {
+                                                              insurance.insurance_notes
+                                                            }
+                                                          </p>
+                                                        </div>
+                                                      )}
                                                     </div>
                                                   )}
                                                 </div>
-                                              )
+                                              ),
                                             )}
                                           </div>
                                         </CardContent>
@@ -1392,28 +1768,52 @@ export default function ClientsView() {
                                         <div className="space-y-4">
                                           {client.authorizations.map(
                                             (auth, index) => {
-                                              const linkedInsurance =
-                                                client.insurances &&
-                                                client.insurances[
-                                                  Number.parseInt(
-                                                    auth.insurance_id,
-                                                    10
-                                                  )
-                                                ]
-                                                  ? client.insurances[
-                                                      Number.parseInt(
-                                                        auth.insurance_id,
-                                                        10
-                                                      )
-                                                    ]
-                                                  : null;
+                                              // `auth.insurance_id` can be:
+                                              // - DB insurance_id (from get-clients.php), or
+                                              // - an index string (from in-flight UI state before refetch).
+                                              let linkedInsurance = null;
+                                              if (
+                                                Array.isArray(client.insurances)
+                                              ) {
+                                                linkedInsurance =
+                                                  client.insurances.find(
+                                                    (ins) =>
+                                                      String(
+                                                        ins?.insurance_id,
+                                                      ) ===
+                                                      String(
+                                                        auth?.insurance_id,
+                                                      ),
+                                                  ) || null;
+
+                                                if (!linkedInsurance) {
+                                                  const maybeIdx =
+                                                    Number.parseInt(
+                                                      String(
+                                                        auth?.insurance_id ||
+                                                          "",
+                                                      ),
+                                                      10,
+                                                    );
+                                                  if (
+                                                    Number.isFinite(maybeIdx) &&
+                                                    maybeIdx >= 0 &&
+                                                    client.insurances[maybeIdx]
+                                                  ) {
+                                                    linkedInsurance =
+                                                      client.insurances[
+                                                        maybeIdx
+                                                      ];
+                                                  }
+                                                }
+                                              }
                                               const approvedUnits =
                                                 Number.parseFloat(
-                                                  auth.units_approved_per_15_min
+                                                  auth.units_approved_per_15_min,
                                                 ) || 0;
                                               const servicedUnits =
                                                 Number.parseFloat(
-                                                  auth.units_serviced
+                                                  auth.units_serviced,
                                                 ) || 0;
                                               const balanceUnits =
                                                 approvedUnits - servicedUnits;
@@ -1492,7 +1892,7 @@ export default function ClientsView() {
                                                               auth.insurance_id
                                                                 ? Number.parseInt(
                                                                     auth.insurance_id,
-                                                                    10
+                                                                    10,
                                                                   ) + 1
                                                                 : "-"
                                                             }`
@@ -1513,7 +1913,7 @@ export default function ClientsView() {
                                                   </div>
                                                 </div>
                                               );
-                                            }
+                                            },
                                           )}
                                         </div>
                                       </CardContent>
@@ -1547,38 +1947,178 @@ export default function ClientsView() {
                                                   className="border rounded-lg p-4 bg-slate-50"
                                                 >
                                                   <div className="flex items-center justify-between mb-3">
-                                                    <h4 className="font-semibold">
-                                                      Document #{index + 1}
-                                                    </h4>
-                                                    <Badge
-                                                      variant="outline"
-                                                      className="border-gray-300 text-gray-700"
-                                                    >
-                                                      {doc.document_type ||
-                                                        "N/A"}
-                                                    </Badge>
-                                                  </div>
-                                                  <div className="text-sm">
-                                                    <p className="text-slate-500 mb-1">
-                                                      File URL
-                                                    </p>
-                                                    {doc.file_url ? (
-                                                      <a
-                                                        href={doc.file_url}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="font-medium text-blue-600 hover:underline break-all"
-                                                      >
-                                                        {doc.file_url}
-                                                      </a>
-                                                    ) : (
-                                                      <p className="font-medium">
-                                                        Not provided
-                                                      </p>
+                                                    <div className="flex items-center gap-3 flex-1">
+                                                      <File className="h-5 w-5 text-teal-600" />
+                                                      <div className="flex-1 min-w-0">
+                                                        <h4 className="font-semibold text-slate-800">
+                                                          {doc.document_type ||
+                                                            doc.document_original_filename ||
+                                                            doc.document_filename ||
+                                                            `Document #${index + 1}`}
+                                                        </h4>
+                                                        {(doc.document_original_filename ||
+                                                          doc.document_filename) && (
+                                                          <p className="text-xs text-slate-500 mt-1 truncate">
+                                                            {doc.document_original_filename ||
+                                                              doc.document_filename}
+                                                          </p>
+                                                        )}
+                                                        {doc.document_type && (
+                                                          <Badge
+                                                            variant="outline"
+                                                            className="border-gray-300 text-gray-700 mt-1"
+                                                          >
+                                                            Document {index + 1}
+                                                          </Badge>
+                                                        )}
+                                                      </div>
+                                                    </div>
+                                                    {(doc.document_path ||
+                                                      doc.file_url) && (
+                                                      <div className="flex items-center gap-2 ml-4">
+                                                        <Button
+                                                          variant="outline"
+                                                          size="sm"
+                                                          onClick={() => {
+                                                            setViewingDocument({
+                                                              path:
+                                                                doc.document_path ||
+                                                                doc.file_url,
+                                                              filename:
+                                                                doc.document_original_filename ||
+                                                                doc.document_filename ||
+                                                                "document",
+                                                              documentFilename:
+                                                                doc.document_filename,
+                                                            });
+                                                          }}
+                                                          className="text-teal-600 hover:text-teal-700"
+                                                        >
+                                                          <Eye className="h-4 w-4 mr-2" />
+                                                          View
+                                                        </Button>
+                                                        <Button
+                                                          variant="outline"
+                                                          size="sm"
+                                                          onClick={async () => {
+                                                            try {
+                                                              let downloadUrl;
+                                                              const docPath =
+                                                                doc.document_path ||
+                                                                doc.file_url;
+                                                              const isDrivePath =
+                                                                docPath &&
+                                                                docPath.startsWith("drive://");
+                                                              const driveFileId =
+                                                                isDrivePath
+                                                                  ? (doc.document_filename && String(doc.document_filename).trim()
+                                                                    ? doc.document_filename
+                                                                    : docPath.slice("drive://".length))
+                                                                  : null;
+
+                                                              if (driveFileId) {
+                                                                const params = new URLSearchParams();
+                                                                params.set("file_id", driveFileId);
+                                                                if (doc.document_original_filename) {
+                                                                  params.set("filename", doc.document_original_filename);
+                                                                }
+                                                                downloadUrl = baseUrl
+                                                                  ? `${baseUrl}/download-client-document.php?${params.toString()}`
+                                                                  : null;
+                                                              } else if (docPath && docPath.startsWith("http")) {
+                                                                downloadUrl = docPath;
+                                                              } else if (
+                                                                docPath &&
+                                                                (docPath.startsWith("uploads/") || docPath.startsWith("/uploads/"))
+                                                              ) {
+                                                                const params = new URLSearchParams();
+                                                                params.set("path", docPath.startsWith("/") ? docPath.slice(1) : docPath);
+                                                                if (doc.document_original_filename) {
+                                                                  params.set("filename", doc.document_original_filename);
+                                                                }
+                                                                downloadUrl = baseUrl
+                                                                  ? `${baseUrl}/download-client-upload.php?${params.toString()}`
+                                                                  : null;
+                                                              } else if (docPath) {
+                                                                downloadUrl = baseUrl
+                                                                  ? `${baseUrl}/${docPath}`
+                                                                  : `/${docPath}`;
+                                                              } else {
+                                                                return;
+                                                              }
+
+                                                              if (!downloadUrl) {
+                                                                alert(
+                                                                  "Backend URL (NEXT_PUBLIC_BASE_URL) is not configured. Please set it to enable document downloads.",
+                                                                );
+                                                                return;
+                                                              }
+
+                                                              const response = await fetch(downloadUrl, {
+                                                                credentials: "omit",
+                                                              });
+                                                              if (!response.ok) {
+                                                                let errMsg = `Download failed (${response.status})`;
+                                                                const ct = response.headers.get("content-type");
+                                                                const errText = await response.text().catch(() => "");
+                                                                if (
+                                                                  ct &&
+                                                                  ct.includes("application/json") &&
+                                                                  errText
+                                                                ) {
+                                                                  try {
+                                                                    const j = JSON.parse(errText);
+                                                                    errMsg = j.message || errMsg;
+                                                                  } catch { /* use errMsg */ }
+                                                                } else if (errText) errMsg = errText;
+                                                                throw new Error(errMsg);
+                                                              }
+                                                              const blob =
+                                                                await response.blob();
+                                                              const url =
+                                                                window.URL.createObjectURL(
+                                                                  blob,
+                                                                );
+                                                              const link =
+                                                                document.createElement(
+                                                                  "a",
+                                                                );
+                                                              link.href = url;
+                                                              link.download =
+                                                                doc.document_original_filename ||
+                                                                doc.document_filename ||
+                                                                "document";
+                                                              document.body.appendChild(
+                                                                link,
+                                                              );
+                                                              link.click();
+                                                              document.body.removeChild(
+                                                                link,
+                                                              );
+                                                              window.URL.revokeObjectURL(
+                                                                url,
+                                                              );
+                                                            } catch (error) {
+                                                              console.error(
+                                                                "Download error:",
+                                                                error,
+                                                              );
+                                                              alert(
+                                                                "Failed to download file: " +
+                                                                  (error.message || "Please try again."),
+                                                              );
+                                                            }
+                                                          }}
+                                                          className="text-blue-600 hover:text-blue-700"
+                                                        >
+                                                          <Download className="h-4 w-4 mr-2" />
+                                                          Download
+                                                        </Button>
+                                                      </div>
                                                     )}
                                                   </div>
                                                 </div>
-                                              )
+                                              ),
                                             )}
                                           </div>
                                         </CardContent>
@@ -1634,7 +2174,7 @@ export default function ClientsView() {
                                         <CardContent>
                                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                                             {Object.entries(
-                                              client.availability
+                                              client.availability,
                                             ).map(([day, data]) => (
                                               <div
                                                 key={day}
@@ -1647,11 +2187,11 @@ export default function ClientsView() {
                                                   <p className="text-green-600">
                                                     Available:{" "}
                                                     {formatTimeForDisplay(
-                                                      data.start
+                                                      data.start,
                                                     )}{" "}
                                                     -{" "}
                                                     {formatTimeForDisplay(
-                                                      data.end
+                                                      data.end,
                                                     )}
                                                   </p>
                                                 ) : (
@@ -1695,10 +2235,22 @@ export default function ClientsView() {
         onClose={() => {
           setIsAddModalOpen(false);
           setEditingClient(null);
+          setModalInitialTab(null);
         }}
         onSave={editingClient ? handleEditClient : handleAddClient}
         editingClient={editingClient}
         filteredStaff={filteredStaff}
+        initialTab={modalInitialTab}
+      />
+
+      {/* Session Notes Modal */}
+      <SessionNotesModal
+        isOpen={isSessionNotesModalOpen}
+        onClose={() => {
+          setIsSessionNotesModalOpen(false);
+          setSessionNotesClient(null);
+        }}
+        client={sessionNotesClient}
       />
 
       {/* Modules Modal — now supports clicking into domains */}
@@ -1724,6 +2276,16 @@ export default function ClientsView() {
           }}
           clientId={selectedClient.id}
           clientName={`${selectedClient.first_name} ${selectedClient.last_name}`}
+        />
+      )}
+      {viewingDocument && (
+        <DocumentViewerModal
+          isOpen={!!viewingDocument}
+          documentPath={viewingDocument.path}
+          filename={viewingDocument.filename}
+          documentFilename={viewingDocument.documentFilename}
+          baseUrl={baseUrl}
+          onClose={() => setViewingDocument(null)}
         />
       )}
       {selectedClient && (
@@ -1764,6 +2326,16 @@ export default function ClientsView() {
           onEditTarget={handleEditTarget}
         />
       )}
+
+      {/* Session Notes Modal */}
+      <SessionNotesModal
+        isOpen={isSessionNotesModalOpen}
+        onClose={() => {
+          setIsSessionNotesModalOpen(false);
+          setSessionNotesClient(null);
+        }}
+        client={sessionNotesClient}
+      />
     </div>
   );
 }

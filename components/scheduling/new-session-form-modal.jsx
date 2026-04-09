@@ -19,7 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+// Tabs removed — scheduling form is now a single view
 import {
   Select,
   SelectContent,
@@ -156,7 +156,7 @@ export default function NewSessionFormModal({
 }) {
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
-  const [activeTab, setActiveTab] = useState("scheduling");
+  // activeTab state removed — single-view scheduling form
   const [staff, setStaff] = useState([]);
   const [loadingStaff, setLoadingStaff] = useState(false);
   const [userTimezone, setUserTimezone] = useState("");
@@ -383,7 +383,6 @@ export default function NewSessionFormModal({
         endTZ: userTimezone,
       }));
     }
-    setActiveTab("scheduling");
   }, [isOpen, editingSession, selectedDate, userTimezone, staff]);
 
   const clientOptions = useMemo(
@@ -498,14 +497,7 @@ export default function NewSessionFormModal({
     return Object.keys(e).length > 0;
   };
 
-  const handleNextClick = (e) => {
-    e.preventDefault();
-    if (!validateSchedulingTab()) {
-      setActiveTab("notes");
-    } else {
-      toast.error("Please fix errors before proceeding.");
-    }
-  };
+  // handleNextClick removed — notes now live inside the scheduling tab
 
   const handleSubmit = async (e) => {
     e?.preventDefault();
@@ -594,6 +586,7 @@ export default function NewSessionFormModal({
 
     const payload = {
       session_id: editingSession.sessionId,
+      status: "Cancelled",
       cancelledBy: "Staff",
       cancelledReason: cancelReason,
       editMode: cancelMode,
@@ -601,14 +594,14 @@ export default function NewSessionFormModal({
 
     try {
       const res = await fetch(`${baseUrl}/add-session.php`, {
-        method: "DELETE",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (res.ok && data.success) {
         toast.success("Session cancelled successfully!");
-        onSave?.({ ...editingSession, status: "cancelled" });
+        onSave?.({ ...editingSession, status: "Cancelled" });
         handleClose();
       } else {
         toast.error(data.error || "Failed to cancel session");
@@ -712,22 +705,6 @@ export default function NewSessionFormModal({
             )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            <Tabs value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid grid-cols-2">
-                <TabsTrigger
-                  value="scheduling"
-                  className="flex items-center gap-2"
-                >
-                  <Users className="h-4 w-4" />
-                  Scheduling
-                </TabsTrigger>
-                <TabsTrigger value="notes" className="flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  Notes
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="scheduling">
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -1135,29 +1112,25 @@ export default function NewSessionFormModal({
                         </div>
                       </CardContent>
                     </Card>
+                    {/* Quick Note — inline in the scheduling form */}
+                    <Card className="bg-slate-50/50">
+                      <CardHeader className="pb-4">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-teal-600" />
+                          Quick Note
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <Textarea
+                          rows={3}
+                          value={form.quickNote}
+                          onChange={(e) => setField("quickNote", e.target.value)}
+                          placeholder="Add a quick note for this session..."
+                        />
+                      </CardContent>
+                    </Card>
                   </CardContent>
                 </Card>
-              </TabsContent>
-
-              <TabsContent value="notes">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <FileText className="h-5 w-5 text-teal-600" />
-                      Notes
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Label>Quick Note</Label>
-                    <Textarea
-                      rows={5}
-                      value={form.quickNote}
-                      onChange={(e) => setField("quickNote", e.target.value)}
-                    />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            </Tabs>
 
             <div className="flex justify-between pt-4">
               <div className="flex gap-2">
@@ -1176,19 +1149,9 @@ export default function NewSessionFormModal({
                   </Button>
                 )}
               </div>
-              {activeTab === "notes" ? (
-                <Button type="submit" className="bg-teal-600 hover:bg-teal-700">
-                  {editingSession ? "Update Session" : "Add Session"}
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  className="bg-teal-600 hover:bg-teal-700"
-                  onClick={handleNextClick}
-                >
-                  Next
-                </Button>
-              )}
+              <Button type="submit" className="bg-teal-600 hover:bg-teal-700">
+                {editingSession ? "Update Session" : "Add Session"}
+              </Button>
             </div>
           </form>
         </DialogContent>

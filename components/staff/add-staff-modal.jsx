@@ -21,9 +21,9 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 import {
   Users,
-  MapPin,
   Clock,
   FileText,
   ChevronDown,
@@ -31,9 +31,50 @@ import {
   CheckIcon,
   Trash2,
   Plus,
+  File,
+  Upload,
+  Eye,
+  Download,
+  X,
 } from "lucide-react";
-import { cn } from "@/lib/utils"; // Ensure you have this utility (from Shadcn/UI)
+import { cn } from "@/lib/utils";
 import { useSelector } from "react-redux";
+import DocumentViewerModal from "@/components/clients/DocumentViewerModal";
+import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
+
+const formatUSPhone = (value) => {
+  const digits = (value || "").replace(/\D/g, "").slice(0, 10);
+  if (digits.length === 0) return "";
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)})-${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)})-${digits.slice(3, 6)}-${digits.slice(6)}`;
+};
+const stripPhoneFormatting = (value) => (value || "").replace(/\D/g, "").slice(0, 10);
+const formatSSN = (value) => {
+  const digits = (value || "").replace(/\D/g, "").slice(0, 9);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 5) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+};
+const stripSSNFormatting = (value) => (value || "").replace(/\D/g, "").slice(0, 9);
+
+const popularCountries = ["USA", "Canada", "United Kingdom", "Australia", "Germany", "France", "Italy", "Spain", "Netherlands", "Other"];
+
+const mapCountryFromShort = (countryShort, countryLong) => {
+  if (!countryShort && !countryLong) return "USA";
+  const map = {
+    us: "USA",
+    ca: "Canada",
+    gb: "United Kingdom",
+    au: "Australia",
+    de: "Germany",
+    fr: "France",
+    it: "Italy",
+    es: "Spain",
+    nl: "Netherlands",
+  };
+  return map[(countryShort || "").toLowerCase()] || countryLong || "USA";
+};
 
 const initialStaffState = {
   // Personal Information
@@ -42,6 +83,21 @@ const initialStaffState = {
   email: "",
   phone: "",
   address: "",
+  address_line_1: "",
+  address_line_2: "",
+  city: "",
+  state: "",
+  zipcode: "",
+  country: "USA",
+  jobTitle: "",
+  ssn: "",
+  emergencyContactName: "",
+  emergencyRelationship: "",
+  emergencyPhone: "",
+  emergencyEmail: "",
+  highestDegree: "",
+  yearAwarded: "",
+  major: "",
   location: "",
   // Professional Information
   staffType: "",
@@ -82,13 +138,14 @@ const initialStaffState = {
   clinic: false,
   school: false,
   community: false,
+  // Documents (Driver License, Background Check, etc.)
+  documents: [],
 };
 
-// Helper to generate time options for dropdown (e.g., "08:00", "08:15", ..., "23:45")
+// Helper to generate time options for dropdown (e.g., "00:00", "00:15", ..., "23:45") - full 24h to match client
 const generateTimeOptions = () => {
   const times = [];
-  for (let h = 8; h <= 20; h++) {
-    // Only 8AM to 8PM
+  for (let h = 0; h < 24; h++) {
     for (let m = 0; m < 60; m += 15) {
       const hour = h.toString().padStart(2, "0");
       const minute = m.toString().padStart(2, "0");
@@ -225,16 +282,29 @@ export default function AddStaffModal({
   const [errors, setErrors] = useState({});
   const [activeTab, setActiveTab] = useState("personal");
   const [saving, setSaving] = useState(false);
+  const [documentTypes, setDocumentTypes] = useState([]);
+  const [viewingDocument, setViewingDocument] = useState(null);
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
   const tabOrder = [
     "personal",
     "professional",
     "certification",
     "availability",
-    "location",
+    "documents",
   ];
 
-  // Local placeholder; integrate with a clients API later if needed
   const clients = useSelector((state) => state.clients.items);
+
+  useEffect(() => {
+    if (baseUrl) {
+      fetch(`${baseUrl}/document-types.php`)
+        .then((r) => r.json())
+        .then((json) => {
+          if (json.success && json.data) setDocumentTypes(json.data.filter((d) => d.archived !== 1));
+        })
+        .catch(() => {});
+    }
+  }, [baseUrl]);
 
   useEffect(() => {
     if (editingStaff) {
@@ -254,36 +324,58 @@ export default function AddStaffModal({
       setFormData({
         ...initialStaffState,
         ...editingStaff,
+        address_line_1: editingStaff.address_line_1 ?? editingStaff.address?.split(",")[0] ?? "",
+        address_line_2: editingStaff.address_line_2 ?? "",
+        city: editingStaff.city ?? "",
+        state: editingStaff.state ?? "",
+        zipcode: editingStaff.zipcode ?? "",
+        country: editingStaff.country ?? "USA",
+        jobTitle: editingStaff.job_title ?? editingStaff.jobTitle ?? "",
+        ssn: editingStaff.ssn_encrypted ?? editingStaff.ssn ?? "",
+        emergencyContactName: editingStaff.emergency_contact_name ?? editingStaff.emergencyContactName ?? "",
+        emergencyRelationship: editingStaff.emergency_relationship ?? editingStaff.emergencyRelationship ?? "",
+        emergencyPhone: editingStaff.emergency_phone ?? editingStaff.emergencyPhone ?? "",
+        emergencyEmail: editingStaff.emergency_email ?? editingStaff.emergencyEmail ?? "",
+        highestDegree: editingStaff.highest_degree ?? editingStaff.highestDegree ?? "",
+        yearAwarded: editingStaff.year_awarded ?? editingStaff.yearAwarded ?? "",
+        major: editingStaff.major ?? "",
         certifications: editingStaff.certifications
           ? mapCertifications(editingStaff.certifications)
           : initialStaffState.certifications,
 
-        // Flatten availability for form fields
-        mondayAvailable: editingStaff.availability?.monday?.available || false,
-        mondayStart: editingStaff.availability?.monday?.start || "",
-        mondayEnd: editingStaff.availability?.monday?.end || "",
-        tuesdayAvailable:
-          editingStaff.availability?.tuesday?.available || false,
-        tuesdayStart: editingStaff.availability?.tuesday?.start || "",
-        tuesdayEnd: editingStaff.availability?.tuesday?.end || "",
-        wednesdayAvailable:
-          editingStaff.availability?.wednesday?.available || false,
-        wednesdayStart: editingStaff.availability?.wednesday?.start || "",
-        wednesdayEnd: editingStaff.availability?.wednesday?.end || "",
-        thursdayAvailable:
-          editingStaff.availability?.thursday?.available || false,
-        thursdayStart: editingStaff.availability?.thursday?.start || "",
-        thursdayEnd: editingStaff.availability?.thursday?.end || "",
-        fridayAvailable: editingStaff.availability?.friday?.available || false,
-        fridayStart: editingStaff.availability?.friday?.start || "",
-        fridayEnd: editingStaff.availability?.friday?.end || "",
-        saturdayAvailable:
-          editingStaff.availability?.saturday?.available || false,
-        saturdayStart: editingStaff.availability?.saturday?.start || "",
-        saturdayEnd: editingStaff.availability?.saturday?.end || "",
-        sundayAvailable: editingStaff.availability?.sunday?.available || false,
-        sundayStart: editingStaff.availability?.sunday?.start || "",
-        sundayEnd: editingStaff.availability?.sunday?.end || "",
+        // Flatten availability for form fields (copy times to empty days when editing)
+        ...(function fillAvailabilityFromEditing() {
+          const days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+          const norm = (t) => (t && String(t).slice(0, 5)) || "";
+          const isEmpty = (s, e) => {
+            const a = norm(s);
+            const b = norm(e);
+            return !a || !b || a === "00:00" || b === "00:00";
+          };
+          const raw = {};
+          for (const d of days) {
+            const av = editingStaff.availability?.[d];
+            raw[`${d}Available`] = !!av?.available;
+            raw[`${d}Start`] = norm(av?.start) || "";
+            raw[`${d}End`] = norm(av?.end) || "";
+          }
+          let ref = null;
+          for (const d of days) {
+            if (raw[`${d}Available`] && !isEmpty(raw[`${d}Start`], raw[`${d}End`])) {
+              ref = { start: raw[`${d}Start`], end: raw[`${d}End`] };
+              break;
+            }
+          }
+          if (ref) {
+            for (const d of days) {
+              if (raw[`${d}Available`] && isEmpty(raw[`${d}Start`], raw[`${d}End`])) {
+                raw[`${d}Start`] = ref.start;
+                raw[`${d}End`] = ref.end;
+              }
+            }
+          }
+          return raw;
+        })(),
         // Flatten location preferences for form fields
         homeVisits: editingStaff.locationPreferences?.homeVisits || false,
         clinic: editingStaff.locationPreferences?.clinic || false,
@@ -292,6 +384,14 @@ export default function AddStaffModal({
         // Ensure arrays for assigned fields
         assignedStaff: editingStaff.assignedStaff || [],
         assignedClients: editingStaff.assignedClients || [],
+        documents: (editingStaff.documents || []).map((d) => ({
+          doc_uuid: d.doc_uuid || `doc_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+          document_type: d.document_type || "",
+          document_path: d.document_path || "",
+          document_filename: d.document_filename || "",
+          document_original_filename: d.document_original_filename || "",
+          document_file: null,
+        })),
       });
     } else {
       setFormData(initialStaffState);
@@ -354,10 +454,45 @@ export default function AddStaffModal({
       community: formData.community,
     };
 
+    const addressParts = [
+      formData.address_line_1,
+      formData.address_line_2,
+      formData.city,
+      formData.state ? `${formData.state} ${formData.zipcode || ""}`.trim() : formData.zipcode,
+      formData.country !== "USA" ? formData.country : "",
+    ].filter(Boolean);
+    const addressCombined = addressParts.join(", ") || formData.address || null;
+
+    const makeLocalId = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const staffId = editingStaff?.id || `ST${Date.now()}${Math.random().toString(36).slice(2, 9)}`;
     const dataToSave = {
       ...formData,
-      id: editingStaff?.id,
+      id: staffId,
       fullName: `${formData.firstName.trim()} ${formData.lastName.trim()}`,
+      address: addressCombined,
+      job_title: formData.jobTitle,
+      ssn_encrypted: formData.ssn,
+      address_line_1: formData.address_line_1,
+      address_line_2: formData.address_line_2,
+      city: formData.city,
+      state: formData.state,
+      zipcode: formData.zipcode,
+      country: formData.country,
+      emergency_contact_name: formData.emergencyContactName,
+      emergency_relationship: formData.emergencyRelationship,
+      emergency_phone: formData.emergencyPhone,
+      emergency_email: formData.emergencyEmail,
+      highest_degree: formData.highestDegree,
+      year_awarded: formData.yearAwarded,
+      major: formData.major,
+      documents: (formData.documents || []).map((d) => ({
+        doc_uuid: d.doc_uuid,
+        document_type: d.document_type,
+        document_path: d.document_path,
+        document_filename: d.document_filename,
+        document_original_filename: d.document_original_filename,
+        document_file: d.document_file, // Keep for upload - parent strips before API
+      })).filter((d) => d.document_path || d.document_filename || d.document_file),
       availability,
       locationPreferences,
       dateOfJoining: formData.dateOfJoining || "",
@@ -500,10 +635,6 @@ export default function AddStaffModal({
         });
         break;
 
-      case "location":
-        // No required fields for location preferences
-        break;
-
       default:
         break;
     }
@@ -622,6 +753,26 @@ export default function AddStaffModal({
     </div>
   );
 
+  const dayOrder = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+  const normalizeTime = (t) => (t && String(t).slice(0, 5)) || ""; // "16:00:00" -> "16:00"
+  const isRealTime = (s, e) => {
+    const a = normalizeTime(s);
+    const b = normalizeTime(e);
+    return a && b && a !== "00:00" && b !== "00:00";
+  };
+  const getReferenceTimes = (excludingDay) => {
+    for (const d of dayOrder) {
+      if (d === excludingDay) continue;
+      const avail = formData[`${d}Available`];
+      const start = formData[`${d}Start`];
+      const end = formData[`${d}End`];
+      if (avail && isRealTime(start, end)) {
+        return { start: normalizeTime(start), end: normalizeTime(end) };
+      }
+    }
+    return { start: "08:00", end: "17:00" };
+  };
+
   const renderDayAvailability = (day, dayLabel) => (
     <div
       key={day}
@@ -631,9 +782,29 @@ export default function AddStaffModal({
         <Checkbox
           id={`${day}Available`}
           checked={formData[`${day}Available`]}
-          onCheckedChange={(checked) =>
-            handleInputChange(`${day}Available`, checked)
-          }
+          onCheckedChange={(checked) => {
+            if (checked === true) {
+              const ref = getReferenceTimes(day);
+              const start = normalizeTime(formData[`${day}Start`]);
+              const end = normalizeTime(formData[`${day}End`]);
+              const needsCopy = !start || !end || start === "00:00" || end === "00:00";
+              setFormData((prev) => ({
+                ...prev,
+                [`${day}Available`]: true,
+                ...(needsCopy ? { [`${day}Start`]: ref.start, [`${day}End`]: ref.end } : {}),
+              }));
+              if (needsCopy) {
+                setErrors((prev) => {
+                  const next = { ...prev };
+                  delete next[`${day}Start`];
+                  delete next[`${day}End`];
+                  return next;
+                });
+              }
+            } else {
+              handleInputChange(`${day}Available`, false);
+            }
+          }}
         />
         <Label htmlFor={`${day}Available`} className="font-medium">
           {dayLabel}
@@ -718,6 +889,55 @@ export default function AddStaffModal({
     }));
   };
 
+  const makeDocUuid = () => `doc_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+  const addDocument = () => {
+    setFormData((prev) => ({
+      ...prev,
+      documents: [...(prev.documents || []), {
+        doc_uuid: makeDocUuid(),
+        document_type: "",
+        document_path: "",
+        document_filename: "",
+        document_original_filename: "",
+        document_file: null,
+      }],
+    }));
+  };
+
+  const handleDocumentChange = (docUuid, field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      documents: (prev.documents || []).map((d) =>
+        d.doc_uuid === docUuid ? { ...d, [field]: value } : d
+      ),
+    }));
+  };
+
+  const handleDocumentFileSelect = (docUuid, file) => {
+    if (!file) return;
+    const allowed = ["application/pdf", "image/jpeg", "image/jpg", "image/png"];
+    if (!allowed.includes(file.type)) {
+      alert("Please upload PDF, JPG, or PNG.");
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      alert("File size must be less than 25MB.");
+      return;
+    }
+    handleDocumentChange(docUuid, "document_file", file);
+    handleDocumentChange(docUuid, "document_original_filename", file.name);
+    handleDocumentChange(docUuid, "document_path", "");
+    handleDocumentChange(docUuid, "document_filename", "");
+  };
+
+  const removeDocument = (docUuid) => {
+    setFormData((prev) => ({
+      ...prev,
+      documents: (prev.documents || []).filter((d) => d.doc_uuid !== docUuid),
+    }));
+  };
+
   const removeCertification = (index) => {
     setFormData((prev) => ({
       ...prev,
@@ -780,8 +1000,8 @@ export default function AddStaffModal({
               <TabsTrigger value="availability">
                 <Clock className="h-4 w-4 mr-2" /> Availability
               </TabsTrigger>
-              <TabsTrigger value="location">
-                <MapPin className="h-4 w-4 mr-2" /> Location
+              <TabsTrigger value="documents">
+                <File className="h-4 w-4 mr-2" /> Documents
               </TabsTrigger>
             </TabsList>
             {/* Personal Information Tab */}
@@ -809,6 +1029,26 @@ export default function AddStaffModal({
                       (e) => handleInputChange("lastName", e.target.value),
                       { placeholder: "Enter last name" }
                     )}
+                    {renderInputWithError(
+                      "jobTitle",
+                      "Job Title",
+                      formData.jobTitle,
+                      (e) => handleInputChange("jobTitle", e.target.value),
+                      { placeholder: "Enter job title" }
+                    )}
+                    <div>
+                      <Label htmlFor="ssn">SSN</Label>
+                      <Input
+                        id="ssn"
+                        type="text"
+                        value={formatSSN(formData.ssn)}
+                        onChange={(e) => handleInputChange("ssn", stripSSNFormatting(e.target.value))}
+                        placeholder="XXX-XX-XXXX"
+                        maxLength={11}
+                        className={errors.ssn ? "border-red-500" : ""}
+                      />
+                      {errors.ssn && <p className="text-red-500 text-sm mt-1">{errors.ssn}</p>}
+                    </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {renderInputWithError(
@@ -823,25 +1063,121 @@ export default function AddStaffModal({
                       <Input
                         id="phone"
                         type="tel"
-                        value={formData.phone}
+                        value={formatUSPhone(formData.phone)}
                         onChange={(e) =>
-                          handleInputChange("phone", e.target.value)
+                          handleInputChange("phone", stripPhoneFormatting(e.target.value))
                         }
-                        placeholder="Enter phone number"
+                        placeholder="(123)-456-7890"
+                        maxLength={14}
+                        className={errors.phone ? "border-red-500" : ""}
                       />
+                      {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
                     </div>
                   </div>
                   <div>
-                    <Label htmlFor="address">Address</Label>
-                    <Textarea
-                      id="address"
-                      value={formData.address}
-                      onChange={(e) =>
-                        handleInputChange("address", e.target.value)
-                      }
-                      placeholder="Enter full address"
-                      rows={2}
-                    />
+                    <Label className="block mb-2">Address</Label>
+                    <div className="space-y-2">
+                      <AddressAutocomplete
+                        id="staff-address-line-1"
+                        debug={process.env.NODE_ENV === "development"}
+                        value={formData.address_line_1}
+                        onChange={(v) => handleInputChange("address_line_1", v)}
+                        onAddressSelect={(addr) => {
+                          handleInputChange(
+                            "address_line_1",
+                            addr.addressLine1 || addr.formattedAddress
+                          );
+                          if (addr.locality) handleInputChange("city", addr.locality);
+                          if (addr.administrativeAreaShort) {
+                            handleInputChange("state", addr.administrativeAreaShort);
+                          }
+                          if (addr.postalCode) handleInputChange("zipcode", addr.postalCode);
+                          handleInputChange(
+                            "country",
+                            mapCountryFromShort(addr.countryShort, addr.country)
+                          );
+                        }}
+                        countryRestrictions={["us", "ca", "gb", "au", "de", "fr", "it", "es", "nl"]}
+                        placeholder="Start typing to search address..."
+                        className={errors.address_line_1 ? "border-red-500" : ""}
+                      />
+                      <Input
+                        value={formData.address_line_2}
+                        onChange={(e) => handleInputChange("address_line_2", e.target.value)}
+                        placeholder="Apt, suite, unit, etc. (optional)"
+                      />
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        <Input
+                          value={formData.city}
+                          onChange={(e) => handleInputChange("city", e.target.value)}
+                          placeholder="City"
+                        />
+                        <Input
+                          value={formData.state}
+                          onChange={(e) => handleInputChange("state", e.target.value)}
+                          placeholder="State"
+                        />
+                        <Input
+                          value={formData.zipcode}
+                          onChange={(e) => handleInputChange("zipcode", e.target.value)}
+                          placeholder="Zipcode"
+                        />
+                      </div>
+                      <Select
+                        value={formData.country === "Other" ? "Other" : formData.country || "USA"}
+                        onValueChange={(v) => handleInputChange("country", v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Country" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {popularCountries.map((c) => (
+                            <SelectItem key={c} value={c}>
+                              {c}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="block mb-2 font-medium text-teal-800">Emergency Contact</Label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {renderInputWithError(
+                        "emergencyContactName",
+                        "Contact Name",
+                        formData.emergencyContactName,
+                        (e) => handleInputChange("emergencyContactName", e.target.value),
+                        { placeholder: "Full name" }
+                      )}
+                      {renderInputWithError(
+                        "emergencyRelationship",
+                        "Relationship",
+                        formData.emergencyRelationship,
+                        (e) => handleInputChange("emergencyRelationship", e.target.value),
+                        { placeholder: "e.g. Spouse, Parent" }
+                      )}
+                      <div>
+                        <Label htmlFor="emergencyPhone">Phone</Label>
+                        <Input
+                          id="emergencyPhone"
+                          type="tel"
+                          value={formatUSPhone(formData.emergencyPhone)}
+                          onChange={(e) =>
+                            handleInputChange("emergencyPhone", stripPhoneFormatting(e.target.value))
+                          }
+                          placeholder="(123)-456-7890"
+                          maxLength={14}
+                        />
+                      </div>
+                      {renderInputWithError(
+                        "emergencyEmail",
+                        "Email",
+                        formData.emergencyEmail,
+                        (e) => handleInputChange("emergencyEmail", e.target.value),
+                        { type: "email", placeholder: "Enter email" }
+                      )}
+                    </div>
                   </div>
                   {renderInputWithError(
                     "dob",
@@ -849,12 +1185,6 @@ export default function AddStaffModal({
                     formData.dob,
                     (e) => handleInputChange("dob", e.target.value),
                     { type: "date" }
-                  )}
-                  {renderInputWithError(
-                    "location",
-                    "Location",
-                    formData.location,
-                    (e) => handleInputChange("location", e.target.value)
                   )}
                 </CardContent>
               </Card>
@@ -922,6 +1252,39 @@ export default function AddStaffModal({
                           handleInputChange("dateOfLeaving", e.target.value)
                         }
                       />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="block mb-2 font-medium text-teal-800">Education</Label>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {renderSelectWithError(
+                        "highestDegree",
+                        "Highest Degree",
+                        formData.highestDegree,
+                        (v) => handleInputChange("highestDegree", v),
+                        <>
+                          <SelectItem value="High School">High School</SelectItem>
+                          <SelectItem value="Associate">Associate</SelectItem>
+                          <SelectItem value="Bachelor">Bachelor</SelectItem>
+                          <SelectItem value="Master">Master</SelectItem>
+                          <SelectItem value="Doctorate">Doctorate</SelectItem>
+                        </>,
+                        "Select degree"
+                      )}
+                      {renderInputWithError(
+                        "yearAwarded",
+                        "Year Awarded",
+                        formData.yearAwarded,
+                        (e) => handleInputChange("yearAwarded", e.target.value),
+                        { placeholder: "e.g. 2020" }
+                      )}
+                      {renderInputWithError(
+                        "major",
+                        "Major",
+                        formData.major,
+                        (e) => handleInputChange("major", e.target.value),
+                        { placeholder: "e.g. Psychology" }
+                      )}
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1016,9 +1379,16 @@ export default function AddStaffModal({
                                   value
                                 ),
                               <>
+                                <SelectItem value="BCBA-L1">BCBA-L1</SelectItem>
+                                <SelectItem value="BCBA-L2">BCBA-L2</SelectItem>
+                                <SelectItem value="BCBA-L3">BCBA-L3</SelectItem>
+                                <SelectItem value="BCABA">BCABA</SelectItem>
+                                <SelectItem value="BSA">BSA</SelectItem>
                                 <SelectItem value="RBT">RBT</SelectItem>
+                                <SelectItem value="BT">BT</SelectItem>
                                 <SelectItem value="BCBA">BCBA</SelectItem>
                                 <SelectItem value="BCaBA">BCaBA</SelectItem>
+                                <SelectItem value="Not Certified">Not Certified</SelectItem>
                               </>,
                               "Select type"
                             )}
@@ -1126,58 +1496,139 @@ export default function AddStaffModal({
                 </CardContent>
               </Card>
             </TabsContent>
-            {/* Location Preferences Tab */}
-            <TabsContent value="location" className="space-y-6">
+            {/* Documents Tab */}
+            <TabsContent value="documents" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <MapPin className="h-5 w-5 text-teal-600" /> Location
-                    Preferences
+                  <CardTitle className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <File className="h-5 w-5 text-teal-600" /> Documents
+                      <Badge variant="secondary">Optional</Badge>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" onClick={addDocument}>
+                      <Plus className="h-4 w-4 mr-2" /> Add Document
+                    </Button>
                   </CardTitle>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Driver License, Background Check, etc. Same document types as clients.
+                  </p>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="homeVisits"
-                        checked={formData.homeVisits}
-                        onCheckedChange={(checked) =>
-                          handleInputChange("homeVisits", checked)
-                        }
-                      />
-                      <Label htmlFor="homeVisits">Home Visits</Label>
+                <CardContent>
+                  {(!formData.documents || formData.documents.length === 0) ? (
+                    <p className="text-slate-500 text-center py-6">No documents. Click Add Document.</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {(formData.documents || []).map((doc, index) => (
+                        <div key={doc.doc_uuid} className="border rounded-lg p-4 space-y-3">
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <Label>Document Type</Label>
+                                <Select
+                                  value={doc.document_type || ""}
+                                  onValueChange={(v) => handleDocumentChange(doc.doc_uuid, "document_type", v)}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select type" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {(documentTypes.length ? documentTypes : [
+                                      { type_name: "Driver License" },
+                                      { type_name: "Background Check" },
+                                      { type_name: "Insurance" },
+                                      { type_name: "Misc" },
+                                    ]).map((t) => (
+                                      <SelectItem key={t.id || t.type_name} value={t.type_name || t.id}>
+                                        {t.type_name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                            <Button type="button" variant="ghost" size="sm" onClick={() => removeDocument(doc.doc_uuid)} className="text-red-600">
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          {(doc.document_path || doc.document_file) ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-slate-600 truncate flex-1">
+                                {doc.document_original_filename || doc.document_filename || "File attached"}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setViewingDocument({
+                                  path: doc.document_path,
+                                  filename: doc.document_original_filename || doc.document_filename || "document",
+                                  documentFilename: doc.document_filename,
+                                })}
+                              >
+                                <Eye className="h-4 w-4 mr-2" /> View
+                              </Button>
+                              {doc.document_path && baseUrl && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={async () => {
+                                    try {
+                                      const path = doc.document_path || "";
+                                      const isDrive = path.startsWith("drive://");
+                                      const fileId = isDrive ? (doc.document_filename || path.slice(8)) : null;
+                                      let url;
+                                      if (fileId) {
+                                        url = `${baseUrl}/download-client-document.php?file_id=${encodeURIComponent(fileId)}${doc.document_original_filename ? "&filename=" + encodeURIComponent(doc.document_original_filename) : ""}`;
+                                      } else if (path.startsWith("uploads/")) {
+                                        url = `${baseUrl}/download-client-upload.php?path=${encodeURIComponent(path)}${doc.document_original_filename ? "&filename=" + encodeURIComponent(doc.document_original_filename) : ""}`;
+                                      } else {
+                                        alert("No downloadable file.");
+                                        return;
+                                      }
+                                      const res = await fetch(url, { credentials: "omit" });
+                                      if (!res.ok) throw new Error("Download failed");
+                                      const blob = await res.blob();
+                                      const a = document.createElement("a");
+                                      a.href = URL.createObjectURL(blob);
+                                      a.download = doc.document_original_filename || "document";
+                                      a.click();
+                                      URL.revokeObjectURL(a.href);
+                                    } catch (e) {
+                                      alert("Failed to download: " + (e.message || "Unknown error"));
+                                    }
+                                  }}
+                                >
+                                  <Download className="h-4 w-4 mr-2" /> Download
+                                </Button>
+                              )}
+                            </div>
+                          ) : (
+                            <>
+                              <Label htmlFor={`staff-doc-${doc.doc_uuid}`} className="block">
+                                <div className="border-2 border-dashed rounded-lg p-4 cursor-pointer hover:bg-slate-50">
+                                  <div className="flex flex-col items-center gap-2 text-slate-500">
+                                    <Upload className="h-8 w-8" />
+                                    <span className="text-sm">Click to upload (PDF, JPG, PNG, max 25MB)</span>
+                                  </div>
+                                </div>
+                              </Label>
+                              <Input
+                                id={`staff-doc-${doc.doc_uuid}`}
+                                type="file"
+                                accept="application/pdf,image/jpeg,image/jpg,image/png"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) handleDocumentFileSelect(doc.doc_uuid, f);
+                                }}
+                              />
+                            </>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="clinic"
-                        checked={formData.clinic}
-                        onCheckedChange={(checked) =>
-                          handleInputChange("clinic", checked)
-                        }
-                      />
-                      <Label htmlFor="clinic">Clinic</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="school"
-                        checked={formData.school}
-                        onCheckedChange={(checked) =>
-                          handleInputChange("school", checked)
-                        }
-                      />
-                      <Label htmlFor="school">School</Label>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Checkbox
-                        id="community"
-                        checked={formData.community}
-                        onCheckedChange={(checked) =>
-                          handleInputChange("community", checked)
-                        }
-                      />
-                      <Label htmlFor="community">Community</Label>
-                    </div>
-                  </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1202,6 +1653,16 @@ export default function AddStaffModal({
           </div>
         </form>
       </DialogContent>
+      {viewingDocument && (
+        <DocumentViewerModal
+          isOpen={!!viewingDocument}
+          documentPath={viewingDocument.path}
+          filename={viewingDocument.filename}
+          documentFilename={viewingDocument.documentFilename}
+          baseUrl={baseUrl}
+          onClose={() => setViewingDocument(null)}
+        />
+      )}
     </Dialog>
   );
 }

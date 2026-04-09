@@ -113,8 +113,14 @@ const SidebarProvider = React.forwardRef<
     }, [toggleSidebar])
 
     // We add a state so that we can do data-state="expanded" or "collapsed".
-    // This makes it easier to style the sidebar with Tailwind classes.
-    const state = open ? "expanded" : "collapsed"
+    // Desktop: follows `open`. Mobile sheet: follows `openMobile` so group-data-[state=…]/sidebar-wrapper works.
+    const state: "expanded" | "collapsed" = isMobile
+      ? openMobile
+        ? "expanded"
+        : "collapsed"
+      : open
+        ? "expanded"
+        : "collapsed"
 
     const contextValue = React.useMemo<SidebarContext>(
       () => ({
@@ -133,6 +139,7 @@ const SidebarProvider = React.forwardRef<
       <SidebarContext.Provider value={contextValue}>
         <TooltipProvider delayDuration={0}>
           <div
+            data-state={state}
             style={
               {
                 "--sidebar-width": SIDEBAR_WIDTH,

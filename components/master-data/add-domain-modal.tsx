@@ -29,7 +29,7 @@ export default function AddDomainModal({
   isOpen,
   onClose,
   onAdd,
-  modules = [],
+  modules = [], // Keep for backward compatibility but not used
   clients = [],
   loading = false,
   editingDomain = null,
@@ -38,15 +38,8 @@ export default function AddDomainModal({
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [moduleId, setModuleId] = useState("");
   const [status, setStatus] = useState("Active");
   const [selectedClientValue, setSelectedClientValue] = useState("generic");
-  const [moduleSearch, setModuleSearch] = useState("");
-
-  // Safe way to get module name
-  const getModuleName = (mod) => {
-    return mod?.name || mod?.NAME || "Unnamed Module";
-  };
 
   // Find selected client
   const selectedClientObj =
@@ -61,16 +54,11 @@ export default function AddDomainModal({
       setDescription(editingDomain.description || "");
       setStatus(editingDomain.status || "Active");
 
-      const modId = editingDomain.moduleId || editingDomain.module_id || "";
-      setModuleId(String(modId));
-
       setSelectedClientValue(editingDomain.client_id ? String(editingDomain.client_id) : "generic");
     } else {
       setName("");
       setDescription("");
-      setModuleId("");
       setStatus("Active");
-      setModuleSearch("");
       
       // Check for pending client from client view navigation
       const pendingClient = localStorage.getItem("pendingClientForMasterData");
@@ -100,22 +88,6 @@ export default function AddDomainModal({
     }
   }, [editingDomain, isEditing, isOpen, clients]);
 
-  const selectedModule = modules.find((m) => String(m.id) === String(moduleId));
-  const selectedModuleName = selectedModule ? getModuleName(selectedModule) : "";
-
-  // SAFE filtering + sorting – this fixes the crash
-  const filteredModules = modules
-    .filter((m) => {
-      const search = moduleSearch.toLowerCase();
-      const name = getModuleName(m).toLowerCase();
-      return name.includes(search);
-    })
-    .sort((a, b) => {
-      const nameA = getModuleName(a);
-      const nameB = getModuleName(b);
-      return nameA.localeCompare(nameB);
-    });
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -123,16 +95,11 @@ export default function AddDomainModal({
       toast.error("Domain name is required");
       return;
     }
-    if (!moduleId) {
-      toast.error("Please select a module");
-      return;
-    }
 
     const payload = {
       id: editingDomain?.id || generateId(),
       name: name.trim(),
       description: description.trim(),
-      moduleId: moduleId,
       status: status,
       archived: 0,
       ...(selectedClientValue !== "generic"
@@ -157,19 +124,6 @@ export default function AddDomainModal({
             <div className="text-lg font-semibold">
               {isEditing ? "Edit Domain" : "Add New Domain"}
             </div>
-            {selectedModule && (
-              <div className="flex items-center justify-center gap-2 mt-3 text-sm text-muted-foreground">
-                <span className="font-medium">{selectedModuleName}</span>
-                {name && (
-                  <>
-                    <ChevronRight className="h-4 w-4" />
-                    <span className="font-medium text-teal-600 truncate max-w-[200px]">
-                      {name}
-                    </span>
-                  </>
-                )}
-              </div>
-            )}
           </DialogTitle>
         </DialogHeader>
 
@@ -210,41 +164,6 @@ export default function AddDomainModal({
                 )}
               </div>
             )}
-          </div>
-
-          {/* Module Selector */}
-          <div className="space-y-2">
-            <Label>Module *</Label>
-            <Select value={moduleId} onValueChange={setModuleId} disabled={loading}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose a module">
-                  {selectedModuleName || "Select a module"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <div className="p-2 sticky top-0 bg-white border-b z-10">
-                  <Input
-                    placeholder="Search modules..."
-                    value={moduleSearch}
-                    onChange={(e) => setModuleSearch(e.target.value)}
-                    className="h-8"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                </div>
-
-                {filteredModules.length === 0 ? (
-                  <div className="p-4 text-center text-muted-foreground">
-                    No modules found
-                  </div>
-                ) : (
-                  filteredModules.map((mod) => (
-                    <SelectItem key={mod.id} value={String(mod.id)}>
-                      {getModuleName(mod)}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
           </div>
 
           {/* Domain Name */}

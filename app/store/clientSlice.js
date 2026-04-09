@@ -24,11 +24,12 @@ const clientsSlice = createSlice({
       if (idx !== -1) state.items[idx] = action.payload;
     },
     toggleArchive(state, action) {
-      const { id, archived, client_status } = action.payload;
+      const { id, archived, client_status, is_active } = action.payload;
       const idx = state.items.findIndex((c) => c.id === id);
       if (idx !== -1) {
         state.items[idx].archived = archived;
-        if (client_status) state.items[idx].client_status = client_status;
+        if (client_status !== undefined) state.items[idx].client_status = client_status;
+        if (is_active !== undefined) state.items[idx].is_active = is_active;
       }
     },
     setClientsLoading(state, action) {
@@ -74,6 +75,13 @@ const formatClientData = (client) => {
     : [];
   const documents = Array.isArray(client.documents) ? client.documents : [];
 
+  const rawStatus =
+    client.client_status != null && String(client.client_status).trim() !== ''
+      ? String(client.client_status).trim()
+      : client.STATUS != null && String(client.STATUS).trim() !== ''
+        ? String(client.STATUS).trim()
+        : 'New';
+
   return {
     ...client,
     id: client.client_id || client.id,
@@ -81,7 +89,13 @@ const formatClientData = (client) => {
     first_name: client.first_name || client.firstName || '',
     last_name: client.last_name || client.lastName || '',
     date_of_birth: client.date_of_birth?.slice(0, 10) || '',
-    client_status: client.client_status || client.STATUS || 'Active',
+    client_status: rawStatus,
+    is_active:
+      client.is_active === undefined || client.is_active === null
+        ? true
+        : client.is_active === true ||
+          client.is_active === 1 ||
+          client.is_active === '1',
     archived: client.archived == 1,
     insurances,
     authorizations,
@@ -94,12 +108,25 @@ const formatClientData = (client) => {
 
 // ✅ Thunk: fetch clients from API with proper data transformation
 const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+
+function authHeaders() {
+  if (typeof window === "undefined") return {};
+  const token = localStorage.getItem("aba_token");
+  if (!token) return {};
+  return {
+    Authorization: `Bearer ${token}`,
+    "X-Auth-Token": token,
+  };
+}
+
 export const fetchClients = () => async (dispatch) => {
   try {
     dispatch(setClientsLoading(true));
     dispatch(setClientsError(null));
 
-    const res = await fetch(`${baseUrl}/get-clients.php`);
+    const res = await fetch(`${baseUrl}/get-clients.php`, {
+      headers: { ...authHeaders() },
+    });
     if (!res.ok) throw new Error("Failed to fetch clients");
 
     const json = await res.json();

@@ -91,8 +91,7 @@ export function ProgramsListModal({
               </Card>
             ) : (
               <div className="space-y-3">
-                {console.log(programs, "programs from model")}
-                {programs.map((program) => {
+                {programs.filter(Boolean).map((program) => {
                   const domain = domains.find(
                     (d) => String(d.id) === String(program.domain_id)
                   );
@@ -119,7 +118,7 @@ export function ProgramsListModal({
                             <div className="flex items-center gap-1 mt-2 flex-wrap text-xs text-black">
                               <span className="flex items-center gap-1">
                                 <span className="font-medium">Module:</span>
-                                <span>{module.name || "Not assigned"}</span>
+                                <span>{module?.name || "Not assigned"}</span>
                               </span>
 
                               <ArrowRight className="w-3 h-3 text-muted-foreground" />

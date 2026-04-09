@@ -184,14 +184,17 @@ function handleGet($conn)
             if ($targetCol && $promptCol) {
                 $escapedIds = array_map([$conn, 'real_escape_string'], $activityIds);
                 $idsList = "'" . implode("','", $escapedIds) . "'";
-                $orderExpr = $orderCol ? "tp.`$orderCol`" : "0";
+                
+                $orderByClause = $orderCol 
+                    ? "ORDER BY tp.`$targetCol`, tp.`$orderCol`"
+                    : "ORDER BY tp.`$targetCol`";
 
                 $promptQuery = "
                     SELECT tp.`$targetCol` AS target_id, mp.id, mp.prompt_name, mp.max_score, mp.score_as_independent, mp.dtt, mp.ta, mp.maintenance, mp.status
                     FROM client_target_prompts tp
                     JOIN master_prompts mp ON tp.`$promptCol` = mp.id
                     WHERE tp.`$targetCol` IN ($idsList)
-                    ORDER BY tp.`$targetCol`, $orderExpr
+                    $orderByClause
                 ";
                 $promptRes = $conn->query($promptQuery);
                 if ($promptRes) {
@@ -343,15 +346,14 @@ function handlePost($conn, $input)
         if (isset($input['domains']) && is_array($input['domains'])) {
             foreach ($input['domains'] as $domain) {
                 $id = $conn->real_escape_string($domain['id']);
-                $moduleId = $conn->real_escape_string($domain['moduleId']);
                 $name = $conn->real_escape_string($domain['name']);
                 $description = $conn->real_escape_string($domain['description'] ?? '');
                 $status = $conn->real_escape_string($domain['status'] ?? 'Active');
                 $archived = (int)($domain['archived'] ?? 0);
 
-                $query = "INSERT INTO client_domains (id, client_id, module_id, name, description, status, archived) 
-                          VALUES ('$id', '$clientId', '$moduleId', '$name', '$description', '$status', $archived)
-                          ON DUPLICATE KEY UPDATE module_id='$moduleId', name='$name', description='$description', status='$status', archived=$archived";
+                $query = "INSERT INTO client_domains (id, client_id, name, description, status, archived) 
+                          VALUES ('$id', '$clientId', '$name', '$description', '$status', $archived)
+                          ON DUPLICATE KEY UPDATE name='$name', description='$description', status='$status', archived=$archived";
                 if (!$conn->query($query)) {
                     throw new Exception("Error saving domain: " . $conn->error);
                 }
@@ -559,13 +561,12 @@ function handlePut($conn, $input)
     // Update domain
     if (isset($input['domainId']) && !isset($input['programId'])) {
         $domainId = $conn->real_escape_string($input['domainId']);
-        $moduleId = $conn->real_escape_string($input['moduleId'] ?? '');
         $name = $conn->real_escape_string($input['name'] ?? '');
         $description = $conn->real_escape_string($input['description'] ?? '');
         $status = $conn->real_escape_string($input['status'] ?? 'Active');
         $archived = (int)($input['archived'] ?? 0);
 
-        $query = "UPDATE client_domains SET module_id='$moduleId', name='$name', description='$description', status='$status', archived=$archived 
+        $query = "UPDATE client_domains SET name='$name', description='$description', status='$status', archived=$archived 
                   WHERE id='$domainId' AND client_id='$clientId'";
         if ($conn->query($query)) {
             echo json_encode(['success' => true, 'message' => 'Domain updated']);
@@ -671,66 +672,80 @@ function handleDelete($conn, $input)
         return;
     }
 
-    $clientId = $conn->real_escape_string($input['client_id']);
+    $clientId = (int)$input['client_id']; // Cast to integer for safety
 
     if (isset($input['moduleId'])) {
-        $id = $conn->real_escape_string($input['moduleId']);
-        $query = "DELETE FROM client_modules WHERE id = '$id' AND client_id = '$clientId'";
-        if ($conn->query($query)) {
+        $id = (int)$input['moduleId']; // Cast to integer for safety
+        $stmt = $conn->prepare("DELETE FROM client_modules WHERE id = ? AND client_id = ?");
+        $stmt->bind_param("ii", $id, $clientId);
+        if ($stmt->execute()) {
             echo json_encode(['success' => true, 'message' => 'Module deleted']);
         } else {
             http_response_code(500);
             echo json_encode(['success' => false, 'message' => $conn->error]);
         }
+        $stmt->close();
         return;
     }
 
     if (isset($input['domainId'])) {
-        $id = $conn->real_escape_string($input['domainId']);
-        $query = "DELETE FROM client_domains WHERE id = '$id' AND client_id = '$clientId'";
-        if ($conn->query($query)) {
+        $id = (int)$input['domainId']; // Cast to integer for safety
+        $stmt = $conn->prepare("DELETE FROM client_domains WHERE id = ? AND client_id = ?");
+        $stmt->bind_param("ii", $id, $clientId);
+        if ($stmt->execute()) {
             echo json_encode(['success' => true, 'message' => 'Domain deleted']);
         } else {
             http_response_code(500);
             echo json_encode(['success' => false, 'message' => $conn->error]);
         }
+        $stmt->close();
         return;
     }
 
     if (isset($input['programId'])) {
-        $id = $conn->real_escape_string($input['programId']);
-        $query = "DELETE FROM client_programs WHERE id = '$id' AND client_id = '$clientId'";
-        if ($conn->query($query)) {
+        $id = (int)$input['programId']; // Cast to integer for safety
+        $stmt = $conn->prepare("DELETE FROM client_programs WHERE id = ? AND client_id = ?");
+        $stmt->bind_param("ii", $id, $clientId);
+        if ($stmt->execute()) {
             echo json_encode(['success' => true, 'message' => 'Program deleted']);
         } else {
             http_response_code(500);
             echo json_encode(['success' => false, 'message' => $conn->error]);
         }
+        $stmt->close();
         return;
     }
 
     if (isset($input['activityId'])) {
         $conn->begin_transaction();
         try {
-            $id = $conn->real_escape_string($input['activityId']);
+            $id = (int)$input['activityId']; // Cast to integer for safety
             
             // Delete prompt associations (only if table exists)
             $tableCheck = $conn->query("SHOW TABLES LIKE 'client_target_prompts'");
             if ($tableCheck && $tableCheck->num_rows > 0) {
-                $conn->query("DELETE FROM client_target_prompts WHERE target_id = '$id'");
+                $stmt = $conn->prepare("DELETE FROM client_target_prompts WHERE target_id = ?");
+                $stmt->bind_param("i", $id);
+                $stmt->execute();
+                $stmt->close();
             }
             
             // Delete task associations (only if table exists)
             $tableCheck = $conn->query("SHOW TABLES LIKE 'client_target_tasks'");
             if ($tableCheck && $tableCheck->num_rows > 0) {
-                $conn->query("DELETE FROM client_target_tasks WHERE activity_id = '$id' AND client_id = '$clientId'");
+                $stmt = $conn->prepare("DELETE FROM client_target_tasks WHERE activity_id = ? AND client_id = ?");
+                $stmt->bind_param("ii", $id, $clientId);
+                $stmt->execute();
+                $stmt->close();
             }
             
             // Delete activity (CASCADE will handle related records if foreign keys are set up)
-            $query = "DELETE FROM client_targets WHERE id = '$id' AND client_id = '$clientId'";
-            if (!$conn->query($query)) {
+            $stmt = $conn->prepare("DELETE FROM client_targets WHERE id = ? AND client_id = ?");
+            $stmt->bind_param("ii", $id, $clientId);
+            if (!$stmt->execute()) {
                 throw new Exception($conn->error);
             }
+            $stmt->close();
 
             $conn->commit();
             echo json_encode(['success' => true, 'message' => 'Activity deleted']);

@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
 import Header from "./header";
+import { usePermissions } from "@/hooks/usePermissions";
+import { VIEW_REQUIRED_PERMISSION, PERM } from "@/lib/rbac-permission-keys";
+import RoleAccessView from "@/components/admin/role-access-view";
 import AdminDashboard from "@/components/dashboards/admin-dashboard";
 import BCBADashboard from "@/components/dashboards/bcba-dashboard";
 import RBTDashboard from "@/components/dashboards/rbt-dashboard";
@@ -19,12 +23,22 @@ import DomainsList from "@/components/master-data/domains-list";
 import ProgramsList from "@/components/master-data/programs-list";
 import PromptsList from "@/components/master-data/prompts-list";
 import TargetsList from "@/components/master-data/targets-list";
+import ManageDataView from "@/components/manage-data/manage-data-view";
+import ProviderView from "@/components/manage-data/provider-view";
+import ProviderServiceCodeView from "@/components/manage-data/provider-service-code-view";
+import ServiceCodeView from "@/components/manage-data/service-code-view";
+import DiagnosisView from "@/components/manage-data/diagnosis-view";
+import FacilityTypesView from "@/components/manage-data/facility-types-view";
+import TreatmentTypesSetup from "@/components/manage-data/treatment-types-setup";
+import DocumentTypesSetup from "@/components/manage-data/document-types-setup";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import AppSidebar from "@/components/layout/app-sidebar";
-import ExcelToTable from "../reports/ExcelToTable";
+import ReportsView from "../reports/reports-view";
+import LocationsView from "../locations/locations-view";
 
 export default function DashboardLayout({ userRole, onLogout }) {
   const [currentView, setCurrentView] = useState("dashboard");
+  const { can } = usePermissions(userRole);
 
   // Listen for navigation events from other components
   useEffect(() => {
@@ -49,6 +63,35 @@ export default function DashboardLayout({ userRole, onLogout }) {
   }, []);
 
   const renderContent = () => {
+    if (currentView === "roleAccess") {
+      if (userRole.role !== "admin" || !can(PERM.USERS_WRITE)) {
+        return (
+          <div className="max-w-lg mx-auto py-16 text-center text-slate-600">
+            <p>Role access is only available to administrators.</p>
+          </div>
+        );
+      }
+      return <RoleAccessView />;
+    }
+
+    const required = VIEW_REQUIRED_PERMISSION[currentView];
+    if (required && !can(required)) {
+      return (
+        <div className="max-w-lg mx-auto py-16 text-center space-y-4">
+          <p className="text-lg text-slate-700">You don&apos;t have access to this area.</p>
+          <Button
+            type="button"
+            onClick={() => {
+              setCurrentView("dashboard");
+              localStorage.setItem("currentView", "dashboard");
+            }}
+          >
+            Go to dashboard
+          </Button>
+        </div>
+      );
+    }
+
     switch (currentView) {
       case "dashboard":
         switch (userRole.role) {
@@ -60,6 +103,8 @@ export default function DashboardLayout({ userRole, onLogout }) {
             return <RBTDashboard />;
           case "parent":
             return <ParentDashboard />;
+          case "biller":
+            return <BillingView />;
           default:
             return <AdminDashboard />;
         }
@@ -90,7 +135,25 @@ export default function DashboardLayout({ userRole, onLogout }) {
       case "prompts":
         return <PromptsList />;
       case "reports":
-        return <ExcelToTable />;
+        return <ReportsView />;
+      case "locations":
+        return <LocationsView />;
+      case "manageData":
+        return <ManageDataView />;
+      case "provider":
+        return <ProviderView />;
+      case "providerServiceCode":
+        return <ProviderServiceCodeView />;
+      case "serviceCode":
+        return <ServiceCodeView />;
+      case "diagnosis":
+        return <DiagnosisView />;
+      case "facilityTypes":
+        return <FacilityTypesView />;
+      case "treatmentTypes":
+        return <TreatmentTypesSetup />;
+      case "documentTypes":
+        return <DocumentTypesSetup />;
       default:
         return <AdminDashboard />;
     }

@@ -17,6 +17,8 @@ export default function Header({ userRole, onLogout }) {
         return { title: "RBT", subtitle: "Therapy Services" };
       case "parent":
         return { title: "Parent Portal", subtitle: "Child Progress Tracking" };
+      case "biller":
+        return { title: "Biller", subtitle: "Billing & Claims Management" };
       default:
         return { title: "User", subtitle: "Dashboard" };
     }

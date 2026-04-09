@@ -38,17 +38,29 @@ import {
   Eye,
   EyeOff,
   Clock,
-  MapPin,
+  Mail,
   Phone,
   MoreVertical,
+  File,
+  Download,
 } from "lucide-react";
 import AddStaffModal from "./add-staff-modal";
+import DocumentViewerModal from "@/components/clients/DocumentViewerModal";
 import toast, { Toaster } from "react-hot-toast";
 import { fetchClients } from "@/app/store/clientSlice";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
 
 const API_BASE_URL = `${process.env.NEXT_PUBLIC_BASE_URL}/staff.php`;
-// Helper function (add this near the top of your component)
+
+const formatUSPhone = (value) => {
+  if (!value) return "";
+  const digits = String(value).replace(/\D/g, "").slice(0, 10);
+  if (digits.length === 0) return "";
+  if (digits.length <= 3) return `(${digits}`;
+  if (digits.length <= 6) return `(${digits.slice(0, 3)})-${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)})-${digits.slice(3, 6)}-${digits.slice(6)}`;
+};
+
 const formatDate = (dateStr) => {
   if (!dateStr) return "N/A";
   const [year, month, day] = dateStr.split("-");
@@ -68,6 +80,7 @@ export default function StaffView() {
   const [staff, setStaff] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedStaff, setExpandedStaff] = useState(null);
+  const [viewingDocument, setViewingDocument] = useState(null);
 
   const activeStaffCount = staff?.filter((member) => !member.archived).length;
   const archivedStaffCount = staff?.filter((member) => member.archived).length;
@@ -116,14 +129,37 @@ export default function StaffView() {
     return matchesSearch && matchesStatus && matchesType;
   });
 
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
+
+  const uploadStaffDocuments = async (docs, staffId) => {
+    if (!Array.isArray(docs) || docs.length === 0) return docs;
+    const uploaded = await Promise.all(
+      docs.map(async (doc) => {
+        const file = doc?.document_file;
+        if (!file) return doc;
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("doc_uuid", doc.doc_uuid || "");
+        fd.append("staff_id", staffId);
+        const res = await fetch(`${baseUrl}/upload-staff-document.php`, { method: "POST", body: fd });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json?.success) throw new Error(json?.message || "Failed to upload document");
+        return { ...doc, document_path: json.document_path || "", document_filename: json.document_filename || "", document_original_filename: doc.document_original_filename || json.filename || "", document_file: null };
+      })
+    );
+    return uploaded.map(({ document_file, ...rest }) => rest);
+  };
+
   const handleAddStaff = async (staffData) => {
     try {
+      const staffId = staffData.id;
+      const docsUploaded = await uploadStaffDocuments(staffData.documents || [], staffId);
+      const docsToSave = docsUploaded.filter((d) => d.document_path || d.document_filename);
+      const toSend = { ...staffData, documents: docsToSave };
       const response = await fetch(API_BASE_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(staffData),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(toSend),
       });
       const result = await response.json();
       if (result.success) {
@@ -141,12 +177,14 @@ export default function StaffView() {
 
   const handleEditStaff = async (staffData) => {
     try {
+      const staffId = staffData.id;
+      const docsUploaded = await uploadStaffDocuments(staffData.documents || [], staffId);
+      const docsToSave = docsUploaded.filter((d) => d.document_path || d.document_filename);
+      const toSend = { ...staffData, documents: docsToSave };
       const response = await fetch(API_BASE_URL, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(staffData),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(toSend),
       });
       const result = await response.json();
       if (result.success) {
@@ -439,13 +477,19 @@ export default function StaffView() {
                       Staff Name
                     </TableHead>
                     <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
-                      Staff ID
+                      Contact & Email
+                    </TableHead>
+                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                      City Zipcode
                     </TableHead>
                     <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
                       Status
                     </TableHead>
                     <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
-                      Contact
+                      Assigned Supervisor
+                    </TableHead>
+                    <TableHead className="hidden sm:table-cell font-semibold text-slate-700">
+                      Assigned Client
                     </TableHead>
                     <TableHead className="font-semibold text-slate-700 lg:text-center text-right">
                       Actions
@@ -498,9 +542,28 @@ export default function StaffView() {
                                 </div>
                               </div>
                             </TableCell>
-                            <TableCell className="py-4 hidden sm:table-cell">
-                              <span className="font-mono text-sm">
-                                {member.id}
+                            <TableCell className="hidden sm:table-cell py-4">
+                              <div className="text-sm space-y-1">
+                                {member.phone && (
+                                  <div className="flex items-center gap-1">
+                                    <Phone className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                                    {formatUSPhone(member.phone)}
+                                  </div>
+                                )}
+                                {member.email && (
+                                  <div className="flex items-center gap-1">
+                                    <Mail className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                                    <span className="truncate max-w-[180px]">{member.email}</span>
+                                  </div>
+                                )}
+                                {!member.phone && !member.email && (
+                                  <span className="text-slate-400">—</span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell py-4">
+                              <span className="text-sm text-slate-600">
+                                {[member.city, member.zipcode].filter(Boolean).join(", ") || "—"}
                               </span>
                             </TableCell>
                             <TableCell className="hidden sm:table-cell py-4">
@@ -509,14 +572,18 @@ export default function StaffView() {
                               </Badge>
                             </TableCell>
                             <TableCell className="hidden sm:table-cell py-4">
-                              <div className="text-sm">
-                                {member.phone && (
-                                  <div className="flex items-center gap-1">
-                                    <Phone className="h-3 w-3 text-slate-400" />
-                                    {member.phone}
-                                  </div>
-                                )}
-                              </div>
+                              <span className="text-sm text-slate-600">
+                                {Array.isArray(member.assignedStaffNames) && member.assignedStaffNames.filter(Boolean).length > 0
+                                  ? member.assignedStaffNames.filter(Boolean).join(", ")
+                                  : "—"}
+                              </span>
+                            </TableCell>
+                            <TableCell className="hidden sm:table-cell py-4">
+                              <span className="text-sm text-slate-600">
+                                {Array.isArray(member.assignedClientNames) && member.assignedClientNames.filter(Boolean).length > 0
+                                  ? member.assignedClientNames.filter(Boolean).join(", ")
+                                  : "—"}
+                              </span>
                             </TableCell>
                             <TableCell className="py-4">
                               <div className="flex items-center justify-center gap-2">
@@ -598,7 +665,7 @@ export default function StaffView() {
                           {/* Expanded Details Row */}
                           {isExpanded && (
                             <TableRow className="bg-slate-50">
-                              <TableCell colSpan={5} className="px-6 py-6">
+                              <TableCell colSpan={7} className="px-6 py-6">
                                 <div className="space-y-6">
                                   {/* Personal Information Section */}
                                   <Card className="border-slate-200">
@@ -637,56 +704,67 @@ export default function StaffView() {
                                       </div>
                                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                         <div>
-                                          <p className="text-slate-500 mb-1">
-                                            Phone
-                                          </p>
+                                          <p className="text-slate-500 mb-1">Phone</p>
+                                          <p className="font-medium">{member.phone ? formatUSPhone(member.phone) : "N/A"}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">Job Title</p>
+                                          <p className="font-medium">{member.job_title || member.jobTitle || "N/A"}</p>
+                                        </div>
+                                        <div>
+                                          <p className="text-slate-500 mb-1">SSN</p>
                                           <p className="font-medium">
-                                            {member.phone || "N/A"}
+                                            {member.ssn_encrypted || member.ssn ? "***-**-" + String(member.ssn_encrypted || member.ssn).slice(-4) : "N/A"}
                                           </p>
                                         </div>
                                         <div>
-                                          <p className="text-slate-500 mb-1">
-                                            Date of birth
-                                          </p>
-                                          <p className="font-medium">
-                                            {member.dob || "N/A"}
-                                          </p>
+                                          <p className="text-slate-500 mb-1">Date of birth</p>
+                                          <p className="font-medium">{member.dob || "N/A"}</p>
                                         </div>
                                         <div>
-                                          <p className="text-slate-500 mb-1">
-                                            Date of Joining
-                                          </p>
-                                          <p className="font-medium">
-                                            {formatDate(member.dateOfJoining)}
-                                          </p>
-                                        </div>
-
-                                        <div>
-                                          <p className="text-slate-500 mb-1">
-                                            Date of Leaving
-                                          </p>
-                                          <p className="font-medium">
-                                            {formatDate(member.dateOfLeaving)}
-                                          </p>
-                                        </div>
-
-                                        <div>
-                                          <p className="text-slate-500 mb-1">
-                                            Address
-                                          </p>
-                                          <p className="font-medium">
-                                            {member.address || "N/A"}
-                                          </p>
+                                          <p className="text-slate-500 mb-1">Date of Joining</p>
+                                          <p className="font-medium">{formatDate(member.dateOfJoining)}</p>
                                         </div>
                                         <div>
-                                          <p className="text-slate-500 mb-1">
-                                            Location
-                                          </p>
-                                          <p className="font-medium">
-                                            {member.location || "N/A"}
-                                          </p>
+                                          <p className="text-slate-500 mb-1">Date of Leaving</p>
+                                          <p className="font-medium">{formatDate(member.dateOfLeaving)}</p>
                                         </div>
                                       </div>
+                                      {((member.address_line_1 || member.address) && (
+                                        <div className="grid grid-cols-1 sm:grid-cols-1 gap-3">
+                                          <div>
+                                            <p className="text-slate-500 mb-1">Address</p>
+                                            <p className="font-medium">
+                                              {[member.address_line_1 || member.address, member.address_line_2, [member.city, member.state, member.zipcode].filter(Boolean).join(", "), member.country].filter(Boolean).join(", ") || "N/A"}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      )) || null}
+                                      {(member.emergency_contact_name || member.emergencyContactName) && (
+                                        <div className="border-t pt-3 mt-3">
+                                          <p className="text-slate-500 font-medium mb-2">Emergency Contact</p>
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                            <div>
+                                              <p className="text-slate-500 text-xs mb-0.5">Name</p>
+                                              <p className="font-medium">{member.emergency_contact_name || member.emergencyContactName}</p>
+                                            </div>
+                                            <div>
+                                              <p className="text-slate-500 text-xs mb-0.5">Relationship</p>
+                                              <p className="font-medium">{member.emergency_relationship || member.emergencyRelationship || "N/A"}</p>
+                                            </div>
+                                            <div>
+                                              <p className="text-slate-500 text-xs mb-0.5">Phone</p>
+                                              <p className="font-medium">
+                                                {(member.emergency_phone || member.emergencyPhone) ? formatUSPhone(member.emergency_phone || member.emergencyPhone) : "N/A"}
+                                              </p>
+                                            </div>
+                                            <div>
+                                              <p className="text-slate-500 text-xs mb-0.5">Email</p>
+                                              <p className="font-medium">{member.emergency_email || member.emergencyEmail || "N/A"}</p>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
                                     </CardContent>
                                   </Card>
 
@@ -699,39 +777,41 @@ export default function StaffView() {
                                       </CardTitle>
                                     </CardHeader>
                                     <CardContent className="space-y-3 text-sm">
-                                      {/* Top row: Staff Type, Status, Dates */}
                                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                         <div>
-                                          <p className="text-slate-500 mb-1">
-                                            Staff Type
-                                          </p>
-                                          <p className="font-medium">
-                                            {member.staffType || "N/A"}
-                                          </p>
+                                          <p className="text-slate-500 mb-1">Staff Type</p>
+                                          <p className="font-medium">{member.staffType || "N/A"}</p>
                                         </div>
                                         <div>
-                                          <p className="text-slate-500 mb-1">
-                                            Status
-                                          </p>
-                                          <p className="font-medium">
-                                            {member.status || "N/A"}
-                                          </p>
+                                          <p className="text-slate-500 mb-1">Status</p>
+                                          <p className="font-medium">{member.status || "N/A"}</p>
                                         </div>
                                         <div>
-                                          <p className="text-slate-500 mb-1">
-                                            Date of Joining
-                                          </p>
+                                          <p className="text-slate-500 mb-1">Date of Joining</p>
                                           <p className="font-medium">
-                                            {member.dateOfJoining
-                                              ? new Date(
-                                                  member.dateOfJoining
-                                                ).toLocaleDateString()
-                                              : "N/A"}
+                                            {member.dateOfJoining ? new Date(member.dateOfJoining).toLocaleDateString() : "N/A"}
                                           </p>
                                         </div>
                                       </div>
-
-                                      {/* Bottom row: Date of Leaving */}
+                                      {(member.highest_degree || member.highestDegree || member.year_awarded || member.yearAwarded || member.major) && (
+                                        <div className="border-t pt-3 mt-3">
+                                          <p className="text-slate-500 font-medium mb-2">Education</p>
+                                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                            <div>
+                                              <p className="text-slate-500 text-xs mb-0.5">Highest Degree</p>
+                                              <p className="font-medium">{member.highest_degree || member.highestDegree || "N/A"}</p>
+                                            </div>
+                                            <div>
+                                              <p className="text-slate-500 text-xs mb-0.5">Year Awarded</p>
+                                              <p className="font-medium">{member.year_awarded || member.yearAwarded || "N/A"}</p>
+                                            </div>
+                                            <div>
+                                              <p className="text-slate-500 text-xs mb-0.5">Major</p>
+                                              <p className="font-medium">{member.major || "N/A"}</p>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )}
                                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                         <div>
                                           <p className="text-slate-500 mb-1">
@@ -965,48 +1045,95 @@ export default function StaffView() {
                                     </CardContent>
                                   </Card>
 
-                                  {/* Location Preferences */}
+                                  {/* Documents */}
                                   <Card className="border-slate-200">
                                     <CardHeader className="pb-3">
                                       <CardTitle className="flex items-center gap-2 text-base">
-                                        <MapPin className="h-4 w-4 mr-1" />{" "}
-                                        Location Preferences
+                                        <File className="h-4 w-4 text-teal-600" /> Documents
                                       </CardTitle>
                                     </CardHeader>
-                                    <CardContent className="space-y-3 text-sm">
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        {Object.entries(
-                                          member.locationPreferences || {}
-                                        ).map(([location, available]) => (
-                                          <div
-                                            key={location}
-                                            className="flex items-center gap-2"
-                                          >
-                                            <span className="text-slate-500 capitalize">
-                                              {location}:
-                                            </span>
-                                            <Badge
-                                              variant="outline"
-                                              className={
-                                                available
-                                                  ? "bg-green-100 text-green-800"
-                                                  : "bg-red-100 text-red-800"
-                                              }
-                                            >
-                                              {available
-                                                ? "Preferred"
-                                                : "Not Preferred"}
-                                            </Badge>
-                                          </div>
-                                        ))}
-                                        {Object.keys(
-                                          member.locationPreferences || {}
-                                        ).length === 0 && (
-                                          <p className="text-slate-500 italic">
-                                            No location preferences.
-                                          </p>
-                                        )}
-                                      </div>
+                                    <CardContent>
+                                      {member.documents && member.documents.length > 0 ? (
+                                        <div className="space-y-4">
+                                          {member.documents.map((doc, index) => (
+                                            <div key={doc.doc_uuid || index} className="border rounded-lg p-4 bg-slate-50">
+                                              <div className="flex items-center justify-between flex-wrap gap-3">
+                                                <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                  <File className="h-5 w-5 text-teal-600 flex-shrink-0" />
+                                                  <div className="min-w-0">
+                                                    <h4 className="font-semibold text-slate-800">
+                                                      {doc.document_type || doc.document_original_filename || doc.document_filename || `Document ${index + 1}`}
+                                                    </h4>
+                                                    {(doc.document_original_filename || doc.document_filename) && (
+                                                      <p className="text-xs text-slate-500 mt-1 truncate">
+                                                        {doc.document_original_filename || doc.document_filename}
+                                                      </p>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                                {(doc.document_path || doc.file_url) && (
+                                                  <div className="flex items-center gap-2">
+                                                    <Button
+                                                      variant="outline"
+                                                      size="sm"
+                                                      onClick={() =>
+                                                        setViewingDocument({
+                                                          path: doc.document_path || doc.file_url,
+                                                          filename: doc.document_original_filename || doc.document_filename || "document",
+                                                          documentFilename: doc.document_filename,
+                                                        })
+                                                      }
+                                                      className="text-teal-600 hover:text-teal-700"
+                                                    >
+                                                      <Eye className="h-4 w-4 mr-2" /> View
+                                                    </Button>
+                                                    <Button
+                                                      variant="outline"
+                                                      size="sm"
+                                                      onClick={async () => {
+                                                        try {
+                                                          const docPath = doc.document_path || doc.file_url;
+                                                          const isDrive = docPath && docPath.startsWith("drive://");
+                                                          const fileId = isDrive ? (doc.document_filename || docPath.slice(8)) : null;
+                                                          let url;
+                                                          if (fileId) {
+                                                            url = `${baseUrl}/download-client-document.php?file_id=${encodeURIComponent(fileId)}${doc.document_original_filename ? "&filename=" + encodeURIComponent(doc.document_original_filename) : ""}`;
+                                                          } else if (docPath && (docPath.startsWith("uploads/") || docPath.startsWith("/uploads/"))) {
+                                                            url = `${baseUrl}/download-client-upload.php?path=${encodeURIComponent(docPath.startsWith("/") ? docPath.slice(1) : docPath)}${doc.document_original_filename ? "&filename=" + encodeURIComponent(doc.document_original_filename) : ""}`;
+                                                          } else if (docPath) {
+                                                            url = baseUrl ? `${baseUrl}/${docPath}` : `/${docPath}`;
+                                                          } else {
+                                                            return;
+                                                          }
+                                                          if (!url) {
+                                                            alert("Backend URL (NEXT_PUBLIC_BASE_URL) is not configured.");
+                                                            return;
+                                                          }
+                                                          const res = await fetch(url, { credentials: "omit" });
+                                                          if (!res.ok) throw new Error("Download failed");
+                                                          const blob = await res.blob();
+                                                          const a = document.createElement("a");
+                                                          a.href = URL.createObjectURL(blob);
+                                                          a.download = doc.document_original_filename || doc.document_filename || "document";
+                                                          a.click();
+                                                          URL.revokeObjectURL(a.href);
+                                                        } catch (e) {
+                                                          alert("Failed to download: " + (e?.message || "Unknown error"));
+                                                        }
+                                                      }}
+                                                      className="text-blue-600 hover:text-blue-700"
+                                                    >
+                                                      <Download className="h-4 w-4 mr-2" /> Download
+                                                    </Button>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <p className="text-slate-500 italic">No documents uploaded.</p>
+                                      )}
                                     </CardContent>
                                   </Card>
                                 </div>
@@ -1044,6 +1171,16 @@ export default function StaffView() {
         editingStaff={editingStaff}
         existingStaffs={staff}
       />
+      {viewingDocument && (
+        <DocumentViewerModal
+          isOpen={!!viewingDocument}
+          documentPath={viewingDocument.path}
+          filename={viewingDocument.filename}
+          documentFilename={viewingDocument.documentFilename}
+          baseUrl={baseUrl}
+          onClose={() => setViewingDocument(null)}
+        />
+      )}
     </div>
   );
 }

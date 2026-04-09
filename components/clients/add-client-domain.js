@@ -177,10 +177,6 @@ export default function DomainsListModal({
             ) : (
               <div className="space-y-3">
                 {domains.map((domain) => {
-                  const moduleForDomain = modules.find(
-                    (m) => m.id === domain.module_id
-                  );
-
                   return (
                     <Card
                       key={domain.id}
@@ -197,14 +193,6 @@ export default function DomainsListModal({
                                 {domain.description}
                               </p>
                             )}
-                            <div className="flex items-center gap-1 mt-2 text-xs text-black">
-                              <span className="flex items-center gap-1">
-                                <span className="font-medium">Module:</span>
-                                <span>
-                                  {moduleForDomain?.NAME || "Not assigned"}
-                                </span>
-                              </span>
-                            </div>
                           </div>
                           <div className="flex items-center gap-2">
                             <Button
@@ -256,35 +244,30 @@ export function DomainFormModal({
   isOpen,
   onClose,
   onSave,
-  modules,
+  modules, // Keep for backward compatibility but not used
   editingDomain,
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [moduleId, setModuleId] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (editingDomain) {
       setName(editingDomain.name || "");
       setDescription(editingDomain.description || "");
-      setModuleId(editingDomain.module_id || "");
     } else {
       setName("");
       setDescription("");
-      setModuleId("");
     }
   }, [editingDomain, isOpen]);
 
   const handleSubmit = async () => {
     if (!name.trim()) return toast.error("Name is required");
-    if (!moduleId) return toast.error("Module is required");
 
     setLoading(true);
     await onSave({
       name: name.trim(),
       description: description.trim(),
-      moduleId,
     });
     setLoading(false);
   };
@@ -301,22 +284,6 @@ export function DomainFormModal({
           <div>
             <Label>Name *</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-
-          <div>
-            <Label>Module *</Label>
-            <Select value={moduleId} onValueChange={setModuleId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a module" />
-              </SelectTrigger>
-              <SelectContent>
-                {modules.map((module) => (
-                  <SelectItem key={module.id} value={module.id}>
-                    {module.NAME}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
 
           <div>

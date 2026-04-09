@@ -344,15 +344,14 @@ function handlePost($conn, $input)
             if (isset($input['domains']) && is_array($input['domains'])) {
                 foreach ($input['domains'] as $domain) {
                     $id = $conn->real_escape_string($domain['id']);
-                    $moduleId = $conn->real_escape_string($domain['moduleId']);
                     $name = $conn->real_escape_string($domain['name']);
                     $description = $conn->real_escape_string($domain['description'] ?? '');
                     $status = $conn->real_escape_string($domain['status'] ?? 'Active');
                     $archived = (int)($domain['archived'] ?? 0);
 
-                    $query = "INSERT INTO master_domains (id, module_id, name, description, status, archived) 
-                              VALUES ('$id', '$moduleId', '$name', '$description', '$status', $archived)
-                              ON DUPLICATE KEY UPDATE module_id='$moduleId', name='$name', description='$description', status='$status', archived=$archived";
+                    $query = "INSERT INTO master_domains (id, name, description, status, archived) 
+                              VALUES ('$id', '$name', '$description', '$status', $archived)
+                              ON DUPLICATE KEY UPDATE name='$name', description='$description', status='$status', archived=$archived";
                     if (!$conn->query($query)) {
                         throw new Exception("Error inserting domain: " . $conn->error);
                     }
@@ -503,13 +502,12 @@ function handlePut($conn, $input)
     // Handle domain updates (domainId format from frontend)
     if (isset($input['domainId']) && !isset($input['programId']) && !isset($input['activityId'])) {
         $domainId = $conn->real_escape_string($input['domainId']);
-        $moduleId = $conn->real_escape_string($input['moduleId'] ?? '');
         $name = $conn->real_escape_string($input['name'] ?? '');
         $description = $conn->real_escape_string($input['description'] ?? '');
         $status = $conn->real_escape_string($input['status'] ?? 'Active');
         $archived = (int)($input['archived'] ?? 0);
 
-        $query = "UPDATE master_domains SET module_id='$moduleId', name='$name', description='$description', status='$status', archived=$archived WHERE id='$domainId'";
+        $query = "UPDATE master_domains SET name='$name', description='$description', status='$status', archived=$archived WHERE id='$domainId'";
         if ($conn->query($query)) {
             echo json_encode(['success' => true, 'message' => 'Domain updated successfully']);
         } else {

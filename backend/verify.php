@@ -24,7 +24,7 @@ $token = $matches[1];
 
 // Database configuration
 $host = 'db5018266079.hosting-data.io';
-$dbname = 'dbu3321929';
+$dbname = 'dbs14484433';
 $username = 'dbu3321929';
 $password = 'M@h@B3h@v1or@lH3@lth4@ut1sm';
 
