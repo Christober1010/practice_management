@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { DismissableLayerBranch } from '@radix-ui/react-dismissable-layer';
 import { X, Download } from 'lucide-react';
+import { mahaverseFetch } from '@/lib/mahaverse-api';
 import { Button } from '@/components/ui/button';
 
 export default function DocumentViewerModal({
@@ -114,7 +115,7 @@ export default function DocumentViewerModal({
     setLoading(true);
     setError(null);
     
-    fetch(viewUrl)
+    mahaverseFetch(viewUrl)
       .then(response => {
         if (!response.ok) {
           throw new Error('Failed to load file');
@@ -152,7 +153,7 @@ export default function DocumentViewerModal({
         alert('Download URL could not be built. Ensure NEXT_PUBLIC_BASE_URL is set for Drive/local documents.');
         return;
       }
-      const response = await fetch(downloadUrl, { credentials: 'omit' });
+      const response = await mahaverseFetch(downloadUrl, { credentials: 'omit' });
       if (!response.ok) {
         let errMsg = `Download failed (${response.status})`;
         const ct = response.headers.get('content-type');

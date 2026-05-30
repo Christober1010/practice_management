@@ -1,5 +1,7 @@
 'use client';
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useState, useEffect } from 'react';
 import { FormData } from '@/lib/launchpad/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -49,7 +51,7 @@ export default function LocationStep({ formData, updateField, onNext, onBack }: 
       if (!baseUrl) return;
       try {
         setLoadingFacilityTypes(true);
-        const res = await fetch(`${baseUrl}/facility-types.php?activeOnly=true`);
+        const res = await mahaverseFetch('/facility-types.php?activeOnly=true');
         const data = await res.json();
         if (data?.success) {
           setFacilityTypes(data.data || []);

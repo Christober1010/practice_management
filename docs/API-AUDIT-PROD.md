@@ -112,4 +112,10 @@ bash .cursor/skills/mahaverse-api-db-audit/scripts/ping-endpoints.sh \
   --get
 ```
 
-Paste results into the table above after each run.
+Prod (`backend/`) — mirror after test validation (see [API-AUTH.md](API-AUTH.md)).
+
+## Auth smoke test
+
+```bash
+bash scripts/auth-smoke-test.sh
+```

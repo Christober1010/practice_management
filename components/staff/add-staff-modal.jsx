@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useState, useEffect, useRef } from "react";
 import {
   Dialog,
@@ -383,7 +385,7 @@ export default function AddStaffModal({
 
   useEffect(() => {
     if (baseUrl) {
-      fetch(`${baseUrl}/document-types.php`)
+      mahaverseFetch('/document-types.php')
         .then((r) => r.json())
         .then((json) => {
           if (json.success && json.data) setDocumentTypes(json.data.filter((d) => d.archived !== 1));

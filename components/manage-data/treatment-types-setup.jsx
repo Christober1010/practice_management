@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,7 +30,7 @@ export default function TreatmentTypesSetup() {
     try {
       setLoading(true);
       const params = new URLSearchParams({ showArchived: showArchived.toString() });
-      const res = await fetch(`${baseUrl}/treatment-types.php?${params}`);
+      const res = await mahaverseFetch(`/treatment-types.php?${params}`);
       const data = await res.json();
       if (data?.success) setItems(data.data || []);
       else toast.error(data?.message || "Failed to load treatment types");
@@ -49,7 +51,7 @@ export default function TreatmentTypesSetup() {
   const handleSave = async (payload) => {
     try {
       const method = editingItem ? "PUT" : "POST";
-      const res = await fetch(`${baseUrl}/treatment-types.php`, {
+      const res = await mahaverseFetch('/treatment-types.php', {
         method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
       const result = await res.json();
@@ -65,7 +67,7 @@ export default function TreatmentTypesSetup() {
   const handleDelete = async () => {
     if (!itemToDelete) return;
     try {
-      const res = await fetch(`${baseUrl}/treatment-types.php`, {
+      const res = await mahaverseFetch('/treatment-types.php', {
         method: "DELETE", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: itemToDelete.id }),
       });

@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -261,7 +263,7 @@ export default function DomainsList() {
 
     try {
       const url = isClientDomain ? "/client-modules.php" : "/programs.php";
-      const res = await fetch(`${baseUrl}${url}`, {
+      const res = await mahaverseFetch(`${url}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

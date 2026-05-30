@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -428,7 +430,7 @@ export default function SchedulingView({ userRole }) {
       if (!baseUrl) {
         throw new Error("NEXT_PUBLIC_BASE_URL is not configured");
       }
-      const resp = await fetch(`${baseUrl}/add-session.php`, {
+      const resp = await mahaverseFetch('/add-session.php', {
         method: "GET",
         headers: jsonAuthHeaders(),
         cache: "no-store",
@@ -677,7 +679,7 @@ export default function SchedulingView({ userRole }) {
     setDeletingSessionId(sessionToDelete.sessionId);
     try {
       const editMode = editModeOverride || sessionToDelete.editMode || "single";
-      const resp = await fetch(`${baseUrl}/add-session.php`, {
+      const resp = await mahaverseFetch('/add-session.php', {
         method: "DELETE",
         headers: jsonAuthHeaders(),
         body: JSON.stringify({

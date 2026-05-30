@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState, useLayoutEffect, useRef } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -172,8 +174,7 @@ export default function SessionNotesModal({
 
         // Session (appointment metadata)
         try {
-          const sessionRes = await fetch(
-            `${baseUrl}/add-session.php?client_id=${encodeURIComponent(String(clientId))}&date=${encodeURIComponent(
+          const sessionRes = await mahaverseFetch(`/add-session.php?client_id=${encodeURIComponent(String(clientId))}&date=${encodeURIComponent(
               String(apiSessionDate)
             )}`,
             { headers: getMahaverseAuthHeaders() }
@@ -193,12 +194,10 @@ export default function SessionNotesModal({
 
         // Client modules + saved session notes (single coordinated load)
         const [modulesRes, savedRes] = await Promise.all([
-          fetch(
-            `${baseUrl}/client-modules.php?client_id=${encodeURIComponent(String(clientId))}`,
+          mahaverseFetch(`/client-modules.php?client_id=${encodeURIComponent(String(clientId))}`,
             { headers: getMahaverseAuthHeaders() }
           ),
-          fetch(
-            `${baseUrl}/session-notes.php?client_id=${encodeURIComponent(
+          mahaverseFetch(`/session-notes.php?client_id=${encodeURIComponent(
               String(clientId)
             )}&session_date=${encodeURIComponent(String(apiSessionDate))}`,
             { headers: getMahaverseAuthHeaders() }
@@ -333,7 +332,7 @@ export default function SessionNotesModal({
         payload.session_id = schedulingSid;
       }
 
-      const res = await fetch(`${baseUrl}/session-notes.php`, {
+      const res = await mahaverseFetch('/session-notes.php', {
         method: "POST",
         headers: getMahaverseAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),

@@ -1,55 +1,77 @@
 <?php
-// CORS headers
-header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: GET, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization");
-header("Content-Type: application/json; charset=UTF-8");
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Accept');
+header('Content-Type: application/json; charset=utf-8');
 
-// Handle OPTIONS preflight
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-    http_response_code(200);
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+    http_response_code(204);
     exit;
 }
 
-// Test DB — same as config.php getDBConnection() / add-session.php
-$host = "db5018419668.hosting-data.io";
-$user = "dbu1183438";
-$pass = "M@h@B3h@v1or@lH3@lth4@ut1sm";
-$db   = "dbs14649042";
+require_once __DIR__ . '/config.php';
+$authUser = requireAuth('scheduling.read', 'mahaverse');
 
-// Connect DB
-$conn = new mysqli($host, $user, $pass, $db);
+$host = 'db5018419668.hosting-data.io';
+$user = 'dbu1183438';
+$pass = 'M@h@B3h@v1or@lH3@lth4@ut1sm';
+$db   = 'dbs14649042';
 
-// Check connection
-if ($conn->connect_error) {
+try {
+    $conn = new mysqli($host, $user, $pass, $db);
+    if ($conn->connect_error) {
+        throw new Exception('Database connection failed');
+    }
+    $conn->set_charset('utf8mb4');
+
+    $whereConditions = [];
+    $params = [];
+    $types = '';
+
+    if (isset($_GET['client_id'])) {
+        $whereConditions[] = 's.client_id = ?';
+        $params[] = $_GET['client_id'];
+        $types .= 's';
+    }
+    if (isset($_GET['provider_id'])) {
+        $whereConditions[] = 's.provider_id = ?';
+        $params[] = $_GET['provider_id'];
+        $types .= 's';
+    }
+    if (isset($_GET['date'])) {
+        $whereConditions[] = 'DATE(s.start_utc) = ?';
+        $params[] = $_GET['date'];
+        $types .= 's';
+    }
+
+    $sql = "
+        SELECT s.*, CONCAT(c.first_name, ' ', c.last_name) AS clientName
+        FROM sessions s
+        LEFT JOIN clients c ON s.client_id = c.client_id
+    ";
+    if ($whereConditions) {
+        $sql .= ' WHERE ' . implode(' AND ', $whereConditions);
+    }
+    $sql .= ' ORDER BY s.start_utc DESC';
+
+    if ($params) {
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param($types, ...$params);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $sessions = $result->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+    } else {
+        $result = $conn->query($sql);
+        if (!$result) {
+            throw new Exception('Query failed: ' . $conn->error);
+        }
+        $sessions = $result->fetch_all(MYSQLI_ASSOC);
+    }
+
+    echo json_encode(['success' => true, 'sessions' => $sessions]);
+    $conn->close();
+} catch (Throwable $e) {
     http_response_code(500);
-    echo json_encode(["error" => "Database connection failed"]);
-    exit;
+    echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 }
-
-// Fetch sessions
-$sql = "SELECT id, client_id, staff_id, session_date, session_time, session_type, notes, created_at 
-        FROM sessions 
-        ORDER BY created_at DESC";
-
-$result = $conn->query($sql);
-
-if (!$result) {
-    http_response_code(500);
-    echo json_encode(["error" => "Query failed: " . $conn->error]);
-    exit;
-}
-
-$sessions = [];
-while ($row = $result->fetch_assoc()) {
-    $sessions[] = $row;
-}
-
-// Return JSON
-echo json_encode([
-    "success" => true,
-    "sessions" => $sessions
-]);
-
-$conn->close();
-?>

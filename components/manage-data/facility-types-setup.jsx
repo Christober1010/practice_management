@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,7 +57,7 @@ export default function FacilityTypesSetup() {
         showArchived: showArchived.toString(),
         showInactive: showInactive.toString(),
       });
-      const res = await fetch(`${baseUrl}/facility-types.php?${params}`);
+      const res = await mahaverseFetch(`/facility-types.php?${params}`);
       const data = await res.json();
       if (data?.success) {
         // Ensure pos_code is always a string and normalize any 3-digit codes with trailing zero
@@ -151,7 +153,7 @@ export default function FacilityTypesSetup() {
   const handleDelete = async () => {
     if (!facilityTypeToDelete) return;
     try {
-      const res = await fetch(`${baseUrl}/facility-types.php`, {
+      const res = await mahaverseFetch('/facility-types.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: facilityTypeToDelete.id }),

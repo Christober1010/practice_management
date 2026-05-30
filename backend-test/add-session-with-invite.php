@@ -6,7 +6,7 @@
 
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Cache-Control");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Cache-Control, Accept");
 header("Access-Control-Max-Age: 86400");
 header("Content-Type: application/json; charset=UTF-8");
 
@@ -21,6 +21,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     file_put_contents('debug.log', "OPTIONS request handled\n", FILE_APPEND);
     exit();
 }
+
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$authUser = requireAuthReadWrite('scheduling.read', 'scheduling.write', 'mahaverse');
 
 // DB Connection
 $host = "db5018419668.hosting-data.io";
@@ -1148,6 +1152,7 @@ try {
                 echo json_encode(["error" => "Failed to cancel session(s): " . $e->getMessage()]);
                 file_put_contents('debug.log', "DELETE Transaction failed: " . $e->getMessage() . "\n", FILE_APPEND);
                 exit();
+
             }
             break;
 

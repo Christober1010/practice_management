@@ -8,15 +8,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
     exit();
 }
-
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
-$authUser = getAuthenticatedUser();
-if ($authUser && !rbac_user_has_permission_key($authUser['role'], 'users.read', 'mahaverse')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Permission denied']);
-    exit;
-}
+$authUser = requireAuth('users.read', 'mahaverse');
+
+
 
 // Test DB — same as config.php getDBConnection() / add-session.php
 $host = "db5018419668.hosting-data.io";

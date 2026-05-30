@@ -1,5 +1,7 @@
 "use client"
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { Fragment, useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -144,7 +146,7 @@ export default function ProgramsView() {
     }
 
     try {
-      const res = await fetch(`${baseUrl}/programs.php`, {
+      const res = await mahaverseFetch('/programs.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newProgramData),
@@ -166,7 +168,7 @@ export default function ProgramsView() {
 
   const handleEditProgram = async (programData) => {
     try {
-      const res = await fetch(`${baseUrl}/programs.php`, {
+      const res = await mahaverseFetch('/programs.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(programData),
@@ -198,7 +200,7 @@ export default function ProgramsView() {
     }
 
     try {
-      const res = await fetch(`${baseUrl}/programs.php`, {
+      const res = await mahaverseFetch('/programs.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -1,8 +1,7 @@
-// app/store/usersSlice.js
 "use client";
 
 import { createSlice } from "@reduxjs/toolkit";
-import { getMahaverseAuthHeaders } from "@/lib/api-auth";
+import { mahaverseFetch } from "@/lib/mahaverse-api";
 
 /** Normalize API row so UI never treats MySQL string "0" as truthy for is_active; map alternate keys. */
 export function normalizeUserRow(row) {
@@ -86,9 +85,7 @@ export const fetchUsers = () => async (dispatch) => {
       throw new Error("NEXT_PUBLIC_BASE_URL is not configured");
     }
 
-    const res = await fetch(`${baseUrl}/get-users.php`, {
-      headers: getMahaverseAuthHeaders(),
-    });
+    const res = await mahaverseFetch("/get-users.php");
     if (!res.ok) {
       const errJson = await res.json().catch(() => ({}));
       throw new Error(errJson.message || `Failed to fetch users (${res.status})`);

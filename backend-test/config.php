@@ -202,9 +202,33 @@ function getAuthenticatedUser() {
     return null;
 }
 
+/** CORS headers for browser clients (localhost dev + static export). */
+function mahaverse_api_cors_headers(): void {
+    if (headers_sent()) {
+        return;
+    }
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Accept, Accept-Language, Cache-Control');
+    header('Access-Control-Max-Age: 86400');
+}
+
+/** Answer OPTIONS preflight before auth or DB (include via config.php). */
+function mahaverse_handle_options_preflight(int $code = 204): void {
+    mahaverse_api_cors_headers();
+    if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+        http_response_code($code);
+        exit;
+    }
+}
+
 function requireUser() {
     $user = getAuthenticatedUser();
     if (!$user) {
+        mahaverse_api_cors_headers();
+        if (!headers_sent()) {
+            header('Content-Type: application/json; charset=utf-8');
+        }
         http_response_code(401);
         echo json_encode([
             'success' => false,
@@ -214,6 +238,53 @@ function requireUser() {
     }
     return $user;
 }
+
+require_once __DIR__ . '/rbac_helpers.php';
+
+/**
+ * Require valid Bearer/session auth and optionally an RBAC permission key.
+ */
+function requireAuth(?string $permissionKey = null, string $scope = 'mahaverse'): array {
+    $user = requireUser();
+    if ($permissionKey !== null && !rbac_user_has_permission_key($user['role'], $permissionKey, $scope)) {
+        mahaverse_api_cors_headers();
+        if (!headers_sent()) {
+            header('Content-Type: application/json; charset=utf-8');
+        }
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Permission denied']);
+        exit;
+    }
+    return $user;
+}
+
+/**
+ * Pick read vs write permission from HTTP method (GET/HEAD/OPTIONS vs mutating verbs).
+ */
+function requireAuthReadWrite(string $readPerm, string $writePerm, string $scope = 'mahaverse'): array {
+    $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+    $perm = in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true) ? $writePerm : $readPerm;
+    return requireAuth($perm, $scope);
+}
+
+/** Require auth and at least one of the given permission keys. */
+function requireAuthAny(array $permissionKeys, string $scope = 'mahaverse'): array {
+    $user = requireUser();
+    foreach ($permissionKeys as $key) {
+        if ($key !== null && $key !== '' && rbac_user_has_permission_key($user['role'], $key, $scope)) {
+            return $user;
+        }
+    }
+    mahaverse_api_cors_headers();
+    if (!headers_sent()) {
+        header('Content-Type: application/json; charset=utf-8');
+    }
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Permission denied']);
+    exit;
+}
+
+mahaverse_handle_options_preflight();
 
 /**
  * Resolve client_auth.insurance_id when saving a client.
@@ -242,5 +313,48 @@ function mahaverse_resolve_authorization_insurance_id(array $auth, array $insura
     return (int) $insuranceIdsFromThisRequest[0];
 }
 
-require_once __DIR__ . '/rbac_helpers.php';
+/**
+ * Lazy-load a backend helper include after auth.
+ * Allowed: rbac_helpers, behavior_helpers, client_auth_units_helpers, drive_helper.
+ */
+function mahaverse_require_helper(string $basename): void {
+    static $loaded = [];
+    $basename = preg_replace('/\.php$/', '', basename($basename));
+    $allowed = ['rbac_helpers', 'behavior_helpers', 'client_auth_units_helpers', 'drive_helper'];
+    if (!in_array($basename, $allowed, true)) {
+        throw new InvalidArgumentException("Unknown helper: {$basename}");
+    }
+    if (isset($loaded[$basename])) {
+        return;
+    }
+    require_once __DIR__ . '/' . $basename . '.php';
+    $loaded[$basename] = true;
+}
+
+/** Return JSON instead of an empty body when a fatal error stops the script. */
+function mahaverse_register_fatal_json_handler(): void {
+    static $registered = false;
+    if ($registered) {
+        return;
+    }
+    $registered = true;
+    register_shutdown_function(function () {
+        $err = error_get_last();
+        if (!$err || !in_array($err['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
+            return;
+        }
+        if (!headers_sent()) {
+            header('Content-Type: application/json; charset=utf-8');
+            http_response_code(500);
+        }
+        echo json_encode([
+            'success' => false,
+            'message' => $err['message'],
+            'file' => basename($err['file'] ?? ''),
+            'line' => $err['line'] ?? 0,
+        ]);
+    });
+}
+
+mahaverse_register_fatal_json_handler();
 

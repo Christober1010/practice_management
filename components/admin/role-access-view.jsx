@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Accordion } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
+import { mahaverseFetch } from "@/lib/mahaverse-api";
 import { getMahaverseAuthHeaders } from "@/lib/api-auth";
 import {
   buildPermissionModules,
@@ -134,7 +135,12 @@ export default function RoleAccessView() {
     setLoading(true);
     try {
       const url = `${rbacUrl("rbac-matrix.php", scope)}?scope=${encodeURIComponent(scope)}`;
-      const res = await fetch(url, { headers: authHeaders(scope) });
+      const res =
+        scope === "launchpad"
+          ? await fetch(url, { headers: authHeaders(scope) })
+          : await mahaverseFetch(
+              `/rbac-matrix.php?scope=${encodeURIComponent(scope)}`,
+            );
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.message || "Failed to load matrix");
@@ -349,19 +355,27 @@ export default function RoleAccessView() {
     );
     setSaving(true);
     try {
-      const res = await fetch(rbacUrl("rbac-save-role.php", scope), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders(scope),
-        },
-        body: JSON.stringify({
-          role: roleToSave,
-          scope,
-          permission_keys,
-          grant_entries,
-        }),
-      });
+      const payload = {
+        role: roleToSave,
+        scope,
+        permission_keys,
+        grant_entries,
+      };
+      const res =
+        scope === "launchpad"
+          ? await fetch(rbacUrl("rbac-save-role.php", scope), {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                ...authHeaders(scope),
+              },
+              body: JSON.stringify(payload),
+            })
+          : await mahaverseFetch("/rbac-save-role.php", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
       const data = await res.json();
       if (!res.ok || !data.success) {
         throw new Error(data.message || "Save failed");

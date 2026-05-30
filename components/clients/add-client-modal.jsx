@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useState, useEffect, Fragment } from "react";
 import {
   Dialog,
@@ -340,7 +342,7 @@ export default function AddClientModal({
     
     const loadProviders = async () => {
       try {
-        const res = await fetch(`${baseUrl}/providers.php`);
+        const res = await mahaverseFetch('/providers.php');
         const data = await res.json();
         if (data?.success) {
           setProviders(data.data || []);
@@ -352,7 +354,7 @@ export default function AddClientModal({
     
     const loadDiagnosisCodes = async () => {
       try {
-        const res = await fetch(`${baseUrl}/diagnosis-codes.php`);
+        const res = await mahaverseFetch('/diagnosis-codes.php');
         const data = await res.json();
         if (data?.success) {
           setDiagnosisCodes(data.data || []);
@@ -364,7 +366,7 @@ export default function AddClientModal({
     
     const loadFacilityTypes = async () => {
       try {
-        const res = await fetch(`${baseUrl}/facility-types.php?showArchived=false&showInactive=false`);
+        const res = await mahaverseFetch('/facility-types.php?showArchived=false&showInactive=false');
         const data = await res.json();
         if (data?.success) {
           setFacilityTypes(data.data || []);
@@ -376,7 +378,7 @@ export default function AddClientModal({
 
     const loadTreatmentTypes = async () => {
       try {
-        const res = await fetch(`${baseUrl}/treatment-types.php`);
+        const res = await mahaverseFetch('/treatment-types.php');
         const data = await res.json();
         if (data?.success) {
           setTreatmentTypes(data.data || []);
@@ -388,7 +390,7 @@ export default function AddClientModal({
 
     const loadDocumentTypes = async () => {
       try {
-        const res = await fetch(`${baseUrl}/document-types.php`);
+        const res = await mahaverseFetch('/document-types.php');
         const data = await res.json();
         if (data?.success) {
           setDocumentTypes(data.data || []);
@@ -423,7 +425,7 @@ export default function AddClientModal({
         // Load mappings for all selected providers
         const allMappings = [];
         for (const providerId of providerIds) {
-          const res = await fetch(`${baseUrl}/provider-service-codes.php?provider_id=${providerId}`);
+          const res = await mahaverseFetch(`/provider-service-codes.php?provider_id=${providerId}`);
           const data = await res.json();
           if (data?.success && data.data) {
             allMappings.push(...data.data);
@@ -444,7 +446,7 @@ export default function AddClientModal({
     if (!baseUrl) return;
     const load = async () => {
       try {
-        const res = await fetch(`${baseUrl}/service-codes.php`);
+        const res = await mahaverseFetch('/service-codes.php');
         const data = await res.json();
         if (data?.success && data.data) {
           setAllServiceCodes(data.data);

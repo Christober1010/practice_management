@@ -1,3 +1,4 @@
+import { mahaverseFetch } from "@/lib/mahaverse-api";
 import React, { useState, useEffect } from "react";
 import {
   Dialog,
@@ -83,8 +84,7 @@ export default function ClientModulesModal({
   const fetchClientData = async () => {
   setLoading(true);
   try {
-    const response = await fetch(
-      `${baseUrl}/client-modules.php?client_id=${clientId}`
+    const response = await mahaverseFetch(`/client-modules.php?client_id=${clientId}`
     );
     const result = await response.json();
 
@@ -202,7 +202,7 @@ export default function ClientModulesModal({
     };
 
     try {
-      const response = await fetch(`${baseUrl}/client-modules.php`, {
+      const response = await mahaverseFetch('/client-modules.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -228,7 +228,7 @@ export default function ClientModulesModal({
   // Edit Module
   const handleEditModule = async (moduleData) => {
     try {
-      const response = await fetch(`${baseUrl}/client-modules.php`, {
+      const response = await mahaverseFetch('/client-modules.php', {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -258,7 +258,7 @@ export default function ClientModulesModal({
   // Archive/Restore Module
   const handleArchiveModule = async (moduleId, archived) => {
     try {
-      const response = await fetch(`${baseUrl}/client-modules.php`, {
+      const response = await mahaverseFetch('/client-modules.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -296,7 +296,7 @@ export default function ClientModulesModal({
     }
 
     try {
-      const response = await fetch(`${baseUrl}/client-modules.php`, {
+      const response = await mahaverseFetch('/client-modules.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -326,7 +326,7 @@ export default function ClientModulesModal({
     };
 
     try {
-      const response = await fetch(`${baseUrl}/client-modules.php`, {
+      const response = await mahaverseFetch('/client-modules.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -356,7 +356,7 @@ export default function ClientModulesModal({
     };
 
     try {
-      const response = await fetch(`${baseUrl}/client-modules.php`, {
+      const response = await mahaverseFetch('/client-modules.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

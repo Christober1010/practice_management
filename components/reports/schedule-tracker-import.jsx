@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,7 +104,7 @@ export default function ScheduleTrackerImport({ onImported }) {
       }
 
       setUploading(true);
-      const res = await fetch(`${baseUrl}/reports.php`, {
+      const res = await mahaverseFetch('/reports.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(mappedRows),

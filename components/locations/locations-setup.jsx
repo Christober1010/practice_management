@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,7 +52,7 @@ export default function LocationsSetup() {
   const loadLocations = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${baseUrl}/locations.php?showArchived=${showArchived}`);
+      const res = await mahaverseFetch(`/locations.php?showArchived=${showArchived}`);
       const data = await res.json();
       if (data?.success) {
         setLocations(data.data || []);
@@ -140,7 +142,7 @@ export default function LocationsSetup() {
   const handleDelete = async () => {
     if (!locationToDelete) return;
     try {
-      const res = await fetch(`${baseUrl}/locations.php`, {
+      const res = await mahaverseFetch('/locations.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: locationToDelete.id }),

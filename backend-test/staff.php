@@ -289,15 +289,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 if ($method !== 'OPTIONS') {
     require_once __DIR__ . '/config.php';
     require_once __DIR__ . '/rbac_helpers.php';
-    $authUser = getAuthenticatedUser();
-    if ($authUser) {
-        $need = $method === 'GET' ? 'staff.read' : 'staff.write';
-        if (!rbac_user_has_permission_key($authUser['role'], $need, 'mahaverse')) {
-            http_response_code(403);
-            echo json_encode(['success' => false, 'message' => 'Permission denied']);
-            exit;
-        }
-    }
+    $authUser = requireAuthReadWrite('staff.read', 'staff.write', 'mahaverse');
 }
 
 switch ($method) {

@@ -1,6 +1,6 @@
-// store/clientsSlice.js
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
 import { createSlice } from "@reduxjs/toolkit";
 
 const initialState = {
@@ -124,7 +124,7 @@ export const fetchClients = () => async (dispatch) => {
     dispatch(setClientsLoading(true));
     dispatch(setClientsError(null));
 
-    const res = await fetch(`${baseUrl}/get-clients.php`, {
+    const res = await mahaverseFetch('/get-clients.php', {
       headers: { ...authHeaders() },
     });
     if (!res.ok) throw new Error("Failed to fetch clients");

@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -154,8 +156,7 @@ export default function PayerPaymentsView() {
   const loadPayerIndex = useCallback(async () => {
     setLoadingIndex(true);
     try {
-      const repRes = await fetch(
-        `${baseUrl}/reports.php?archived=0&context=schedule_tracker`,
+      const repRes = await mahaverseFetch('/reports.php?archived=0&context=schedule_tracker',
         { headers: { ...authHeaders() } }
       );
       const repJson = await repRes.json();
@@ -221,7 +222,7 @@ export default function PayerPaymentsView() {
   const loadSaved = useCallback(async () => {
     try {
       const q = clientId ? new URLSearchParams({ client_id: clientId }) : new URLSearchParams();
-      const res = await fetch(`${baseUrl}/payer-payment-entries.php?${q}`, {
+      const res = await mahaverseFetch(`/payer-payment-entries.php?${q}`, {
         headers: { ...authHeaders() },
       });
       const json = await res.json();
@@ -339,7 +340,7 @@ export default function PayerPaymentsView() {
     }
     setSaving(true);
     try {
-      const res = await fetch(`${baseUrl}/payer-payment-entries.php`, {
+      const res = await mahaverseFetch('/payer-payment-entries.php', {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ entries }),

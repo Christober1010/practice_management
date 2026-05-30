@@ -10,6 +10,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$authUser = requireAuthReadWrite('master_data.read', 'master_data.write', 'mahaverse');
+
+
 
 // Database connection
 $host = "db5018419668.hosting-data.io";
@@ -23,6 +28,7 @@ if ($conn->connect_error) {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Database connection failed']);
     exit();
+
 }
 
 $conn->set_charset('utf8mb4');
@@ -283,7 +289,7 @@ function handleGet($conn)
     }
 
     $behaviors = [];
-    require_once __DIR__ . '/behavior_helpers.php';
+    mahaverse_require_helper('behavior_helpers');
     if (br_table_exists($conn, 'client_behaviors')) {
         $behaviors = br_fetch_client_behaviors($conn, $clientId);
     }

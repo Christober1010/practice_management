@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,7 +52,7 @@ export default function ProviderSetup() {
   const loadProviders = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${baseUrl}/providers.php?showArchived=${showArchived}`);
+      const res = await mahaverseFetch(`/providers.php?showArchived=${showArchived}`);
       const data = await res.json();
       if (data?.success) {
         setProviders(data.data || []);
@@ -128,7 +130,7 @@ export default function ProviderSetup() {
   const handleDelete = async () => {
     if (!providerToDelete) return;
     try {
-      const res = await fetch(`${baseUrl}/providers.php`, {
+      const res = await mahaverseFetch('/providers.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: providerToDelete.id }),

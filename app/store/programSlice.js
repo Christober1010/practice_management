@@ -1,3 +1,4 @@
+import { mahaverseFetch } from "@/lib/mahaverse-api";
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 
 const initialState = {
@@ -17,7 +18,7 @@ export const fetchPrograms = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
-      const response = await fetch(`${baseUrl}/programs.php`, {
+      const response = await mahaverseFetch('/programs.php', {
         method: "GET",
         headers: { "Content-Type": "application/json" },
       });

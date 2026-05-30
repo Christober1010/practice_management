@@ -31,11 +31,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
     exit();
 }
-
-// Load environment variables from .env file
-if (file_exists(__DIR__ . '/config.php')) {
-    require_once __DIR__ . '/config.php';
-}
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$authUser = requireAuthAny(['clients.update', 'clients.write'], 'mahaverse');
 
 // Include Google Drive helper
 // First try local copy in backend-test folder, then try maha-launchpad folder
@@ -309,6 +307,7 @@ try {
             http_response_code(500);
             echo json_encode(['success' => false, 'message' => 'Failed to save uploaded file']);
             exit();
+
         }
 
         // Store full relative file path so UI can preview/download directly or via proxy.

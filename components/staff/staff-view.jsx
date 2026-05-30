@@ -50,6 +50,7 @@ import { fetchClients } from "@/app/store/clientSlice";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getMahaverseAuthHeaders } from "@/lib/api-auth";
+import { mahaverseFetch } from "@/lib/mahaverse-api";
 import {
   allowsStaffArchive,
   allowsStaffRead,
@@ -78,7 +79,7 @@ function normalizeStaffRecord(row) {
   };
 }
 
-const API_URL = `${process.env.NEXT_PUBLIC_BASE_URL}/staff.php`;
+const STAFF_API_PATH = "/staff.php";
 
 const formatUSPhone = (value) => {
   if (!value) return "";
@@ -120,9 +121,8 @@ export default function StaffView({ userRole }) {
   const fetchStaff = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await fetch(
-        `${API_URL}?showArchived=${showArchived}`,
-        { headers: getMahaverseAuthHeaders() },
+      const response = await mahaverseFetch(
+        `${STAFF_API_PATH}?showArchived=${showArchived}`,
       );
       if (!response.ok) {
         const errJson = await response.json().catch(() => ({}));
@@ -197,7 +197,7 @@ export default function StaffView({ userRole }) {
         fd.append("file", file);
         fd.append("doc_uuid", doc.doc_uuid || "");
         fd.append("staff_id", staffId);
-        const res = await fetch(uploadUrl, {
+        const res = await mahaverseFetch("/upload-staff-document.php", {
           method: "POST",
           body: fd,
           ...uploadAuthFetchInit(),
@@ -234,7 +234,7 @@ export default function StaffView({ userRole }) {
       const docsUploaded = await uploadStaffDocuments(staffData.documents || [], staffId);
       const docsToSave = docsUploaded.filter((d) => d.document_path || d.document_filename);
       const toSend = { ...staffData, documents: docsToSave };
-      const response = await fetch(API_URL, {
+      const response = await mahaverseFetch(STAFF_API_PATH, {
         method: "POST",
         headers: jsonAuthHeaders(),
         body: JSON.stringify(toSend),
@@ -264,7 +264,7 @@ export default function StaffView({ userRole }) {
       const docsUploaded = await uploadStaffDocuments(staffData.documents || [], staffId);
       const docsToSave = docsUploaded.filter((d) => d.document_path || d.document_filename);
       const toSend = { ...staffData, documents: docsToSave };
-      const response = await fetch(API_URL, {
+      const response = await mahaverseFetch(STAFF_API_PATH, {
         method: "PUT",
         headers: jsonAuthHeaders(),
         body: JSON.stringify(toSend),
@@ -337,7 +337,7 @@ export default function StaffView({ userRole }) {
     const action = newArchivedStatus ? "archived" : "restored";
 
     try {
-      const response = await fetch(API_URL, {
+      const response = await mahaverseFetch(STAFF_API_PATH, {
         method: "DELETE",
         headers: jsonAuthHeaders(),
         body: JSON.stringify({
@@ -1225,7 +1225,7 @@ export default function StaffView({ userRole }) {
                                                             alert("Backend URL (NEXT_PUBLIC_BASE_URL) is not configured.");
                                                             return;
                                                           }
-                                                          const res = await fetch(url, {
+                                                          const res = await mahaverseFetch(url, {
                                                             credentials: "omit",
                                                             headers: getMahaverseAuthHeaders(),
                                                           });

@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useState, useEffect } from "react";
 import {
   Dialog,
@@ -353,7 +355,7 @@ export default function AddReportModal({
   const checkDuplicateForManualEntry = async (reportData) => {
     try {
       const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
-      const res = await fetch(`${baseUrl}/reports.php?archived=0`);
+      const res = await mahaverseFetch('/reports.php?archived=0');
       const result = await res.json();
       if (result.success) {
         const existing = result.data || [];
@@ -430,7 +432,7 @@ export default function AddReportModal({
       const fetchExistingReports = async () => {
         try {
           const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
-          const res = await fetch(`${baseUrl}/reports.php?archived=0`);
+          const res = await mahaverseFetch('/reports.php?archived=0');
           const result = await res.json();
           if (result.success) {
             setExistingReports(result.data || []);

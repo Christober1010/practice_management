@@ -1,5 +1,7 @@
 "use client"
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -78,7 +80,7 @@ export default function TaskAnalysisDetail({ targetId, onBack }) {
         ? (currentTarget.tasks || []).map((t) => (t.id === editingTaskId ? newTask : t))
         : [...(currentTarget.tasks || []), newTask]
 
-      const res = await fetch(`${baseUrl}/programs.php`, {
+      const res = await mahaverseFetch('/programs.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -107,7 +109,7 @@ export default function TaskAnalysisDetail({ targetId, onBack }) {
     try {
       const updatedTasks = currentTarget.tasks.filter((t) => t.id !== taskId)
 
-      const res = await fetch(`${baseUrl}/programs.php`, {
+      const res = await mahaverseFetch('/programs.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -145,7 +147,7 @@ export default function TaskAnalysisDetail({ targetId, onBack }) {
 
       const updatedPrompts = [...(currentTarget.prompts || []), newPrompt]
 
-      const res = await fetch(`${baseUrl}/programs.php`, {
+      const res = await mahaverseFetch('/programs.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

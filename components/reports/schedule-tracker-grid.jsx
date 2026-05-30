@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -259,7 +261,7 @@ export default function ScheduleTrackerGrid() {
         archived: "0",
         context: "schedule_tracker",
       });
-      const res = await fetch(`${baseUrl}/reports.php?${q.toString()}`);
+      const res = await mahaverseFetch(`/reports.php?${q.toString()}`);
       const json = await res.json();
       if (!json.success) {
         toast.error(json.message || "Failed to load schedule tracker");
@@ -324,7 +326,7 @@ export default function ScheduleTrackerGrid() {
     const miscVal = raw === "" ? null : raw;
     try {
       setSavingId(id);
-      const res = await fetch(`${baseUrl}/reports.php`, {
+      const res = await mahaverseFetch('/reports.php', {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, misc_hrs: miscVal }),

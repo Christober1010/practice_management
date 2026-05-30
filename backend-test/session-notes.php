@@ -2,23 +2,26 @@
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Content-Type: application/json");
 
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
-    http_response_code(200);
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+    http_response_code(204);
     exit();
 }
+
+require_once __DIR__ . '/config.php';
+
+header("Content-Type: application/json; charset=utf-8");
+
+$authUser = requireAuth('scheduling.session.notes', 'mahaverse');
+
+mahaverse_require_helper('client_auth_units_helpers');
+mahaverse_require_helper('behavior_helpers');
 
 // Database credentials
 $host = "db5018419668.hosting-data.io";
 $user = "dbu1183438";
 $password = "M@h@B3h@v1or@lH3@lth4@ut1sm";
 $database = "dbs14649042";
-
-require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/rbac_helpers.php';
-require_once __DIR__ . '/client_auth_units_helpers.php';
-require_once __DIR__ . '/behavior_helpers.php';
 
 function generateId() {
     return sprintf(
@@ -181,7 +184,7 @@ function handleGet($conn) {
     $targetId = $_GET['target_id'] ?? null;
     $sessionDate = $_GET['session_date'] ?? date('Y-m-d');
 
-    $authU = getAuthenticatedUser();
+    $authU = $authUser;
     if ($authU && $clientId && !rbac_user_may_access_client_row($authU, $conn, (string) $clientId)) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Permission denied']);
@@ -659,7 +662,7 @@ function handlePost($conn) {
         return;
     }
 
-    $authU = getAuthenticatedUser();
+    $authU = $authUser;
     if ($authU && !empty($input['client_id']) && !rbac_user_may_access_client_row($authU, $conn, (string) $input['client_id'])) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Permission denied']);

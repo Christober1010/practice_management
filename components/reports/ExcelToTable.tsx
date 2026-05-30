@@ -11,10 +11,11 @@ import { Badge } from "@/components/ui/badge"
 import { Upload, RefreshCw, FileSpreadsheet, Search } from "lucide-react"
 import { Toaster, toast } from "react-hot-toast"
 import { REQUIRED_COLUMNS, stripExcludedReportFields } from "./report-column-exclusions"
+import { mahaverseFetch } from "@/lib/mahaverse-api"
 
 type Row = { [key: string]: any }
 
-const API_URL = `${process.env.NEXT_PUBLIC_BASE_URL}/reports.php`
+const REPORTS_PATH = "/reports.php"
 
 export default function ReportsView() {
   const [existingRows, setExistingRows] = useState<Row[]>([])
@@ -77,7 +78,7 @@ export default function ReportsView() {
     try {
       setLoading(true)
       setError(null)
-      const res = await fetch(API_URL)
+      const res = await mahaverseFetch(REPORTS_PATH)
       const data = await res.json()
       if (!res.ok || !data.success) {
         throw new Error(data.message || "Failed to fetch reports")
@@ -140,7 +141,7 @@ export default function ReportsView() {
     try {
       setSaving(true)
       setError(null)
-      const res = await fetch(API_URL, {
+      const res = await mahaverseFetch(REPORTS_PATH, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(uploadedRows),

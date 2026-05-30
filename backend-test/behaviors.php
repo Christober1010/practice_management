@@ -9,8 +9,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
+require_once __DIR__ . '/config.php';
+$authUser = requireAuthReadWrite('master_data.read', 'master_data.write', 'mahaverse');
 
-require_once __DIR__ . '/behavior_helpers.php';
+mahaverse_require_helper('behavior_helpers');
 
 $host = "db5018419668.hosting-data.io";
 $user = "dbu1183438";
@@ -22,6 +24,7 @@ if ($conn->connect_error) {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Database connection failed']);
     exit();
+
 }
 $conn->set_charset('utf8mb4');
 

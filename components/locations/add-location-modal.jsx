@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import React, { useEffect, useState } from "react";
 import {
   Dialog,
@@ -170,7 +172,7 @@ export default function AddLocationModal({
       if (!baseUrl) return;
       try {
         setLoadingFacilityTypes(true);
-        const res = await fetch(`${baseUrl}/facility-types.php?activeOnly=true`);
+        const res = await mahaverseFetch('/facility-types.php?activeOnly=true');
         const data = await res.json();
         if (data?.success) {
           setFacilityTypes(data.data || []);

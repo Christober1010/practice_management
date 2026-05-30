@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -97,8 +99,7 @@ export default function ClientBehaviorSetupSection({ clientId, clientName }) {
     if (!baseUrl || !clientId) return;
     setLoading(true);
     try {
-      const res = await fetch(
-        `${baseUrl}/client-behaviors.php?client_id=${encodeURIComponent(clientId)}&raw_abc_limit=50`
+      const res = await mahaverseFetch(`/client-behaviors.php?client_id=${encodeURIComponent(clientId)}&raw_abc_limit=50`
       );
       const data = await res.json();
       if (data?.success) {
@@ -129,7 +130,7 @@ export default function ClientBehaviorSetupSection({ clientId, clientName }) {
     };
     const id = `abc_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     try {
-      const res = await fetch(`${baseUrl}/client-behaviors.php`, {
+      const res = await mahaverseFetch('/client-behaviors.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -148,7 +149,7 @@ export default function ClientBehaviorSetupSection({ clientId, clientName }) {
 
   const deactivateAbc = async (type, item) => {
     try {
-      const res = await fetch(`${baseUrl}/client-behaviors.php`, {
+      const res = await mahaverseFetch('/client-behaviors.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, id: item.id, client_id: clientId }),
@@ -163,7 +164,7 @@ export default function ClientBehaviorSetupSection({ clientId, clientName }) {
 
   const handleArchiveConfiguredBehavior = async (row) => {
     try {
-      const res = await fetch(`${baseUrl}/client-behaviors.php`, {
+      const res = await mahaverseFetch('/client-behaviors.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "behavior", id: row.id, client_id: clientId }),

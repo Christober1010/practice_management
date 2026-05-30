@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useCallback, useEffect, useState } from "react";
 import {
   Dialog,
@@ -39,8 +41,8 @@ export function BehaviorsListModal({
     setLoading(true);
     try {
       const [behRes, catRes] = await Promise.all([
-        fetch(`${baseUrl}/client-behaviors.php?client_id=${encodeURIComponent(clientId)}`),
-        fetch(`${baseUrl}/behaviors.php`),
+        mahaverseFetch(`/client-behaviors.php?client_id=${encodeURIComponent(clientId)}`),
+        mahaverseFetch('/behaviors.php'),
       ]);
       const behData = await behRes.json();
       const catData = await catRes.json();
@@ -58,7 +60,7 @@ export function BehaviorsListModal({
   }, [isOpen, load]);
 
   const handleSave = async (payload) => {
-    const res = await fetch(`${baseUrl}/client-behaviors.php`, {
+    const res = await mahaverseFetch('/client-behaviors.php', {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -78,7 +80,7 @@ export function BehaviorsListModal({
   const handleArchive = async (row) => {
     if (!confirm(`Archive "${row.name}"?`)) return;
     try {
-      const res = await fetch(`${baseUrl}/client-behaviors.php`, {
+      const res = await mahaverseFetch('/client-behaviors.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "behavior", id: row.id, client_id: clientId }),

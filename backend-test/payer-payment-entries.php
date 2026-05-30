@@ -16,7 +16,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
 
-$user = getAuthenticatedUser();
+$authUser = requireAuthReadWrite('manage_data.read', 'manage_data.write', 'mahaverse');
 $method = $_SERVER['REQUEST_METHOD'];
 
 $host = "db5018419668.hosting-data.io";
@@ -272,9 +272,6 @@ function payer_payment_report_dos_string($dos)
 
 try {
     if ($method === 'GET') {
-        if ($user && !rbac_user_has_permission_key($user['role'], 'manage_data.read', 'mahaverse')) {
-            json_fail(403, 'Permission denied');
-        }
         $action = isset($_GET['action']) ? trim((string)$_GET['action']) : 'entries';
         if ($action === 'candidates') {
             $clientId = isset($_GET['client_id']) ? trim((string)$_GET['client_id']) : '';
@@ -297,15 +294,12 @@ try {
     }
 
     if ($method === 'POST') {
-        if ($user && !rbac_user_has_permission_key($user['role'], 'manage_data.write', 'mahaverse')) {
-            json_fail(403, 'Permission denied');
-        }
         $input = json_decode(file_get_contents('php://input'), true) ?? [];
         $entries = isset($input['entries']) && is_array($input['entries']) ? $input['entries'] : [];
         if (count($entries) === 0) {
             json_fail(400, 'entries array is required');
         }
-        $createdBy = $user && !empty($user['username']) ? (string)$user['username'] : null;
+        $createdBy = !empty($authUser['username']) ? (string)$authUser['username'] : null;
 
         $conn->begin_transaction();
         try {

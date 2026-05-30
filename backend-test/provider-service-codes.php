@@ -8,6 +8,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$authUser = requireAuthReadWrite('manage_data.read', 'manage_data.write', 'mahaverse');
+
+
 
 $conn->set_charset('utf8mb4');
 

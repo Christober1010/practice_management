@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Dialog,
@@ -72,7 +74,7 @@ export default function SkillAcquisitionEntryModal({
         target_id: String(targetId),
         session_date: String(sessionDate),
       });
-      const res = await fetch(`${baseUrl}/session-notes.php?${params}`, {
+      const res = await mahaverseFetch(`/session-notes.php?${params}`, {
         headers: getMahaverseAuthHeaders(),
       });
       const data = await readJson(res);
@@ -120,7 +122,7 @@ export default function SkillAcquisitionEntryModal({
 
     setTrialActionLoading(true);
     try {
-      const res = await fetch(`${baseUrl}/session-notes.php`, {
+      const res = await mahaverseFetch('/session-notes.php', {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -158,7 +160,7 @@ export default function SkillAcquisitionEntryModal({
 
     setTrialActionLoading(true);
     try {
-      const res = await fetch(`${baseUrl}/session-notes.php`, {
+      const res = await mahaverseFetch('/session-notes.php', {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",

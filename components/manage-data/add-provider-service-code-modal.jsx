@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import React, { useEffect, useState } from "react";
 import {
   Dialog,
@@ -71,7 +73,7 @@ export default function AddProviderServiceCodeModal({
 
   const loadProviders = async () => {
     try {
-      const res = await fetch(`${baseUrl}/providers.php`);
+      const res = await mahaverseFetch('/providers.php');
       const data = await res.json();
       if (data?.success) {
         setProviders(data.data || []);
@@ -83,7 +85,7 @@ export default function AddProviderServiceCodeModal({
 
   const loadServiceCodes = async () => {
     try {
-      const res = await fetch(`${baseUrl}/service-codes.php`);
+      const res = await mahaverseFetch('/service-codes.php');
       const data = await res.json();
       if (data?.success) {
         setServiceCodes(data.data || []);

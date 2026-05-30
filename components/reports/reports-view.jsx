@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -96,7 +98,7 @@ export default function ReportsView() {
     try {
       if (!silent) setLoading(true);
       const archived = showArchived ? 1 : 0;
-      const res = await fetch(`${baseUrl}/reports.php?archived=${archived}`);
+      const res = await mahaverseFetch(`/reports.php?archived=${archived}`);
       const result = await res.json();
       if (result.success) {
         setReports(
@@ -122,7 +124,7 @@ export default function ReportsView() {
       const isArray = Array.isArray(reportData);
       const dataToSend = isArray ? reportData : [reportData];
 
-      const res = await fetch(`${baseUrl}/reports.php`, {
+      const res = await mahaverseFetch('/reports.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(dataToSend),
@@ -151,7 +153,7 @@ export default function ReportsView() {
 
   const handleEditReport = async (reportData) => {
     try {
-      const res = await fetch(`${baseUrl}/reports.php`, {
+      const res = await mahaverseFetch('/reports.php', {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(reportData),
@@ -187,7 +189,7 @@ export default function ReportsView() {
     const archived = !reportToUpdate.archived;
 
     try {
-      const res = await fetch(`${baseUrl}/reports.php`, {
+      const res = await mahaverseFetch('/reports.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

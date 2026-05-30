@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,8 +41,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
     if (!baseUrl || !clientId) return;
     setLoading(true);
     try {
-      const res = await fetch(
-        `${baseUrl}/client-modules.php?client_id=${encodeURIComponent(clientId)}`,
+      const res = await mahaverseFetch(`/client-modules.php?client_id=${encodeURIComponent(clientId)}`,
       );
       const result = await res.json();
 
@@ -105,7 +106,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
   }, [loadClientPrograms]);
 
   const handleAddProgram = async (payload) => {
-    const res = await fetch(`${baseUrl}/client-programs.php`, {
+    const res = await mahaverseFetch('/client-programs.php', {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -121,7 +122,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
   };
 
   const handleEditProgram = async (payload) => {
-    const res = await fetch(`${baseUrl}/client-programs.php`, {
+    const res = await mahaverseFetch('/client-programs.php', {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "update", ...payload }),
@@ -137,7 +138,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
   };
 
   const handleAddTarget = async (payload) => {
-    const res = await fetch(`${baseUrl}/client-target.php`, {
+    const res = await mahaverseFetch('/client-target.php', {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -154,7 +155,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
   };
 
   const handleEditTarget = async (payload) => {
-    const res = await fetch(`${baseUrl}/client-target.php`, {
+    const res = await mahaverseFetch('/client-target.php', {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "update", ...payload }),

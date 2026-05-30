@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Shield, Heart } from "lucide-react";
 import DashboardLayout from "@/components/layout/dashboard-layout";
+import LogoutConfirmationModal from "@/components/launchpad/LogoutConfirmationModal";
 import img from "../../public/favicon.ico";
 import Image from "next/image";
 import { getMahaverseAuthHeaders } from "@/lib/api-auth";
@@ -86,6 +87,7 @@ export default function LoginPage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [otp, setOtp] = useState("");
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
 
   // Check for existing session on component mount
   useEffect(() => {
@@ -278,17 +280,31 @@ export default function LoginPage() {
   };
 
   const handleLogout = () => {
-    // Clear all stored data
+    setIsLogoutModalOpen(true);
+  };
+
+  const confirmLogout = async () => {
+    setIsLogoutModalOpen(false);
+
+    const token = localStorage.getItem("aba_token");
+    if (token && API_BASE_URL) {
+      try {
+        await fetch(`${API_BASE_URL}/logout.php`, {
+          method: "POST",
+          headers: getMahaverseAuthHeaders(),
+        });
+      } catch {
+        // Best-effort server revoke; still clear local session
+      }
+    }
+
     localStorage.removeItem("aba_user");
     localStorage.removeItem("aba_token");
     localStorage.removeItem("aba_token_expiry");
-
-    // Also clear Launchpad auth
     localStorage.removeItem("auth_token");
     localStorage.removeItem("auth_user");
     localStorage.removeItem("auth_expires_at");
 
-    // Reset state
     setUser(null);
     setEmail("");
     setPassword("");
@@ -416,7 +432,16 @@ export default function LoginPage() {
   }
 
   if (user) {
-    return <DashboardLayout userRole={user} onLogout={handleLogout} />;
+    return (
+      <>
+        <DashboardLayout userRole={user} onLogout={handleLogout} />
+        <LogoutConfirmationModal
+          isOpen={isLogoutModalOpen}
+          onConfirm={confirmLogout}
+          onCancel={() => setIsLogoutModalOpen(false)}
+        />
+      </>
+    );
   }
 
   const handleVerifyOtp = async () => {

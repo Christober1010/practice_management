@@ -1,4 +1,8 @@
 <?php
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$authUser = requireAuthReadWrite('staff.read', 'staff.write', 'mahaverse');
+
 // Enable error reporting for debugging
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
@@ -95,6 +99,7 @@ switch ($method) {
         // Respond to preflight requests
         http_response_code(200);
         exit();
+
     default:
         http_response_code(405); // Method Not Allowed
         echo json_encode(["success" => false, "message" => "Method not allowed"]);

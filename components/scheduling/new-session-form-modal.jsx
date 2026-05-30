@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState } from "react";
 import {
   Dialog,
@@ -244,7 +246,7 @@ export default function NewSessionFormModal({
     const fetchStaff = async () => {
       setLoadingStaff(true);
       try {
-        const res = await fetch(`${baseUrl}/staff.php`, {
+        const res = await mahaverseFetch('/staff.php', {
           headers: getMahaverseAuthHeaders(),
         });
         const data = await res.json();
@@ -749,7 +751,7 @@ export default function NewSessionFormModal({
 
     setIsSaving(true);
     try {
-      const res = await fetch(`${baseUrl}/add-session.php`, {
+      const res = await mahaverseFetch('/add-session.php', {
         method: editingSession?.sessionId ? "PUT" : "POST",
         headers: jsonAuthHeaders(),
         body: JSON.stringify(payload),
@@ -789,7 +791,7 @@ export default function NewSessionFormModal({
     };
 
     try {
-      const res = await fetch(`${baseUrl}/add-session.php`, {
+      const res = await mahaverseFetch('/add-session.php', {
         method: "PUT",
         headers: jsonAuthHeaders(),
         body: JSON.stringify(payload),

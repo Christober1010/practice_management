@@ -4,3 +4,16 @@ RewriteEngine On
 RewriteCond %{HTTP:Authorization} .
 RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 </IfModule>
+
+# Block direct HTTP access to includes (not API entrypoints).
+<IfModule mod_authz_core.c>
+  <FilesMatch "^(config|db|rbac_helpers|behavior_helpers|client_auth_units_helpers|drive_helper)\.php$">
+    Require all denied
+  </FilesMatch>
+</IfModule>
+<IfModule !mod_authz_core.c>
+  <FilesMatch "^(config|db|rbac_helpers|behavior_helpers|client_auth_units_helpers|drive_helper)\.php$">
+    Order deny,allow
+    Deny from all
+  </FilesMatch>
+</IfModule>

@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,7 +52,7 @@ export default function ProviderServiceCodeSetup() {
   const loadMappings = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${baseUrl}/provider-service-codes.php?showArchived=${showArchived}`);
+      const res = await mahaverseFetch(`/provider-service-codes.php?showArchived=${showArchived}`);
       const data = await res.json();
       if (data?.success) {
         setMappings(data.data || []);
@@ -127,7 +129,7 @@ export default function ProviderServiceCodeSetup() {
   const handleDelete = async () => {
     if (!mappingToDelete) return;
     try {
-      const res = await fetch(`${baseUrl}/provider-service-codes.php`, {
+      const res = await mahaverseFetch('/provider-service-codes.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: mappingToDelete.id }),

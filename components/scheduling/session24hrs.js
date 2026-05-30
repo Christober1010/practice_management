@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -363,7 +365,7 @@ export default function SchedulingView() {
     setLoading(true);
     setError(null);
     try {
-      const resp = await fetch(`${baseUrl}/add-session.php`, {
+      const resp = await mahaverseFetch('/add-session.php', {
         method: "GET",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
@@ -552,7 +554,7 @@ export default function SchedulingView() {
     setDeletingSessionId(sessionToDelete.sessionId);
     try {
       const editMode = editModeOverride || sessionToDelete.editMode || "single";
-      const resp = await fetch(`${baseUrl}/add-session.php`, {
+      const resp = await mahaverseFetch('/add-session.php', {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",

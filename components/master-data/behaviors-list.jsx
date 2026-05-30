@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -68,7 +70,7 @@ export default function BehaviorsList() {
   }, [dispatch]);
 
   const loadMaster = useCallback(async () => {
-    const res = await fetch(`${baseUrl}/behaviors.php`);
+    const res = await mahaverseFetch('/behaviors.php');
     const data = await res.json();
     if (data?.success) {
       setMasterCategories(data.data?.categories || []);
@@ -92,8 +94,7 @@ export default function BehaviorsList() {
         return;
       }
       try {
-        const res = await fetch(
-          `${baseUrl}/client-behaviors.php?client_id=${encodeURIComponent(selectedClient)}`
+        const res = await mahaverseFetch(`/client-behaviors.php?client_id=${encodeURIComponent(selectedClient)}`
         );
         const data = await res.json();
         setClientBehaviors(data?.success ? data.data?.behaviors || [] : []);
@@ -111,8 +112,7 @@ export default function BehaviorsList() {
     try {
       const results = await Promise.all(
         clientList.map((clientId) =>
-          fetch(
-            `${baseUrl}/client-behaviors.php?client_id=${encodeURIComponent(clientId)}`
+          mahaverseFetch(`/client-behaviors.php?client_id=${encodeURIComponent(clientId)}`
           ).then((res) => res.json())
         )
       );

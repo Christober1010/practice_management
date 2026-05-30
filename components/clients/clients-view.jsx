@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -226,7 +228,7 @@ export default function ClientsView({ userRole }) {
           fd.append("doc_uuid", doc.doc_uuid || "");
           fd.append("client_id", newClient.client_id);
 
-          const upRes = await fetch(`${baseUrl}/upload-client-document.php`, {
+          const upRes = await mahaverseFetch('/upload-client-document.php', {
             method: "POST",
             body: fd,
           });
@@ -254,7 +256,7 @@ export default function ClientsView({ userRole }) {
         documents: docsUploaded.map(({ document_file, ...rest }) => rest),
       };
 
-      const res = await fetch(`${baseUrl}/update-clients.php`, {
+      const res = await mahaverseFetch('/update-clients.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -301,7 +303,7 @@ export default function ClientsView({ userRole }) {
           fd.append("doc_uuid", doc.doc_uuid || "");
           fd.append("client_id", clientData.client_id || clientData.id || "");
 
-          const upRes = await fetch(`${baseUrl}/upload-client-document.php`, {
+          const upRes = await mahaverseFetch('/upload-client-document.php', {
             method: "POST",
             body: fd,
           });
@@ -328,7 +330,7 @@ export default function ClientsView({ userRole }) {
         documents: docsUploaded.map(({ document_file, ...rest }) => rest),
       };
 
-      const res = await fetch(`${baseUrl}/update-clients.php`, {
+      const res = await mahaverseFetch('/update-clients.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -379,7 +381,7 @@ export default function ClientsView({ userRole }) {
     };
 
     try {
-      const res = await fetch(`${baseUrl}/update-clients.php`, {
+      const res = await mahaverseFetch('/update-clients.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -457,7 +459,7 @@ export default function ClientsView({ userRole }) {
   useEffect(() => {
     const fetchStaff = async () => {
       try {
-        const response = await fetch(`${baseUrl}/staff.php`);
+        const response = await mahaverseFetch('/staff.php');
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -556,8 +558,7 @@ export default function ClientsView({ userRole }) {
   const loadClientPrograms = async (clientId) => {
     setProgramsLoading(true);
     try {
-      const res = await fetch(
-        `${baseUrl}/client-modules.php?client_id=${clientId}`,
+      const res = await mahaverseFetch(`/client-modules.php?client_id=${clientId}`,
       );
       const result = await res.json();
 
@@ -658,7 +659,7 @@ export default function ClientsView({ userRole }) {
     }
     try {
       setProgramsLoading(true);
-      const res = await fetch(`${baseUrl}/client-programs.php`, {
+      const res = await mahaverseFetch('/client-programs.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // payload already contains client_id and programs at root:
@@ -688,7 +689,7 @@ export default function ClientsView({ userRole }) {
     }
     try {
       setProgramsLoading(true);
-      const res = await fetch(`${baseUrl}/client-programs.php`, {
+      const res = await mahaverseFetch('/client-programs.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // payload already contains client_id and programs
@@ -718,7 +719,7 @@ export default function ClientsView({ userRole }) {
     }
     try {
       setTargetsLoading(true);
-      const res = await fetch(`${baseUrl}/client-target.php`, {
+      const res = await mahaverseFetch('/client-target.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -751,7 +752,7 @@ export default function ClientsView({ userRole }) {
     }
     try {
       setTargetsLoading(true);
-      const res = await fetch(`${baseUrl}/client-target.php`, {
+      const res = await mahaverseFetch('/client-target.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "update", ...payload }),

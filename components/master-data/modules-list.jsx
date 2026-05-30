@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -276,7 +278,7 @@ export default function ModulesList() {
       };
 
       try {
-        const response = await fetch(`${baseUrl}/client-modules.php`, {
+        const response = await mahaverseFetch('/client-modules.php', {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -304,7 +306,7 @@ export default function ModulesList() {
       // Generic module path:
       // If your backend expects a different route, change below to match.
       try {
-        const response = await fetch(`${baseUrl}/modules.php`, {
+        const response = await mahaverseFetch('/modules.php', {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

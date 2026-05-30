@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,7 +41,7 @@ export default function ServiceCodeSetup() {
   const loadServiceCodes = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${baseUrl}/service-codes.php`);
+      const res = await mahaverseFetch('/service-codes.php');
       const data = await res.json();
       if (data?.success) {
         setServiceCodes(data.data || []);
@@ -109,7 +111,7 @@ export default function ServiceCodeSetup() {
   const handleDelete = async () => {
     if (!codeToDelete) return;
     try {
-      const res = await fetch(`${baseUrl}/service-codes.php`, {
+      const res = await mahaverseFetch('/service-codes.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code_id: codeToDelete.code_id }),

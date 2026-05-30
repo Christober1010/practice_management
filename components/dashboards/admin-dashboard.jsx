@@ -1,5 +1,7 @@
 "use client"
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, Calendar, Activity, Target, BookOpen } from "lucide-react"
@@ -24,7 +26,7 @@ export default function AdminDashboard() {
     const fetchDashboardStats = async () => {
       try {
         setLoading(true)
-        const res = await fetch(`${baseUrl}/dashboard-stats.php`, {
+        const res = await mahaverseFetch('/dashboard-stats.php', {
           method: 'GET',
           mode: 'cors',
           cache: 'no-cache',

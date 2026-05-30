@@ -18,12 +18,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     exit();
 }
 
-$authUser = getAuthenticatedUser();
-if ($authUser && !rbac_user_has_permission_key($authUser['role'], 'billing.read', 'mahaverse')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Permission denied']);
-    exit();
-}
+$authUser = requireAuth('billing.read', 'mahaverse');
 
 function cms1500_fail($status, $message)
 {

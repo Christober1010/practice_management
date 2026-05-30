@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useState, useEffect } from "react";
 import {
   Dialog,
@@ -60,8 +62,7 @@ export default function DomainsListModal({
   const fetchDomains = async () => {
     setLoading(true);
     try {
-      const response = await fetch(
-        `${baseUrl}/client-modules.php?client_id=${clientId}`
+      const response = await mahaverseFetch(`/client-modules.php?client_id=${clientId}`
       );
       const result = await response.json();
 
@@ -77,8 +78,7 @@ export default function DomainsListModal({
 
   const fetchModules = async () => {
     try {
-      const response = await fetch(
-        `${baseUrl}/client-modules.php?client_id=${clientId}`
+      const response = await mahaverseFetch(`/client-modules.php?client_id=${clientId}`
       );
       const result = await response.json();
 
@@ -105,7 +105,7 @@ export default function DomainsListModal({
         };
 
     try {
-      const res = await fetch(`${baseUrl}/client-modules.php`, {
+      const res = await mahaverseFetch('/client-modules.php', {
         method: editingDomain ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -133,7 +133,7 @@ export default function DomainsListModal({
     if (!confirm("Are you sure you want to delete this domain?")) return;
 
     try {
-      const res = await fetch(`${baseUrl}/client-modules.php`, {
+      const res = await mahaverseFetch('/client-modules.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

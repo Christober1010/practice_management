@@ -737,6 +737,9 @@ function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
 }
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+
+$authUser = requireAuthReadWrite('scheduling.read', 'scheduling.write', 'mahaverse');
 
 // Main Logic
 $method = $_SERVER['REQUEST_METHOD'];
@@ -761,10 +764,8 @@ try {
             $provider = (string)$input['provider'];
             $providerName = (string)$input['providerName'];
 
-            $authUser = getAuthenticatedUser();
-            if ($authUser) {
-                rbac_enforce_session_action($authUser, $conn, 'create', $provider);
-            }
+            $authUser = $authUser ?? requireUser();
+            rbac_enforce_session_action($authUser, $conn, 'create', $provider);
             $supervisingProvider = isset($input['supervisingProvider']) ? (string)$input['supervisingProvider'] : null;
             $supervisingProviderName = isset($input['supervisingProviderName']) ? (string)$input['supervisingProviderName'] : null;
             $authId = (int)$input['authId'];
@@ -1365,19 +1366,17 @@ try {
                 $targetRecurringId = (int)(microtime(true) * 10000) . rand(1000, 9999);
             }
 
-            $authUserPut = getAuthenticatedUser();
-            if ($authUserPut) {
-                $noteAction = 'update';
-                if (
-                    isset($input['quickNote']) &&
-                    trim((string) $input['quickNote']) !== '' &&
-                    empty($input['startDateTime']) &&
-                    empty($input['endDateTime'])
-                ) {
-                    $noteAction = 'notes';
-                }
-                rbac_enforce_session_action($authUserPut, $conn, $noteAction, $currentSession['provider_id'] ?? null);
+            $authUserPut = $authUser ?? requireUser();
+            $noteAction = 'update';
+            if (
+                isset($input['quickNote']) &&
+                trim((string) $input['quickNote']) !== '' &&
+                empty($input['startDateTime']) &&
+                empty($input['endDateTime'])
+            ) {
+                $noteAction = 'notes';
             }
+            rbac_enforce_session_action($authUserPut, $conn, $noteAction, $currentSession['provider_id'] ?? null);
 
             $conn->begin_transaction();
             try {
@@ -2016,10 +2015,8 @@ try {
                     exit();
                 }
 
-                $authUserDel = getAuthenticatedUser();
-                if ($authUserDel) {
-                    rbac_enforce_session_action($authUserDel, $conn, 'delete', $currentSession['provider_id'] ?? null);
-                }
+                $authUserDel = $authUser ?? requireUser();
+                rbac_enforce_session_action($authUserDel, $conn, 'delete', $currentSession['provider_id'] ?? null);
 
                 $sessionsToDelete = [];
                 if ($editMode === 'recurring' && !empty($currentSession['recurring_id'])) {

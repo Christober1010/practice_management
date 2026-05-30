@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -42,7 +44,7 @@ export default function DiagnosisCodeSetup() {
   const loadDiagnosisCodes = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${baseUrl}/diagnosis-codes.php?showArchived=${showArchived}`);
+      const res = await mahaverseFetch(`/diagnosis-codes.php?showArchived=${showArchived}`);
       const data = await res.json();
       if (data?.success) {
         setDiagnosisCodes(data.data || []);
@@ -112,7 +114,7 @@ export default function DiagnosisCodeSetup() {
   const handleDelete = async () => {
     if (!codeToDelete) return;
     try {
-      const res = await fetch(`${baseUrl}/diagnosis-codes.php`, {
+      const res = await mahaverseFetch('/diagnosis-codes.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: codeToDelete.id }),

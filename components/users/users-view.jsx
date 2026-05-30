@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -96,7 +98,7 @@ export default function UsersView() {
 
   const handleAddUser = async (userData) => {
     try {
-      const res = await fetch(`${baseUrl}/update-users.php`, {
+      const res = await mahaverseFetch('/update-users.php', {
         method: "POST",
         headers: jsonAuthHeaders(),
         body: JSON.stringify(userData),
@@ -122,7 +124,7 @@ export default function UsersView() {
 
   const handleEditUser = async (userData) => {
     try {
-      const res = await fetch(`${baseUrl}/update-users.php`, {
+      const res = await mahaverseFetch('/update-users.php', {
         method: "POST",
         headers: jsonAuthHeaders(),
         body: JSON.stringify(userData),
@@ -145,7 +147,7 @@ export default function UsersView() {
   const handleDeleteUser = async (userId) => {
     if (!confirm("Are you sure you want to delete this user?")) return;
     try {
-      const res = await fetch(`${baseUrl}/delete-user.php`, {
+      const res = await mahaverseFetch('/delete-user.php', {
         method: "DELETE",
         headers: jsonAuthHeaders(),
         body: JSON.stringify({ id: userId }),
@@ -171,7 +173,7 @@ export default function UsersView() {
       is_active: userRowIsActive(userToUpdate) ? 0 : 1,
     };
     try {
-      const res = await fetch(`${baseUrl}/update-users.php`, {
+      const res = await mahaverseFetch('/update-users.php', {
         method: "POST",
         headers: jsonAuthHeaders(),
         body: JSON.stringify(updatedUser),

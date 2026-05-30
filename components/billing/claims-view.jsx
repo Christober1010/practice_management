@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -229,12 +231,12 @@ export default function ClaimsView() {
     setError("");
     try {
       const [clientsResp, locationsRespPrimary] = await Promise.all([
-        fetch(`${baseUrl}/get-clients.php`, {
+        mahaverseFetch('/get-clients.php', {
           headers: getMahaverseAuthHeaders(),
         }),
         // Locations endpoint usually does not require auth; avoid custom auth headers
         // so older server CORS policies (without X-Auth-Token) still pass preflight.
-        fetch(`${baseUrl}/locations.php`),
+        mahaverseFetch('/locations.php'),
       ]);
 
       const clientsJson = await readJsonSafe(clientsResp);
@@ -246,7 +248,7 @@ export default function ClaimsView() {
         (!locationsResp.ok || !locationsJson?.success) &&
         (locationsResp.status === 404 || String(locationsJson?.message || "").includes("404"))
       ) {
-        const fallbackResp = await fetch(`${baseUrl}/location.php`);
+        const fallbackResp = await mahaverseFetch('/location.php');
         const fallbackJson = await readJsonSafe(fallbackResp);
         locationsResp = fallbackResp;
         locationsJson = fallbackJson;
@@ -291,7 +293,7 @@ export default function ClaimsView() {
         if (selectedClientId && selectedClientId !== CLIENT_FILTER_ALL) {
           qs.set("client_id", String(selectedClientId));
         }
-        const resp = await fetch(`${baseUrl}/add-session.php?${qs.toString()}`, {
+        const resp = await mahaverseFetch(`/add-session.php?${qs.toString()}`, {
           headers: getMahaverseAuthHeaders(),
         });
         const json = await resp.json();
@@ -443,7 +445,7 @@ export default function ClaimsView() {
               `Session ${sessionId}: no insurance found (link authorization or pick override)`
             );
           }
-          const resp = await fetch(`${baseUrl}/claims-cms1500-preview.php`, {
+          const resp = await mahaverseFetch('/claims-cms1500-preview.php', {
             method: "POST",
             headers: getMahaverseAuthHeaders({
               "Content-Type": "application/json",

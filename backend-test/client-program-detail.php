@@ -2,6 +2,7 @@
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Accept');
 
 $host = "db5018419668.hosting-data.io";
 $user = "dbu1183438";
@@ -20,6 +21,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$authUser = requireAuthReadWrite('master_data.read', 'master_data.write', 'mahaverse');
+
+
 
 $programId = $_GET['program_id'] ?? null;
 
@@ -27,6 +33,7 @@ if (!$programId) {
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'Program ID is required']);
     exit();
+
 }
 
 $programId = $conn->real_escape_string($programId);

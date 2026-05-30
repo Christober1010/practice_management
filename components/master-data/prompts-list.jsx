@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -62,7 +64,7 @@ export default function PromptsList() {
 
   const handleDeletePrompt = async (promptId) => {
     try {
-      const res = await fetch(`${baseUrl}/programs.php`, {
+      const res = await mahaverseFetch('/programs.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: promptId, type: "prompt" }),
@@ -82,7 +84,7 @@ export default function PromptsList() {
 
   const handleAddPrompt = async (newPrompt) => {
     try {
-      const res = await fetch(`${baseUrl}/programs.php`, {
+      const res = await mahaverseFetch('/programs.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

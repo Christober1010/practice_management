@@ -1,5 +1,7 @@
 "use client";
 
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -46,7 +48,7 @@ export default function BehaviorCategoriesList() {
     if (!baseUrl) return;
     setLoading(true);
     try {
-      const res = await fetch(`${baseUrl}/behaviors.php`);
+      const res = await mahaverseFetch('/behaviors.php');
       const data = await res.json();
       if (data?.success) {
         setCategories(data.data?.categories || []);
@@ -102,7 +104,7 @@ export default function BehaviorCategoriesList() {
           },
         ],
       };
-      const res = await fetch(`${baseUrl}/behaviors.php`, {
+      const res = await mahaverseFetch('/behaviors.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -119,7 +121,7 @@ export default function BehaviorCategoriesList() {
 
   const handleArchive = async (cat) => {
     try {
-      const res = await fetch(`${baseUrl}/behaviors.php`, {
+      const res = await mahaverseFetch('/behaviors.php', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: "category", id: cat.id }),
@@ -146,7 +148,7 @@ export default function BehaviorCategoriesList() {
           },
         ],
       };
-      const res = await fetch(`${baseUrl}/behaviors.php`, {
+      const res = await mahaverseFetch('/behaviors.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
