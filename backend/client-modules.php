@@ -3,7 +3,7 @@
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With');
 
 // Handle OPTIONS preflight request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -26,6 +26,23 @@ if ($conn->connect_error) {
 }
 
 $conn->set_charset('utf8mb4');
+
+function ensureClientCanonicalDomainModule($conn, $clientId, $moduleId)
+{
+    $canonical = [
+        'skill-acquisition' => 'Skill Acquisition',
+        'behaviour-reduction' => 'Behaviour Reduction',
+    ];
+    if (!isset($canonical[$moduleId])) {
+        return;
+    }
+    $id = $conn->real_escape_string($moduleId);
+    $cid = $conn->real_escape_string($clientId);
+    $name = $conn->real_escape_string($canonical[$moduleId]);
+    $conn->query("INSERT INTO client_modules (id, client_id, name, description, status, archived)
+                  VALUES ('$id', '$cid', '$name', '', 'Active', 0)
+                  ON DUPLICATE KEY UPDATE name='$name'");
+}
 
 $method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents('php://input'), true);
@@ -101,19 +118,30 @@ function saveActivityTasks($conn, $clientId, $activityId, $tasks)
         return;
     }
 
-    $step_order = 0;
+    usort($tasks, function ($a, $b) {
+        $oa = (int)($a['step_order'] ?? $a['sequence'] ?? 0);
+        $ob = (int)($b['step_order'] ?? $b['sequence'] ?? 0);
+        return $oa <=> $ob;
+    });
+
     $escapedClientId = $conn->real_escape_string($clientId);
     $escapedActivityId = $conn->real_escape_string($activityId);
-    
+    $fallbackOrder = 0;
+
     foreach ($tasks as $task) {
         $task_id = generateId();
         $task_name = $conn->real_escape_string($task['name'] ?? '');
+        if ($task_name === '') {
+            continue;
+        }
+        $explicitOrder = (int)($task['step_order'] ?? $task['sequence'] ?? 0);
+        $step_order = $explicitOrder > 0 ? $explicitOrder : ($fallbackOrder + 1);
+        $fallbackOrder = max($fallbackOrder, $step_order);
 
         $query = "INSERT INTO client_target_tasks (id, client_id, activity_id, name, step_order) VALUES ('$task_id', '$escapedClientId', '$escapedActivityId', '$task_name', $step_order)";
         if (!$conn->query($query)) {
             throw new Exception("Failed to insert task: " . $conn->error);
         }
-        $step_order++;
     }
 }
 
@@ -151,6 +179,9 @@ function handleGet($conn)
     $domainQuery = "SELECT * FROM client_domains WHERE client_id = '$clientId' ORDER BY created_at DESC";
     $domainResult = $conn->query($domainQuery);
     while ($row = $domainResult->fetch_assoc()) {
+        if (!empty($row['module_id'])) {
+            $row['moduleId'] = $row['module_id'];
+        }
         $domains[] = $row;
     }
 
@@ -251,6 +282,12 @@ function handleGet($conn)
         $finalActivities[] = $act;
     }
 
+    $behaviors = [];
+    require_once __DIR__ . '/behavior_helpers.php';
+    if (br_table_exists($conn, 'client_behaviors')) {
+        $behaviors = br_fetch_client_behaviors($conn, $clientId);
+    }
+
     echo json_encode([
         'success' => true,
         'data' => [
@@ -258,6 +295,7 @@ function handleGet($conn)
             'domains' => $domains,
             'programs' => $programs,
             'activities' => $finalActivities,
+            'behaviors' => $behaviors,
             'allPrompts' => $allPrompts
         ]
     ]);
@@ -346,14 +384,22 @@ function handlePost($conn, $input)
         if (isset($input['domains']) && is_array($input['domains'])) {
             foreach ($input['domains'] as $domain) {
                 $id = $conn->real_escape_string($domain['id']);
+                $moduleId = $conn->real_escape_string($domain['moduleId'] ?? $domain['module_id'] ?? '');
                 $name = $conn->real_escape_string($domain['name']);
                 $description = $conn->real_escape_string($domain['description'] ?? '');
                 $status = $conn->real_escape_string($domain['status'] ?? 'Active');
                 $archived = (int)($domain['archived'] ?? 0);
 
-                $query = "INSERT INTO client_domains (id, client_id, name, description, status, archived) 
-                          VALUES ('$id', '$clientId', '$name', '$description', '$status', $archived)
-                          ON DUPLICATE KEY UPDATE name='$name', description='$description', status='$status', archived=$archived";
+                if ($moduleId !== '') {
+                    ensureClientCanonicalDomainModule($conn, $clientId, $moduleId);
+                    $query = "INSERT INTO client_domains (id, client_id, module_id, name, description, status, archived) 
+                              VALUES ('$id', '$clientId', '$moduleId', '$name', '$description', '$status', $archived)
+                              ON DUPLICATE KEY UPDATE module_id='$moduleId', name='$name', description='$description', status='$status', archived=$archived";
+                } else {
+                    $query = "INSERT INTO client_domains (id, client_id, name, description, status, archived) 
+                              VALUES ('$id', '$clientId', '$name', '$description', '$status', $archived)
+                              ON DUPLICATE KEY UPDATE name='$name', description='$description', status='$status', archived=$archived";
+                }
                 if (!$conn->query($query)) {
                     throw new Exception("Error saving domain: " . $conn->error);
                 }
@@ -561,13 +607,20 @@ function handlePut($conn, $input)
     // Update domain
     if (isset($input['domainId']) && !isset($input['programId'])) {
         $domainId = $conn->real_escape_string($input['domainId']);
+        $moduleId = $conn->real_escape_string($input['moduleId'] ?? $input['module_id'] ?? '');
         $name = $conn->real_escape_string($input['name'] ?? '');
         $description = $conn->real_escape_string($input['description'] ?? '');
         $status = $conn->real_escape_string($input['status'] ?? 'Active');
         $archived = (int)($input['archived'] ?? 0);
 
-        $query = "UPDATE client_domains SET name='$name', description='$description', status='$status', archived=$archived 
-                  WHERE id='$domainId' AND client_id='$clientId'";
+        if ($moduleId !== '') {
+            ensureClientCanonicalDomainModule($conn, $clientId, $moduleId);
+            $query = "UPDATE client_domains SET module_id='$moduleId', name='$name', description='$description', status='$status', archived=$archived
+                      WHERE id='$domainId' AND client_id='$clientId'";
+        } else {
+            $query = "UPDATE client_domains SET name='$name', description='$description', status='$status', archived=$archived
+                      WHERE id='$domainId' AND client_id='$clientId'";
+        }
         if ($conn->query($query)) {
             echo json_encode(['success' => true, 'message' => 'Domain updated']);
         } else {

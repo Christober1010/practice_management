@@ -67,10 +67,17 @@ try {
     }
 
     // --------- DOMAINS ----------
+    $domainModuleCol = null;
+    $domainModuleColCheck = $conn->query("SHOW COLUMNS FROM client_domains LIKE 'module_id'");
+    if ($domainModuleColCheck && $domainModuleColCheck->num_rows > 0) {
+        $domainModuleCol = 'module_id';
+    }
+
     $sqlDomains = "
         SELECT 
             d.id,
             d.client_id,
+            " . ($domainModuleCol ? "d.`$domainModuleCol`," : "") . "
             d.NAME,
             d.description,
             d.STATUS,
@@ -88,6 +95,7 @@ try {
 
     $domains = [];
     while ($row = $resultDomains->fetch_assoc()) {
+        $moduleId = $domainModuleCol ? ($row[$domainModuleCol] ?? null) : null;
         $domains[] = [
             'id'          => $row['id'],
             'client_id'   => $row['client_id'],
@@ -95,6 +103,8 @@ try {
             'description' => $row['description'] ?? '',
             'status'      => $row['STATUS'] ?? 'Active',
             'archived'    => (bool)$row['archived'],
+            'module_id'   => $moduleId,
+            'moduleId'    => $moduleId,
             'created_at'  => $row['created_at'],
             'updated_at'  => $row['updated_at']
         ];

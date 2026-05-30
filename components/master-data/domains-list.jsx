@@ -39,6 +39,10 @@ import { fetchClients } from "@/app/store/clientSlice";
 
 import AddDomainModal from "./add-domain-modal";
 import DeleteConfirmModal from "./DeleteConfirmModal";
+import {
+  getDomainModuleLabel,
+  mergeCanonicalDomainModules,
+} from "@/lib/domain-module-options";
 
 export default function DomainsList() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -127,10 +131,20 @@ export default function DomainsList() {
     }
   }, []);
 
+  const allModules = useMemo(
+    () =>
+      mergeCanonicalDomainModules([
+        ...(programsData.modules || []),
+        ...(clientData.modules || []),
+      ]),
+    [programsData.modules, clientData.modules]
+  );
+
   // Generic domains
   const genericDomains = useMemo(() => {
     if (!programsData.domains) return [];
     return programsData.domains.map((d) => {
+      const moduleId = d.moduleId || d.module_id;
       return {
         id: `generic-${d.id}`,
         rawId: d.id,
@@ -138,10 +152,13 @@ export default function DomainsList() {
         description: d.description || "",
         status: d.status || d.STATUS || "Active",
         archived: !!d.archived,
+        moduleId,
+        module_id: moduleId,
+        moduleName: getDomainModuleLabel(allModules, moduleId),
         type: "generic",
       };
     });
-  }, [programsData]);
+  }, [programsData, allModules]);
 
   // Client domains
   // Client domains - FIXED to get real client name
@@ -151,15 +168,19 @@ export default function DomainsList() {
     // We'll match client_id with actual client from Redux store
     const clientMap = {};
     clients.forEach((c) => {
-      clientMap[String(c.id)] =
+      const cid = String(c.client_id ?? c.id ?? "").trim();
+      if (!cid) return;
+      clientMap[cid] =
         `${c.first_name || ""} ${c.last_name || ""}`.trim() ||
         c.name ||
         c.client_name ||
+        c.NAME ||
         "Unknown Client";
     });
 
     return clientData.domains.map((d) => {
       const clientName = clientMap[String(d.client_id)] || "Unknown Client";
+      const moduleId = d.moduleId || d.module_id;
 
       return {
         id: `client-${d.id}`,
@@ -170,10 +191,13 @@ export default function DomainsList() {
         archived: d.archived === 1 || d.archived === true,
         client_name: clientName, // This will now show real name
         client_id: d.client_id,
+        moduleId,
+        module_id: moduleId,
+        moduleName: getDomainModuleLabel(allModules, moduleId),
         type: "client",
       };
     });
-  }, [clientData.domains, clients]);
+  }, [clientData.domains, clients, allModules]);
 
   const clientNames = useMemo(() => {
     const names = clientDomains.map((d) => d.client_name).filter(Boolean);
@@ -192,7 +216,7 @@ export default function DomainsList() {
 
     return list
       .filter((d) => {
-        const matchesSearch = [d.name, d.description].some((v) =>
+        const matchesSearch = [d.name, d.description, d.moduleName].some((v) =>
           String(v || "")
             .toLowerCase()
             .includes(searchTerm.toLowerCase())
@@ -216,29 +240,23 @@ export default function DomainsList() {
   const handleAddDomain = async (domain) => {
     const isClientDomain = domain.client_id != null;
 
+    const moduleId = domain.moduleId || domain.module_id;
+    const domainRow = {
+      id: domain.rawId || domain.id,
+      name: domain.name,
+      description: domain.description || "",
+      status: domain.status || "Active",
+      archived: 0,
+      ...(moduleId ? { moduleId, module_id: moduleId } : {}),
+    };
+
     const payload = isClientDomain
       ? {
           client_id: domain.client_id,
-          domains: [
-            {
-              id: domain.id,
-              name: domain.name,
-              description: domain.description || "",
-              status: domain.status || "Active",
-              archived: 0,
-            },
-          ],
+          domains: [domainRow],
         }
       : {
-          domains: [
-            {
-              id: domain.id,
-              name: domain.name,
-              description: domain.description || "",
-              status: domain.status || "Active",
-              archived: 0,
-            },
-          ],
+          domains: [domainRow],
         };
 
     try {
@@ -434,7 +452,8 @@ export default function DomainsList() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50">
-                    <TableHead className="px-2">Domain Name</TableHead>
+                    <TableHead className="px-2">Domain</TableHead>
+                    <TableHead className="px-2">Module</TableHead>
                     <TableHead className="px-2">Type</TableHead>
                     <TableHead className="hidden sm:table-cell">
                       Status
@@ -454,6 +473,10 @@ export default function DomainsList() {
                             Archived
                           </Badge>
                         )}
+                      </TableCell>
+
+                      <TableCell className="p-2 text-slate-700">
+                        {domain.moduleName || "—"}
                       </TableCell>
 
                       {/* Type badge (same as modules table) */}

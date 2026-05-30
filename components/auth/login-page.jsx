@@ -21,6 +21,10 @@ import { MAHAVERSE_PERMISSIONS_REFRESH_EVENT } from "@/lib/mahaverse-permissions
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
 
+/**
+ * GET me-permissions.php — effective keys + canonical role from DB (same source as APIs).
+ * @returns {{ permissions: string[], role?: string } | null}
+ */
 async function fetchMahaversePermissionKeysFromApi() {
   if (!API_BASE_URL) return null;
   const token = localStorage.getItem("aba_token");
@@ -31,11 +35,36 @@ async function fetchMahaversePermissionKeysFromApi() {
     });
     const data = await res.json();
     if (!data.success || !Array.isArray(data.permissions)) return null;
-    return data.permissions;
+    return {
+      permissions: data.permissions,
+      role: typeof data.role === "string" ? data.role : undefined,
+    };
   } catch (e) {
     console.warn("me-permissions:", e);
     return null;
   }
+}
+
+/** Merge server RBAC snapshot into stored user (permissions + role from token/DB). */
+function syncUserFromMePermissions(prev, payload) {
+  if (!payload || !Array.isArray(payload.permissions)) return prev;
+  const roleFromServer =
+    typeof payload.role === "string" && payload.role.trim() !== ""
+      ? payload.role.trim()
+      : prev.role;
+  const samePerms =
+    JSON.stringify(prev.permissions || []) === JSON.stringify(payload.permissions);
+  const sameRole =
+    String(prev.role || "").toLowerCase() ===
+    String(roleFromServer || "").toLowerCase();
+  if (samePerms && sameRole) return prev;
+  const next = {
+    ...prev,
+    permissions: payload.permissions,
+    role: roleFromServer,
+  };
+  localStorage.setItem("aba_user", JSON.stringify(next));
+  return next;
 }
 // Old Launchpad backend base URL (so Launchpad doesn't use localhost in dev)
 const LAUNCHPAD_API_BASE_URL =
@@ -92,14 +121,11 @@ export default function LoginPage() {
     const expectedId = user.id;
     let cancelled = false;
     (async () => {
-      const perms = await fetchMahaversePermissionKeysFromApi();
-      if (cancelled || !perms) return;
+      const payload = await fetchMahaversePermissionKeysFromApi();
+      if (cancelled || !payload) return;
       setUser((u) => {
         if (!u || u.id !== expectedId) return u;
-        if (JSON.stringify(u.permissions || []) === JSON.stringify(perms)) return u;
-        const next = { ...u, permissions: perms };
-        localStorage.setItem("aba_user", JSON.stringify(next));
-        return next;
+        return syncUserFromMePermissions(u, payload);
       });
     })();
     return () => {
@@ -118,18 +144,50 @@ export default function LoginPage() {
         return;
       }
       if (!parsed?.id) return;
-      const perms = await fetchMahaversePermissionKeysFromApi();
-      if (!perms) return;
+      const payload = await fetchMahaversePermissionKeysFromApi();
+      if (!payload) return;
       setUser((u) => {
         if (!u || u.id !== parsed.id) return u;
-        const next = { ...u, permissions: perms };
-        localStorage.setItem("aba_user", JSON.stringify(next));
-        return next;
+        return syncUserFromMePermissions(u, payload);
       });
     };
     window.addEventListener(MAHAVERSE_PERMISSIONS_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(MAHAVERSE_PERMISSIONS_REFRESH_EVENT, onRefresh);
   }, []);
+
+  // Tab focus / visibility: pick up RBAC edits without requiring full reload.
+  useEffect(() => {
+    if (isCheckingAuth || !user?.id) return;
+    let debounce;
+    const run = async () => {
+      const raw = localStorage.getItem("aba_user");
+      if (!raw) return;
+      let parsed;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      const expectedId = parsed?.id;
+      if (!expectedId) return;
+      const payload = await fetchMahaversePermissionKeysFromApi();
+      if (!payload) return;
+      setUser((u) => {
+        if (!u || u.id !== expectedId) return u;
+        return syncUserFromMePermissions(u, payload);
+      });
+    };
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      clearTimeout(debounce);
+      debounce = setTimeout(run, 400);
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      clearTimeout(debounce);
+    };
+  }, [isCheckingAuth, user?.id]);
 
   const handleSignIn = async () => {
     setIsLoading(true);

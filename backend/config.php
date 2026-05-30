@@ -141,8 +141,13 @@ function getAuthenticatedUserFromToken($rawToken) {
         return null;
     }
 
+    $userCols = 'u.id, u.email AS username, u.role';
+    $lc = @$conn->query("SHOW COLUMNS FROM users LIKE 'link_staff_id'");
+    if ($lc && $lc->num_rows > 0) {
+        $userCols .= ', u.link_staff_id, u.link_client_id';
+    }
     $sql = "
-        SELECT u.id, u.email AS username, u.role
+        SELECT {$userCols}
         FROM AuthTokens t
         JOIN users u ON u.id = t.user_id
         WHERE t.token_hash = ?
@@ -208,6 +213,33 @@ function requireUser() {
         exit;
     }
     return $user;
+}
+
+/**
+ * Resolve client_auth.insurance_id when saving a client.
+ * Payload may send a UI slot ("0","1"), or the real client_insurance.insurance_id PK after reload.
+ */
+function mahaverse_resolve_authorization_insurance_id(array $auth, array $insuranceIdsFromThisRequest): ?int {
+    if (!$insuranceIdsFromThisRequest) {
+        return null;
+    }
+    $raw = $auth['insurance_id'] ?? null;
+    if ($raw === null || $raw === '') {
+        return (int) $insuranceIdsFromThisRequest[0];
+    }
+    $n = count($insuranceIdsFromThisRequest);
+    if (is_numeric($raw)) {
+        $asInt = (int) $raw;
+        if ($asInt >= 0 && $asInt < $n) {
+            return (int) $insuranceIdsFromThisRequest[$asInt];
+        }
+        foreach ($insuranceIdsFromThisRequest as $id) {
+            if ((int) $id === $asInt) {
+                return (int) $id;
+            }
+        }
+    }
+    return (int) $insuranceIdsFromThisRequest[0];
 }
 
 require_once __DIR__ . '/rbac_helpers.php';

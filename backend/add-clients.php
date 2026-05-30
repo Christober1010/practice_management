@@ -12,8 +12,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
-$user = getAuthenticatedUser();
-if ($user && !rbac_user_has_permission_key($user['role'], 'clients.write', 'mahaverse')) {
+$authUser = getAuthenticatedUser();
+if (
+    $authUser
+    && !rbac_user_has_permission_key($authUser['role'], 'clients.create', 'mahaverse')
+    && !rbac_user_has_permission_key($authUser['role'], 'clients.write', 'mahaverse')
+) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Permission denied']);
     exit;
@@ -21,11 +25,11 @@ if ($user && !rbac_user_has_permission_key($user['role'], 'clients.write', 'maha
 
 $host = "db5018266079.hosting-data.io";
 $dbname = "dbs14484433";
-$user = "dbu3321929";
+$dbUser = "dbu3321929";
 $pass = "M@h@B3h@v1or@lH3@lth4@ut1sm";
 
 try {
-    $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass);
+    $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $dbUser, $pass);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     // Decode JSON input
@@ -42,6 +46,11 @@ try {
     }
 
     $clientId = $input["id"];
+
+    if ($authUser) {
+        $rbacM = getDBConnection();
+        rbac_enforce_client_action($authUser, $rbacM, 'create', null);
+    }
 
     // Begin transaction for atomic operations
     $conn->beginTransaction();
@@ -460,13 +469,9 @@ try {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
 
         foreach ($input["authorizations"] as $auth) {
-            $insuranceIndex = isset($auth["insurance_id"]) ? intval($auth["insurance_id"]) : -1;
-            $linkedInsuranceId = ($insuranceIndex >= 0 && isset($insuranceIds[$insuranceIndex]))
-                ? $insuranceIds[$insuranceIndex]
-                : null;
+            $linkedInsuranceId = mahaverse_resolve_authorization_insurance_id($auth, $insuranceIds);
 
             if (!$linkedInsuranceId) {
-                // Skip authorizations not linked to an existing insurance
                 continue;
             }
 

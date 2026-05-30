@@ -29,6 +29,26 @@ import ViewSessionModal from "./ViewSessionModal";
 import SessionNotesModal from "../clients/session-notes-modal";
 import { toast } from "sonner";
 import { formatTime12hFromUTC, toMinutes12h } from "@/lib/time-utils";
+import { usePermissions } from "@/hooks/usePermissions";
+import { getMahaverseAuthHeaders } from "@/lib/api-auth";
+import {
+  allowsSchedulingCreateSession,
+  allowsSchedulingDeleteSession,
+  allowsSchedulingReadSessions,
+  allowsSchedulingSessionNotes,
+  allowsSchedulingUpdateSession,
+} from "@/lib/scheduling-rbac-ui";
+import {
+  canDeleteScheduledSession,
+  sessionIsRenderedOrReadyToBill,
+} from "@/lib/scheduling-session-status";
+
+const jsonAuthHeaders = () =>
+  getMahaverseAuthHeaders({
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    "Cache-Control": "no-cache",
+  });
 
 // =====================
 // Date helpers with UTC support
@@ -135,12 +155,32 @@ function isSameLocalDay(aStr, bDate) {
   return sameDay(local, bDate);
 }
 
+/** Local calendar Y-M-D for a UTC appointment string (matches grid day grouping). */
+function localYmdFromUtc(utcStr) {
+  if (!utcStr) return null;
+  let isoString = utcStr;
+  if (!isoString.includes("T")) {
+    isoString = utcStr.replace(" ", "T");
+  }
+  if (!isoString.endsWith("Z")) {
+    isoString += "Z";
+  }
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function getVisualStatus(session, todayDate) {
   const isCancelled =
     (session.status || "").toLowerCase() === "cancelled" ||
     (session.STATUS || "").toLowerCase() === "cancelled";
 
   if (isCancelled) return "cancelled";
+
+  if (sessionIsRenderedOrReadyToBill(session)) return "rendered";
 
   const isToday = isSameLocalDay(session.startDateTime, todayDate);
   if (isToday) return "today";
@@ -160,8 +200,8 @@ function getVisualStatus(session, todayDate) {
   if (dayOnlySession > dayOnlyToday) return "upcoming";
 
   const rendered =
-    Number.parseFloat(session.renderedHours ?? session.rendered_hours ?? 0) >
-      0 || (session.status || "").toLowerCase() === "rendered";
+    Number.parseFloat(session.renderedHours ?? session.rendered_hours ?? 0) > 0 ||
+    (session.status || "").toLowerCase() === "rendered";
   return rendered ? "rendered" : "unrendered";
 }
 
@@ -217,7 +257,14 @@ function normalizeSessionStatus(session) {
   return statusMap[lowerStatus] || oldStatus;
 }
 
-export default function SchedulingView() {
+export default function SchedulingView({ userRole }) {
+  const { canAny } = usePermissions(userRole ?? {});
+  const allowRead = allowsSchedulingReadSessions(canAny);
+  const allowCreate = allowsSchedulingCreateSession(canAny);
+  const allowUpdate = allowsSchedulingUpdateSession(canAny);
+  const allowDelete = allowsSchedulingDeleteSession(canAny);
+  const allowNotes = allowsSchedulingSessionNotes(canAny);
+
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState("month");
   const [isNewSessionModalOpen, setIsNewSessionModalOpen] = useState(false);
@@ -244,6 +291,10 @@ export default function SchedulingView() {
   const [sessionToDelete, setSessionToDelete] = useState(null);
   const [isSessionNotesModalOpen, setIsSessionNotesModalOpen] = useState(false);
   const [sessionNotesClient, setSessionNotesClient] = useState(null);
+  const [sessionNotesLink, setSessionNotesLink] = useState({
+    date: null,
+    sessionId: null,
+  });
 
   useEffect(() => {
     const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -374,9 +425,12 @@ export default function SchedulingView() {
     setLoading(true);
     setError(null);
     try {
+      if (!baseUrl) {
+        throw new Error("NEXT_PUBLIC_BASE_URL is not configured");
+      }
       const resp = await fetch(`${baseUrl}/add-session.php`, {
         method: "GET",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonAuthHeaders(),
         cache: "no-store",
       });
       if (!resp.ok) {
@@ -409,6 +463,10 @@ export default function SchedulingView() {
             row.session_id || `temp-${Math.random().toString(36).substring(2)}`,
           clientId: row.client_id,
           clientName: row.clientName || "",
+          authId:
+            row.auth_id !== null && row.auth_id !== undefined
+              ? String(row.auth_id)
+              : "",
           providerId: providerId,
           provider_name: row.provider_name,
           supervising_provider_name: row.supervising_provider_name,
@@ -433,6 +491,8 @@ export default function SchedulingView() {
               : computedScheduled,
           renderedHours:
             row.rendered_hours != null ? Number(row.rendered_hours) : 0,
+          claimId: row.claim_id != null && row.claim_id !== "" ? String(row.claim_id) : "",
+          claimStatus: row.claim_status != null ? String(row.claim_status) : "",
         };
       });
 
@@ -467,8 +527,14 @@ export default function SchedulingView() {
   }, [dateRange, baseUrl]);
 
   useEffect(() => {
+    if (!allowRead) {
+      setSessions([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     refreshSessions();
-  }, [refreshSessions]);
+  }, [refreshSessions, allowRead]);
 
   const handlePrevious = () => {
     switch (viewMode) {
@@ -514,6 +580,10 @@ export default function SchedulingView() {
   };
 
   const handleOpenAddSessionForDate = (dateObj) => {
+    if (!allowCreate) {
+      toast.error("You don’t have permission to schedule sessions.");
+      return;
+    }
     if (!dateObj) return;
     setSelectedDate(dateObj);
     setEditingSession(null);
@@ -521,33 +591,51 @@ export default function SchedulingView() {
   };
 
   const handleEditSession = (session) => {
-    console.log(session,"from view")
+    if (!allowUpdate) {
+      toast.error("You don’t have permission to edit sessions.");
+      return;
+    }
     setEditingSession({
       sessionId: session.sessionId,
       clientId: session.clientId,
       clientName: session.clientName || "",
       providerId: session.providerId,
+      providerName: session.provider_name,
       supervisingProviderId: session.supervisingProviderId,
+      supervisingProviderName: session.supervising_provider_name,
       startDateTime: session.startDateTime,
       endDateTime: session.endDateTime,
       startTZ: session.startTZ,
       endTZ: session.endTZ,
-      authId:session.authId,
+      authId: session.authId,
       authCode: session.authCode,
       recurring: session.recurring,
       placeOfService: session.placeOfService,
       locationAddress: session.locationAddress,
       quickNote: session.quickNote,
+      status: session.status,
+      renderedHours: session.renderedHours,
+      scheduledHours: session.scheduledHours,
+      claimId: session.claimId,
+      claimStatus: session.claimStatus,
     });
     setIsNewSessionModalOpen(true);
   };
 
   const handleViewSession = (session) => {
+    if (!allowRead) {
+      toast.error("You don’t have permission to view sessions.");
+      return;
+    }
     setViewedSession({ ...session });
     setIsViewModalOpen(true);
   };
 
   const handleOpenSessionNotes = (session) => {
+    if (!allowNotes) {
+      toast.error("You don’t have permission to view session notes.");
+      return;
+    }
     // Create a minimal client object from session data
     const clientNameParts = (session.clientName || "").split(" ");
     const client = {
@@ -557,11 +645,24 @@ export default function SchedulingView() {
       last_name: clientNameParts.slice(1).join(" ") || "",
       middle_name: "",
     };
+    const ymd = localYmdFromUtc(session.startDateTime);
+    setSessionNotesLink({
+      date: ymd,
+      sessionId: session.sessionId ?? null,
+    });
     setSessionNotesClient(client);
     setIsSessionNotesModalOpen(true);
   };
 
   const handleDeleteSession = async (sessionData) => {
+    if (!allowDelete) {
+      toast.error("You don’t have permission to delete sessions.");
+      return;
+    }
+    if (!canDeleteScheduledSession(sessionData)) {
+      toast.error("Completed sessions cannot be deleted.");
+      return;
+    }
     const determinedEditMode = sessionData.recurring ? "recurring" : "single";
     setSessionToDelete({
       ...sessionData,
@@ -571,17 +672,14 @@ export default function SchedulingView() {
   };
 
   const confirmDeleteSession = async (editModeOverride = null) => {
+    if (!allowDelete) return;
     if (!sessionToDelete) return;
     setDeletingSessionId(sessionToDelete.sessionId);
     try {
       const editMode = editModeOverride || sessionToDelete.editMode || "single";
       const resp = await fetch(`${baseUrl}/add-session.php`, {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache",
-          Accept: "application/json",
-        },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify({
           session_id: sessionToDelete.sessionId,
           editMode,
@@ -924,15 +1022,17 @@ export default function SchedulingView() {
               <span className="font-semibold text-slate-700">
                 {formatDateLabel(currentDate)}
               </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 text-teal-600 ring-teal-600 bg-transparent"
-                onClick={() => handleOpenAddSessionForDate(currentDate)}
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                Add Session
-              </Button>
+              {allowCreate && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-teal-600 ring-teal-600 bg-transparent"
+                  onClick={() => handleOpenAddSessionForDate(currentDate)}
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Session
+                </Button>
+              )}
             </div>
 
             {/* Grid lines and live timeline */}
@@ -1041,7 +1141,7 @@ export default function SchedulingView() {
                           )}
                           {s.authCode && (
                             <p className="text-xs text-gray-500">
-                              Auth Code: {s.authCode}
+                              Billing code: {s.authCode}
                             </p>
                           )}
                           {s.quickNote && (
@@ -1064,43 +1164,49 @@ export default function SchedulingView() {
                           >
                             <Eye className="h-3 w-3" />
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenSessionNotes(s);
-                            }}
-                            className="bg-white/90 hover:bg-white border-slate-300 text-teal-600 hover:text-teal-700 h-7 text-xs px-2"
-                            title="Session Notes"
-                          >
-                            <BookOpen className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleEditSession(s);
-                            }}
-                            className="bg-white/90 hover:bg-white border-slate-300 text-slate-700 h-7 text-xs px-2"
-                            title="Edit Session"
-                          >
-                            <Edit className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteSession(s);
-                            }}
-                            disabled={deletingSessionId === s.sessionId}
-                            className="bg-red-50 hover:bg-red-100 border-slate-300 text-red-500 hover:text-red-700 h-7 text-xs px-2"
-                            title="Delete Session"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
+                          {allowNotes && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenSessionNotes(s);
+                              }}
+                              className="bg-white/90 hover:bg-white border-slate-300 text-teal-600 hover:text-teal-700 h-7 text-xs px-2"
+                              title="Session Notes"
+                            >
+                              <BookOpen className="h-3 w-3" />
+                            </Button>
+                          )}
+                          {allowUpdate && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditSession(s);
+                              }}
+                              className="bg-white/90 hover:bg-white border-slate-300 text-slate-700 h-7 text-xs px-2"
+                              title="Edit Session"
+                            >
+                              <Edit className="h-3 w-3" />
+                            </Button>
+                          )}
+                          {allowDelete && canDeleteScheduledSession(s) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteSession(s);
+                              }}
+                              disabled={deletingSessionId === s.sessionId}
+                              className="bg-red-50 hover:bg-red-100 border-slate-300 text-red-500 hover:text-red-700 h-7 text-xs px-2"
+                              title="Delete Session"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1361,7 +1467,7 @@ export default function SchedulingView() {
                                 )}
                                 {s.authCode && (
                                   <p className="text-xs text-gray-500">
-                                    Auth Code: {s.authCode}
+                                    Billing code: {s.authCode}
                                   </p>
                                 )}
                                 {s.quickNote && (
@@ -1382,18 +1488,20 @@ export default function SchedulingView() {
                                     <Eye className="h-3 w-3 mr-1" />
                                     View
                                   </Button>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleOpenSessionNotes(s);
-                                    }}
-                                    className="flex-1 text-xs text-teal-600 hover:text-teal-700"
-                                  >
-                                    <BookOpen className="h-3 w-3 mr-1" />
-                                    Notes
-                                  </Button>
+                                  {allowNotes && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenSessionNotes(s);
+                                      }}
+                                      className="flex-1 text-xs text-teal-600 hover:text-teal-700"
+                                    >
+                                      <BookOpen className="h-3 w-3 mr-1" />
+                                      Notes
+                                    </Button>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -1474,17 +1582,19 @@ export default function SchedulingView() {
                           </Badge>
                         )}
                       </span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0 text-teal-700 opacity-0 group-hover:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenAddSessionForDate(dateObj);
-                        }}
-                      >
-                        <Plus className="h-3 w-3" />
-                      </Button>
+                      {allowCreate && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-teal-700 opacity-0 group-hover:opacity-100"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenAddSessionForDate(dateObj);
+                          }}
+                        >
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                      )}
                     </div>
                     <div className="space-y-1 relative">
                       {sortedSessions.length > 0 ? (
@@ -1612,17 +1722,19 @@ export default function SchedulingView() {
                         </Badge>
                       )}
                     </span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 w-6 p-0 text-teal-700"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenAddSessionForDate(dateObj);
-                      }}
-                    >
-                      <Plus className="h-3 w-3" />
-                    </Button>
+                    {allowCreate && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 w-6 p-0 text-teal-700"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenAddSessionForDate(dateObj);
+                        }}
+                      >
+                        <Plus className="h-3 w-3" />
+                      </Button>
+                    )}
                   </div>
                   <div className="space-y-1 relative">
                     {sortedSessions.length > 0 ? (
@@ -1691,6 +1803,16 @@ export default function SchedulingView() {
 
   return (
     <div className="space-y-8">
+      {!allowRead && (
+        <Card className="border-amber-200 bg-amber-50 shadow-lg">
+          <CardContent className="py-6 text-sm text-slate-700">
+            You don&apos;t have permission to view the schedule (requires
+            scheduling.session.view or scheduling.read).
+          </CardContent>
+        </Card>
+      )}
+      {allowRead && (
+        <>
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-3xl font-bold text-foreground">Scheduling</h2>
@@ -1698,13 +1820,15 @@ export default function SchedulingView() {
             Manage appointments and therapy sessions
           </p>
         </div>
-        <Button
-          onClick={() => handleOpenAddSessionForDate(selectedDate || today)}
-          className="bg-teal-600 hover:bg-teal-700 text-white"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Add Session
-        </Button>
+        {allowCreate && (
+          <Button
+            onClick={() => handleOpenAddSessionForDate(selectedDate || today)}
+            className="bg-teal-600 hover:bg-teal-700 text-white"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Add Session
+          </Button>
+        )}
       </div>
       <Card>
         <CardHeader className="pb-4">
@@ -1829,6 +1953,8 @@ export default function SchedulingView() {
           {!loading && !error && renderCalendarContent()}
         </CardContent>
       </Card>
+        </>
+      )}
       <NewSessionFormModal
         isOpen={isNewSessionModalOpen}
         onClose={() => {
@@ -1838,6 +1964,7 @@ export default function SchedulingView() {
         onSave={handleAddNewSession}
         selectedDate={selectedDate}
         editingSession={editingSession}
+        existingSessions={sessions}
       />
       <DeleteConfirmationModal
         isOpen={deleteModalOpen}
@@ -1855,6 +1982,12 @@ export default function SchedulingView() {
           setViewedSession(null);
         }}
         session={viewedSession}
+        canEdit={allowUpdate}
+        canDelete={
+          allowDelete &&
+          viewedSession != null &&
+          canDeleteScheduledSession(viewedSession)
+        }
         onEdit={(sess) => {
           setIsViewModalOpen(false);
           setViewedSession(null);
@@ -1873,8 +2006,14 @@ export default function SchedulingView() {
         onClose={() => {
           setIsSessionNotesModalOpen(false);
           setSessionNotesClient(null);
+          setSessionNotesLink({ date: null, sessionId: null });
         }}
         client={sessionNotesClient}
+        linkedSessionDate={sessionNotesLink.date}
+        linkedSessionId={sessionNotesLink.sessionId}
+        onSessionBillingFinalized={() => {
+          void refreshSessions();
+        }}
       />
     </div>
   );

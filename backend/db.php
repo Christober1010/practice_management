@@ -6,7 +6,8 @@ error_reporting(E_ALL);
 
 header("Access-Control-Allow-Origin: *"); // Allow requests from any origin (for development)
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Accept");
+header("Access-Control-Max-Age: 86400");
 header("Content-Type: application/json");
 
 // Database credentials from environment variables (recommended for production)

@@ -11,8 +11,12 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
-$user = getAuthenticatedUser();
-if ($user && !rbac_user_has_permission_key($user['role'], 'clients.write', 'mahaverse')) {
+$authUser = getAuthenticatedUser();
+if (
+    $authUser
+    && !rbac_user_has_permission_key($authUser['role'], 'clients.update', 'mahaverse')
+    && !rbac_user_has_permission_key($authUser['role'], 'clients.write', 'mahaverse')
+) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Permission denied']);
     exit;
@@ -20,11 +24,11 @@ if ($user && !rbac_user_has_permission_key($user['role'], 'clients.write', 'maha
 
 $host = "db5018266079.hosting-data.io";
 $dbname = "dbs14484433";
-$user = "dbu3321929";
+$dbUser = "dbu3321929";
 $pass = "M@h@B3h@v1or@lH3@lth4@ut1sm";
 
 try {
-    $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass);
+    $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $dbUser, $pass);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     $input = json_decode(file_get_contents("php://input"), true);
@@ -43,6 +47,27 @@ try {
     }
 
     $clientId = $input["client_id"];
+
+    if ($authUser) {
+        $rbacM = getDBConnection();
+        $archiving = isset($input['archived']) && (int) $input['archived'] === 1;
+        if ($archiving) {
+            rbac_enforce_client_action($authUser, $rbacM, 'archive', $clientId);
+        } else {
+            rbac_enforce_client_action($authUser, $rbacM, 'update', $clientId);
+        }
+    }
+
+    // Normalize workflow status: empty / whitespace → "New". (If client_status is still an ENUM
+    // that omits labels like "Active Treatment", MySQL may coerce invalid values to '' — run
+    // alter-clients-client-status-varchar.sql on the database.)
+    $clientStatusRaw = $input["client_status"] ?? null;
+    $clientStatus = is_string($clientStatusRaw)
+        ? trim($clientStatusRaw)
+        : (string) ($clientStatusRaw ?? '');
+    if ($clientStatus === '') {
+        $clientStatus = 'New';
+    }
 
     $conn->beginTransaction();
 
@@ -122,7 +147,7 @@ try {
     $params = [
         ":client_id" => $clientId,
         ":client_uuid" => $input["client_uuid"] ?? '',
-        ":client_status" => $input["client_status"] ?? 'New',
+        ":client_status" => $clientStatus,
         ":wait_list_status" => $input["wait_list_status"] ?? 'No',
         ":first_name" => $input["first_name"],
         ":middle_name" => $input["middle_name"] ?? '',
@@ -519,20 +544,7 @@ try {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         foreach ($input["authorizations"] as $auth) {
-            // Map insurance_id from frontend to actual database insurance_id
-            $linkedInsuranceId = null;
-
-            if (isset($auth["insurance_id"]) && $auth["insurance_id"] !== "0" && $auth["insurance_id"] !== "") {
-                $insuranceIndex = intval($auth["insurance_id"]);
-                if ($insuranceIndex >= 0 && isset($insuranceIds[$insuranceIndex])) {
-                    $linkedInsuranceId = $insuranceIds[$insuranceIndex];
-                }
-            }
-
-            // If no valid insurance link and we have at least one insurance, use the first one
-            if (!$linkedInsuranceId && !empty($insuranceIds)) {
-                $linkedInsuranceId = $insuranceIds[0];
-            }
+            $linkedInsuranceId = mahaverse_resolve_authorization_insurance_id($auth, $insuranceIds);
 
             // Skip authorization if we can't link it to an insurance
             if (!$linkedInsuranceId) {

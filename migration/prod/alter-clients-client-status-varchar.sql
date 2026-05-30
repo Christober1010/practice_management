@@ -1,0 +1,10 @@
+-- If client_status is an ENUM that omits workflow values (e.g. "Active Treatment", "Reauthorization"),
+-- MySQL may store an empty string for invalid ENUM values (typical in non-strict SQL mode).
+-- Symptom: update payload includes client_status but get-clients returns "".
+--
+-- Verify:
+--   SHOW FULL COLUMNS FROM clients LIKE 'client_status';
+--
+-- Fix (run once on production after verifying Type is enum(...)):
+-- ALTER TABLE clients
+--   MODIFY COLUMN client_status VARCHAR(64) NOT NULL DEFAULT 'New';

@@ -29,9 +29,12 @@ import { getMahaverseAuthHeaders } from "@/lib/api-auth";
 import {
   buildPermissionModules,
   buildPresetDraft,
+  filterClientsWriteForAdminMatrix,
   filterPermissionModules,
+  mahaverseHasGranularClientPerms,
 } from "@/lib/permission-modules";
 import { unifyNavViewPairsForAdminUi, rowPermKeys } from "@/lib/nav-view-unify";
+import { rbacPermUsesTriState } from "@/lib/rbac-scope-ui";
 import PermissionModule from "@/components/admin/permissions/permission-module";
 import PermissionSummary from "@/components/admin/permissions/permission-summary";
 import { notifyMahaversePermissionsRefresh } from "@/lib/mahaverse-permissions-events";
@@ -52,11 +55,42 @@ function authHeaders(scope) {
 
 function grantsToBaselineMap(matrix, roleName) {
   const granted = new Set((matrix?.grants && matrix.grants[roleName]) || []);
+  const scopes = (matrix?.grant_scopes && matrix.grant_scopes[roleName]) || {};
   const map = {};
   for (const p of matrix?.permissions || []) {
-    map[p.perm_key] = granted.has(p.perm_key);
+    const pk = p.perm_key;
+    if (rbacPermUsesTriState(pk)) {
+      map[pk] = granted.has(pk) ? scopes[pk] || "all" : "off";
+    } else {
+      map[pk] = granted.has(pk);
+    }
   }
   return map;
+}
+
+function draftToSavePayload(draftRow, permissions) {
+  /** @type {{ perm_key: string, access_scope: string }[]} */
+  const grant_entries = [];
+  for (const p of permissions || []) {
+    const pk = p.perm_key;
+    const v = draftRow[pk];
+    if (v === true) {
+      grant_entries.push({ perm_key: pk, access_scope: "all" });
+    } else if (v === "self" || v === "all") {
+      grant_entries.push({ perm_key: pk, access_scope: v });
+    }
+  }
+  const permission_keys = grant_entries.map((e) => e.perm_key);
+  return { grant_entries, permission_keys };
+}
+
+function countEnabledInDraft(draftRow, permissions) {
+  let n = 0;
+  for (const p of permissions || []) {
+    const v = draftRow[p.perm_key];
+    if (v === true || v === "self" || v === "all") n++;
+  }
+  return n;
 }
 
 export default function RoleAccessView() {
@@ -107,15 +141,21 @@ export default function RoleAccessView() {
       }
       setMatrix(data);
       const nextDraft = {};
+      const scopesByRole = data.grant_scopes || {};
       for (const role of data.roles || []) {
         nextDraft[role] = {};
         const granted = (data.grants && data.grants[role]) || [];
+        const scMap = scopesByRole[role] || {};
         for (const pk of granted) {
-          nextDraft[role][pk] = true;
+          nextDraft[role][pk] = rbacPermUsesTriState(pk)
+            ? scMap[pk] || "all"
+            : true;
         }
         for (const p of data.permissions || []) {
           if (nextDraft[role][p.perm_key] === undefined) {
-            nextDraft[role][p.perm_key] = false;
+            nextDraft[role][p.perm_key] = rbacPermUsesTriState(p.perm_key)
+              ? "off"
+              : false;
           }
         }
       }
@@ -123,7 +163,9 @@ export default function RoleAccessView() {
       if (data.roles && data.roles.length) {
         setSelectedRole((prev) => (prev && data.roles.includes(prev) ? prev : data.roles[0]));
       }
-      const displayRows = unifyNavViewPairsForAdminUi(data.permissions || [], scope);
+      const displayRows = filterClientsWriteForAdminMatrix(
+        unifyNavViewPairsForAdminUi(data.permissions || [], scope)
+      );
       const mods = buildPermissionModules(displayRows, scope);
       setOpenModules(mods.map((m) => m.id));
       setLastSavedAt(new Date());
@@ -144,7 +186,10 @@ export default function RoleAccessView() {
   const role = selectedRole || roles[0];
 
   const displayRows = useMemo(
-    () => unifyNavViewPairsForAdminUi(matrix?.permissions || [], scope),
+    () =>
+      filterClientsWriteForAdminMatrix(
+        unifyNavViewPairsForAdminUi(matrix?.permissions || [], scope)
+      ),
     [matrix?.permissions, scope]
   );
 
@@ -179,8 +224,8 @@ export default function RoleAccessView() {
   const isDirty = useMemo(() => {
     if (!matrix?.permissions?.length || !role) return false;
     for (const p of matrix.permissions) {
-      const cur = !!draft[role]?.[p.perm_key];
-      const base = !!baselineMap[p.perm_key];
+      const cur = draft[role]?.[p.perm_key];
+      const base = baselineMap[p.perm_key];
       if (cur !== base) return true;
     }
     return false;
@@ -188,12 +233,22 @@ export default function RoleAccessView() {
 
   const totalEnabled = useMemo(() => {
     if (!matrix?.permissions) return 0;
-    return matrix.permissions.filter((p) => enabledMap[p.perm_key]).length;
+    return matrix.permissions.filter((p) => {
+      const v = enabledMap[p.perm_key];
+      return v === true || v === "self" || v === "all";
+    }).length;
   }, [matrix?.permissions, enabledMap]);
 
   const modulesWithEnabled = useMemo(() => {
     const rowFullyEnabled = (row) =>
-      rowPermKeys(row).length > 0 && rowPermKeys(row).every((k) => !!enabledMap[k]);
+      rowPermKeys(row).length > 0 &&
+      rowPermKeys(row).every((k) => {
+        const v = enabledMap[k];
+        if (rbacPermUsesTriState(k)) {
+          return v === "self" || v === "all";
+        }
+        return !!v;
+      });
     const list = [];
     for (const mod of allModules) {
       const rowsEnabled = mod.items.filter((row) => rowFullyEnabled(row)).length;
@@ -202,11 +257,20 @@ export default function RoleAccessView() {
     return list;
   }, [allModules, enabledMap]);
 
-  const onSetKeys = useCallback((keys, checked) => {
+  const onSetKeys = useCallback((keys, checkedOrScope) => {
     setDraft((prev) => {
       const r = { ...(prev[role] || {}) };
       for (const k of keys) {
-        r[k] = checked;
+        if (
+          typeof checkedOrScope === "string" &&
+          (checkedOrScope === "off" ||
+            checkedOrScope === "self" ||
+            checkedOrScope === "all")
+        ) {
+          r[k] = checkedOrScope;
+        } else {
+          r[k] = !!checkedOrScope;
+        }
       }
       return { ...prev, [role]: r };
     });
@@ -220,13 +284,16 @@ export default function RoleAccessView() {
         const r = { ...(prev[role] || {}) };
         for (const row of mod.items) {
           for (const k of rowPermKeys(row)) {
-            r[k] = true;
+            r[k] = rbacPermUsesTriState(k) ? "all" : true;
           }
+        }
+        if (moduleId === "clients" && mahaverseHasGranularClientPerms(matrix?.permissions)) {
+          r.clients.write = false;
         }
         return { ...prev, [role]: r };
       });
     },
-    [allModules, role]
+    [allModules, matrix?.permissions, role]
   );
 
   const clearModule = useCallback(
@@ -237,13 +304,16 @@ export default function RoleAccessView() {
         const r = { ...(prev[role] || {}) };
         for (const row of mod.items) {
           for (const k of rowPermKeys(row)) {
-            r[k] = false;
+            r[k] = rbacPermUsesTriState(k) ? "off" : false;
           }
+        }
+        if (moduleId === "clients" && mahaverseHasGranularClientPerms(matrix?.permissions)) {
+          r.clients.write = false;
         }
         return { ...prev, [role]: r };
       });
     },
-    [allModules, role]
+    [allModules, matrix?.permissions, role]
   );
 
   const expandAll = () => setOpenModules(filteredModules.map((m) => m.id));
@@ -273,9 +343,10 @@ export default function RoleAccessView() {
   };
 
   const runSave = async (roleToSave) => {
-    const keys = Object.entries(draft[roleToSave] || {})
-      .filter(([, v]) => v)
-      .map(([k]) => k);
+    const { grant_entries, permission_keys } = draftToSavePayload(
+      draft[roleToSave] || {},
+      matrix?.permissions || []
+    );
     setSaving(true);
     try {
       const res = await fetch(rbacUrl("rbac-save-role.php", scope), {
@@ -287,7 +358,8 @@ export default function RoleAccessView() {
         body: JSON.stringify({
           role: roleToSave,
           scope,
-          permission_keys: keys,
+          permission_keys,
+          grant_entries,
         }),
       });
       const data = await res.json();
@@ -308,13 +380,14 @@ export default function RoleAccessView() {
   };
 
   const requestSave = (roleToSave) => {
-    const keys = Object.entries(draft[roleToSave] || {})
-      .filter(([, v]) => v)
-      .map(([k]) => k);
+    const enabledCount = countEnabledInDraft(
+      draft[roleToSave] || {},
+      matrix?.permissions || []
+    );
     const isAdminDowngrade =
       roleToSave === "admin" &&
       scope === "mahaverse" &&
-      keys.length < ((matrix?.permissions || []).length * 0.5);
+      enabledCount < ((matrix?.permissions || []).length * 0.5);
     if (isAdminDowngrade) {
       setPendingSave(roleToSave);
       setConfirmOpen(true);

@@ -16,6 +16,7 @@ import {
 import toast from "react-hot-toast";
 import ClientDomainModal from "./add-client-domain";
 import { ProgramsListModal } from "./add-client-program";
+import ClientBehaviorSetupSection from "./client-behavior-setup-section";
 import { TargetsListModal } from "./add-client-target";
 
 export default function ClientConfigureDataPanel({ clientId, clientName }) {
@@ -54,6 +55,8 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
             id: d.id,
             name: d.NAME || d.name || "Unnamed Domain",
             description: d.description || "",
+            module_id: d.module_id || d.moduleId || d.MODULE_ID,
+            moduleId: d.module_id || d.moduleId || d.MODULE_ID,
           })),
         );
         setClientModules(
@@ -360,21 +363,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
         </TabsContent>
 
         <TabsContent value="behavior" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Behavior Reduction</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-slate-600 space-y-2">
-              <p>
-                Behavior definitions for session data collection can be wired here in a follow-up once
-                a dedicated client-level behavior API is available.
-              </p>
-              <p className="text-slate-500">
-                For now, enter behavior counts during <strong>Session Notes</strong> using the
-                Behavior Reduction panel for the active session.
-              </p>
-            </CardContent>
-          </Card>
+          <ClientBehaviorSetupSection clientId={clientId} clientName={clientName} />
         </TabsContent>
       </Tabs>
 

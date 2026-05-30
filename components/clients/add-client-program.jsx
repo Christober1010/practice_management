@@ -28,6 +28,10 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Card, CardContent, CardHeader } from "../ui/card";
+import {
+  getDomainModuleLabel,
+  mergeCanonicalDomainModules,
+} from "@/lib/domain-module-options";
 
 export function ProgramsListModal({
   isOpen,
@@ -198,13 +202,10 @@ export default function ClientProgramModal({
     }));
   }, [domains]);
 
-  const normalizedModules = useMemo(() => {
-    return modules.map((m) => ({
-      id: m.id || m.ID,
-      name: m.NAME || m.name || "Unnamed Module",
-      description: m.description || m.DESCRIPTION || "",
-    }));
-  }, [modules]);
+  const modulesForLookup = useMemo(
+    () => mergeCanonicalDomainModules(modules),
+    [modules]
+  );
 
   // Reset form when modal opens/closes or editing changes
   useEffect(() => {
@@ -226,34 +227,34 @@ export default function ClientProgramModal({
   const selectedDomain = normalizedDomains.find(
     (d) => String(d.id) === String(domainId)
   );
-  const selectedModule = normalizedModules.find(
-    (m) => m.id === selectedDomain?.module_id
-  );
+  const selectedModuleName = selectedDomain
+    ? getDomainModuleLabel(modulesForLookup, selectedDomain.module_id)
+    : "";
 
   // Filter and sort domains with search
   const filteredDomains = useMemo(() => {
     return normalizedDomains
       .filter((domain) => {
         if (!domain.id) return false;
-        const module = normalizedModules.find((m) => m.id === domain.module_id);
-        const moduleName = module?.name || "";
+        const moduleName = getDomainModuleLabel(
+          modulesForLookup,
+          domain.module_id
+        );
         const domainName = domain.name || "";
         const fullLabel = `${moduleName} - ${domainName}`.toLowerCase();
         const search = domainSearch.toLowerCase();
         return fullLabel.includes(search);
       })
       .sort((a, b) => {
-        const moduleA =
-          normalizedModules.find((m) => m.id === a.module_id)?.name || "";
-        const moduleB =
-          normalizedModules.find((m) => m.id === b.module_id)?.name || "";
+        const moduleA = getDomainModuleLabel(modulesForLookup, a.module_id);
+        const moduleB = getDomainModuleLabel(modulesForLookup, b.module_id);
         if (moduleA !== moduleB) return moduleA.localeCompare(moduleB);
         return a.name.localeCompare(b.name);
       });
-  }, [normalizedDomains, normalizedModules, domainSearch]);
+  }, [normalizedDomains, modulesForLookup, domainSearch]);
 
   const selectedDomainLabel = selectedDomain
-    ? `${selectedModule?.name || "Unknown Module"} - ${selectedDomain.name}`
+    ? `${selectedModuleName !== "—" ? selectedModuleName : "Unknown Module"} - ${selectedDomain.name}`
     : "Select a domain";
 
   const handleSubmit = async (e) => {
@@ -313,12 +314,12 @@ export default function ClientProgramModal({
             </div>
 
             {/* Breadcrumb */}
-            {clientName && selectedModule && selectedDomain && (
+            {clientName && selectedDomain && selectedModuleName !== "—" && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap justify-center mt-2">
                 <span className="font-medium">{clientName}</span>
                 <ChevronRight size={16} />
                 <span className="font-medium text-blue-600">
-                  {selectedModule.name}
+                  {selectedModuleName}
                 </span>
                 <ChevronRight size={16} />
                 <span className="font-medium text-teal-600">
@@ -367,12 +368,10 @@ export default function ClientProgramModal({
 
                 {filteredDomains.length > 0 ? (
                   filteredDomains.map((domain) => {
-                    const module = normalizedModules.find(
-                      (m) => m.id === domain.module_id
+                    const moduleName = getDomainModuleLabel(
+                      modulesForLookup,
+                      domain.module_id
                     );
-                    const displayLabel = `${module?.name || "No Module"} - ${
-                      domain.name
-                    }`;
                     return (
                       <SelectItem
                         key={domain.id}
@@ -382,7 +381,7 @@ export default function ClientProgramModal({
                         <div className="flex flex-col">
                           <span className="font-medium">{domain.name}</span>
                           <span className="text-xs text-muted-foreground">
-                            {module?.name || "Unknown Module"}
+                            {moduleName !== "—" ? moduleName : "Unknown Module"}
                           </span>
                         </div>
                       </SelectItem>

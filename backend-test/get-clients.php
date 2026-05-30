@@ -14,20 +14,22 @@ header("Content-Type: application/json; charset=utf-8");
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
-$user = getAuthenticatedUser();
-if ($user && !rbac_user_has_permission_key($user['role'], 'clients.read', 'mahaverse')) {
+require_once __DIR__ . '/client_auth_units_helpers.php';
+$authUser = getAuthenticatedUser();
+if ($authUser && !rbac_user_has_permission_key($authUser['role'], 'clients.read', 'mahaverse')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Permission denied']);
     exit;
 }
 
-$host = "db5018266079.hosting-data.io";
-$dbname = "dbs14484433";
-$user = "dbu3321929";
+// Must match backend-test/config.php getDBConnection() and add-session.php (test DB)
+$host = "db5018419668.hosting-data.io";
+$dbname = "dbs14649042";
+$dbUser = "dbu1183438";
 $pass = "M@h@B3h@v1or@lH3@lth4@ut1sm";
 
 try {
-    $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass);
+    $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $dbUser, $pass);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     // DEBUG: Let's see what's actually in the client_auth table
@@ -161,8 +163,9 @@ try {
             $client['insurances'] = $insurancesByClient[$clientId];
         }
 
-        // Add authorizations
+        // Add authorizations (units_serviced synced from Ready to Bill sessions)
         if (isset($authorizationsByClient[$clientId])) {
+            client_auth_enrich_authorizations_pdo($conn, $authorizationsByClient[$clientId]);
             $client['authorizations'] = $authorizationsByClient[$clientId];
         }
 
@@ -247,6 +250,27 @@ try {
         }
     }
     unset($client);
+
+    if ($authUser) {
+        try {
+            $rbacConn = getDBConnection();
+            $role = strtolower((string) ($authUser['role'] ?? ''));
+            if ($role !== 'admin' && rbac_tables_exist($rbacConn)) {
+                $gm = rbac_fetch_grant_map_from_db($rbacConn, $role);
+                $scView = rbac_grant_scope_for_perm($gm, 'clients.view');
+                if ($scView === null) {
+                    $scView = rbac_grant_scope_for_perm($gm, 'clients.read');
+                }
+                if ($scView === 'self') {
+                    $clientsData = array_filter($clientsData, function ($c) use ($authUser, $rbacConn) {
+                        return rbac_user_may_access_client_row($authUser, $rbacConn, $c['client_id'] ?? '');
+                    });
+                }
+            }
+        } catch (Exception $e) {
+            // keep full list if RBAC filter cannot run
+        }
+    }
 
     echo json_encode([
         "success" => true,

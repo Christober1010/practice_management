@@ -22,6 +22,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DEFAULT_DOMAIN_MODULE_KEY,
+  DOMAIN_MODULE_OPTIONS,
+  inferDomainModuleKey,
+  resolveModuleIdForDomain,
+} from "@/lib/domain-module-options";
 
 const generateUUID = () =>
   "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -244,30 +250,43 @@ export function DomainFormModal({
   isOpen,
   onClose,
   onSave,
-  modules, // Keep for backward compatibility but not used
+  modules = [],
   editingDomain,
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [moduleKey, setModuleKey] = useState(DEFAULT_DOMAIN_MODULE_KEY);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (editingDomain) {
       setName(editingDomain.name || "");
       setDescription(editingDomain.description || "");
+      setModuleKey(
+        inferDomainModuleKey(
+          modules,
+          editingDomain.moduleId || editingDomain.module_id
+        )
+      );
     } else {
       setName("");
       setDescription("");
+      setModuleKey(DEFAULT_DOMAIN_MODULE_KEY);
     }
-  }, [editingDomain, isOpen]);
+  }, [editingDomain, isOpen, modules]);
 
   const handleSubmit = async () => {
     if (!name.trim()) return toast.error("Name is required");
+
+    const moduleId = resolveModuleIdForDomain(modules, moduleKey);
+    if (!moduleId) return toast.error("Please select a module");
 
     setLoading(true);
     await onSave({
       name: name.trim(),
       description: description.trim(),
+      moduleId,
+      module_id: moduleId,
     });
     setLoading(false);
   };
@@ -281,6 +300,22 @@ export function DomainFormModal({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
+          <div>
+            <Label>Module *</Label>
+            <Select value={moduleKey} onValueChange={setModuleKey}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select module" />
+              </SelectTrigger>
+              <SelectContent>
+                {DOMAIN_MODULE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.key} value={opt.key}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div>
             <Label>Name *</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} />

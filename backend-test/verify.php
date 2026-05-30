@@ -22,10 +22,10 @@ if (!$authHeader || !preg_match('/Bearer\s+(.*)$/i', $authHeader, $matches)) {
 
 $token = $matches[1];
 
-// Database configuration
-$host = 'db5018266079.hosting-data.io';
-$dbname = 'dbs14484433';
-$username = 'dbu3321929';
+// Test DB — same as config.php getDBConnection() / add-session.php
+$host = 'db5018419668.hosting-data.io';
+$dbname = 'dbs14649042';
+$username = 'dbu1183438';
 $password = 'M@h@B3h@v1or@lH3@lth4@ut1sm';
 
 try {

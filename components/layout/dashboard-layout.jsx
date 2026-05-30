@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import Header from "./header";
 import { usePermissions } from "@/hooks/usePermissions";
-import { VIEW_REQUIRED_PERMISSION, PERM } from "@/lib/rbac-permission-keys";
+import { VIEW_REQUIRED_PERMISSION, SUBMENU_VIEW_OR_MANAGE, PERM } from "@/lib/rbac-permission-keys";
 import RoleAccessView from "@/components/admin/role-access-view";
 import AdminDashboard from "@/components/dashboards/admin-dashboard";
 import BCBADashboard from "@/components/dashboards/bcba-dashboard";
@@ -14,6 +14,7 @@ import SchedulingView from "@/components/scheduling/scheduling-view";
 import ClientsView from "@/components/clients/clients-view";
 import SessionsView from "@/components/sessions/sessions-view";
 import BillingView from "@/components/billing/billing-view";
+import ClaimsView from "@/components/billing/claims-view";
 import ParentPortal from "@/components/portal/parent-portal";
 import StaffView from "@/components/staff/staff-view";
 import UsersView from "@/components/users/users-view";
@@ -21,8 +22,10 @@ import ProgramsView from "@/components/master-data/ProgramsView";
 import ModulesList from "@/components/master-data/modules-list";
 import DomainsList from "@/components/master-data/domains-list";
 import ProgramsList from "@/components/master-data/programs-list";
-import PromptsList from "@/components/master-data/prompts-list";
 import TargetsList from "@/components/master-data/targets-list";
+import PromptsList from "@/components/master-data/prompts-list";
+import BehaviorCategoriesList from "@/components/master-data/behavior-categories-list";
+import BehaviorsList from "@/components/master-data/behaviors-list";
 import ManageDataView from "@/components/manage-data/manage-data-view";
 import ProviderView from "@/components/manage-data/provider-view";
 import ProviderServiceCodeView from "@/components/manage-data/provider-service-code-view";
@@ -31,6 +34,7 @@ import DiagnosisView from "@/components/manage-data/diagnosis-view";
 import FacilityTypesView from "@/components/manage-data/facility-types-view";
 import TreatmentTypesSetup from "@/components/manage-data/treatment-types-setup";
 import DocumentTypesSetup from "@/components/manage-data/document-types-setup";
+import PayerPaymentsView from "@/components/manage-data/payer-payments-view";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import AppSidebar from "@/components/layout/app-sidebar";
 import ReportsView from "../reports/reports-view";
@@ -38,7 +42,7 @@ import LocationsView from "../locations/locations-view";
 
 export default function DashboardLayout({ userRole, onLogout }) {
   const [currentView, setCurrentView] = useState("dashboard");
-  const { can } = usePermissions(userRole);
+  const { can, canAny } = usePermissions(userRole);
 
   // Listen for navigation events from other components
   useEffect(() => {
@@ -75,7 +79,11 @@ export default function DashboardLayout({ userRole, onLogout }) {
     }
 
     const required = VIEW_REQUIRED_PERMISSION[currentView];
-    if (required && !can(required)) {
+    const requiredAny = SUBMENU_VIEW_OR_MANAGE[currentView];
+    const denied =
+      (requiredAny && !canAny(requiredAny)) ||
+      (!requiredAny && required && !can(required));
+    if (denied) {
       return (
         <div className="max-w-lg mx-auto py-16 text-center space-y-4">
           <p className="text-lg text-slate-700">You don&apos;t have access to this area.</p>
@@ -109,15 +117,17 @@ export default function DashboardLayout({ userRole, onLogout }) {
             return <AdminDashboard />;
         }
       case "scheduling":
-        return <SchedulingView />;
+        return <SchedulingView userRole={userRole} />;
       case "clients":
-        return <ClientsView />;
+        return <ClientsView userRole={userRole} />;
       case "sessions":
         return <SessionsView />;
       case "staff":
-        return <StaffView />;
+        return <StaffView userRole={userRole} />;
       case "billing":
         return <BillingView />;
+      case "claims":
+        return <ClaimsView />;
       case "portal":
         return <ParentPortal />;
       case "users":
@@ -134,6 +144,10 @@ export default function DashboardLayout({ userRole, onLogout }) {
         return <TargetsList />;
       case "prompts":
         return <PromptsList />;
+      case "behaviorCategories":
+        return <BehaviorCategoriesList />;
+      case "behaviors":
+        return <BehaviorsList />;
       case "reports":
         return <ReportsView />;
       case "locations":
@@ -154,6 +168,8 @@ export default function DashboardLayout({ userRole, onLogout }) {
         return <TreatmentTypesSetup />;
       case "documentTypes":
         return <DocumentTypesSetup />;
+      case "payerPayments":
+        return <PayerPaymentsView />;
       default:
         return <AdminDashboard />;
     }

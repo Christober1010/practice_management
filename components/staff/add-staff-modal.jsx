@@ -76,6 +76,79 @@ const mapCountryFromShort = (countryShort, countryLong) => {
   return map[(countryShort || "").toLowerCase()] || countryLong || "USA";
 };
 
+/** Coerce API null/undefined for controlled inputs */
+const str = (v) => (v == null || v === false ? "" : String(v));
+
+/**
+ * Prefer structured address columns; if all empty, parse legacy `address`
+ * (e.g. "123 St, Chicago, IL 60601") so city/state/zip show in the edit form.
+ */
+function structuredAddressFromStaffRecord(staff) {
+  const line1 = str(staff.address_line_1);
+  const line2 = str(staff.address_line_2);
+  let city = str(staff.city);
+  let state = str(staff.state);
+  let zip = str(staff.zipcode);
+  if (line1 || line2 || city || state || zip) {
+    return {
+      address_line_1: line1,
+      address_line_2: line2,
+      city,
+      state,
+      zipcode: zip,
+    };
+  }
+  const full = str(staff.address).trim();
+  if (!full) {
+    return {
+      address_line_1: "",
+      address_line_2: "",
+      city: "",
+      state: "",
+      zipcode: "",
+    };
+  }
+  const parts = full.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length === 1) {
+    return {
+      address_line_1: parts[0],
+      address_line_2: "",
+      city: "",
+      state: "",
+      zipcode: "",
+    };
+  }
+  if (parts.length === 2) {
+    return {
+      address_line_1: parts[0],
+      address_line_2: "",
+      city: parts[1],
+      state: "",
+      zipcode: "",
+    };
+  }
+  const a1 = parts[0];
+  const c = parts[1];
+  const tail = parts.slice(2).join(", ");
+  const m = tail.match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)\s*$/);
+  if (m) {
+    return {
+      address_line_1: a1,
+      address_line_2: "",
+      city: c,
+      state: m[1].toUpperCase(),
+      zipcode: m[2],
+    };
+  }
+  return {
+    address_line_1: a1,
+    address_line_2: "",
+    city: c,
+    state: "",
+    zipcode: tail,
+  };
+}
+
 const initialStaffState = {
   // Personal Information
   firstName: "",
@@ -295,6 +368,19 @@ export default function AddStaffModal({
 
   const clients = useSelector((state) => state.clients.items);
 
+  const isClientActive = (client) => {
+    if (!client) return false;
+    const active =
+      client.is_active !== false &&
+      client.is_active !== 0 &&
+      client.is_active !== "0";
+    const archived =
+      client.archived === true ||
+      client.archived === 1 ||
+      client.archived === "1";
+    return active && !archived;
+  };
+
   useEffect(() => {
     if (baseUrl) {
       fetch(`${baseUrl}/document-types.php`)
@@ -321,15 +407,15 @@ export default function AddStaffModal({
         }));
       };
 
+      const addr = structuredAddressFromStaffRecord(editingStaff);
+
       setFormData({
         ...initialStaffState,
         ...editingStaff,
-        address_line_1: editingStaff.address_line_1 ?? editingStaff.address?.split(",")[0] ?? "",
-        address_line_2: editingStaff.address_line_2 ?? "",
-        city: editingStaff.city ?? "",
-        state: editingStaff.state ?? "",
-        zipcode: editingStaff.zipcode ?? "",
-        country: editingStaff.country ?? "USA",
+        ...addr,
+        country: str(editingStaff.country) || "USA",
+        location: str(editingStaff.location),
+        dob: editingStaff.dob ? String(editingStaff.dob).slice(0, 10) : "",
         jobTitle: editingStaff.job_title ?? editingStaff.jobTitle ?? "",
         ssn: editingStaff.ssn_encrypted ?? editingStaff.ssn ?? "",
         emergencyContactName: editingStaff.emergency_contact_name ?? editingStaff.emergencyContactName ?? "",
@@ -497,6 +583,7 @@ export default function AddStaffModal({
       locationPreferences,
       dateOfJoining: formData.dateOfJoining || "",
       dateOfLeaving: formData.dateOfLeaving || "",
+      location: (formData.location && String(formData.location).trim()) || null,
     };
 
     // Normalize certifications from the form array
@@ -576,6 +663,13 @@ export default function AddStaffModal({
         }
         if (!formData.status.trim()) {
           currentTabErrors.status = "Missing Required Entry";
+          hasErrors = true;
+        }
+        if (
+          formData.status === "Terminated" &&
+          !String(formData.dateOfLeaving || "").trim()
+        ) {
+          currentTabErrors.dateOfLeaving = "Missing Required Entry";
           hasErrors = true;
         }
         break;
@@ -673,8 +767,11 @@ export default function AddStaffModal({
     }
 
     const dataToSave = prepareDataForSave();
-    await onSave(dataToSave);
+    const ok = await onSave(dataToSave);
     setSaving(false);
+    if (ok === true) {
+      handleClose();
+    }
   };
 
   const handleNextTab = (e) => {
@@ -925,10 +1022,20 @@ export default function AddStaffModal({
       alert("File size must be less than 25MB.");
       return;
     }
-    handleDocumentChange(docUuid, "document_file", file);
-    handleDocumentChange(docUuid, "document_original_filename", file.name);
-    handleDocumentChange(docUuid, "document_path", "");
-    handleDocumentChange(docUuid, "document_filename", "");
+    setFormData((prev) => ({
+      ...prev,
+      documents: (prev.documents || []).map((d) =>
+        d.doc_uuid === docUuid
+          ? {
+              ...d,
+              document_file: file,
+              document_original_filename: file.name,
+              document_path: "",
+              document_filename: "",
+            }
+          : d,
+      ),
+    }));
   };
 
   const removeDocument = (docUuid) => {
@@ -1201,6 +1308,13 @@ export default function AddStaffModal({
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {renderInputWithError(
+                      "location",
+                      "Primary location / office",
+                      formData.location,
+                      (e) => handleInputChange("location", e.target.value),
+                      { placeholder: "e.g. Naperville clinic, Home-based" }
+                    )}
                     {renderSelectWithError(
                       "staffType",
                       "Staff Type *",
@@ -1209,6 +1323,9 @@ export default function AddStaffModal({
                       <>
                         <SelectItem value="RBT">
                           RBT (Registered Behavior Technician)
+                        </SelectItem>
+                        <SelectItem value="BT">
+                          BT (Behavior Technician)
                         </SelectItem>
                         <SelectItem value="BCBA">
                           BCBA (Board Certified Behavior Analyst)
@@ -1223,7 +1340,13 @@ export default function AddStaffModal({
                       "status",
                       "Staff Status *",
                       formData.status,
-                      (value) => handleInputChange("status", value),
+                      (value) => {
+                        handleInputChange("status", value);
+                        if (value === "Terminated") {
+                          handleInputChange("assignedStaff", []);
+                          handleInputChange("assignedClients", []);
+                        }
+                      },
                       <>
                         <SelectItem value="Active">Active</SelectItem>
                         <SelectItem value="Inactive">Inactive</SelectItem>
@@ -1243,7 +1366,10 @@ export default function AddStaffModal({
                       { type: "date" }
                     )}
                     <div>
-                      <Label htmlFor="dateOfLeaving">Date of Leaving</Label>
+                      <Label htmlFor="dateOfLeaving">
+                        Date of Leaving
+                        {formData.status === "Terminated" ? " *" : ""}
+                      </Label>
                       <Input
                         id="dateOfLeaving"
                         type="date"
@@ -1252,6 +1378,11 @@ export default function AddStaffModal({
                           handleInputChange("dateOfLeaving", e.target.value)
                         }
                       />
+                      {errors.dateOfLeaving ? (
+                        <p className="text-sm text-red-600 mt-1">
+                          {errors.dateOfLeaving}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                   <div>
@@ -1305,7 +1436,7 @@ export default function AddStaffModal({
                     <div>
                       <Label>Assigned Clients</Label>
                       <MultiSelect
-                        options={clients.map((client) => ({
+                        options={clients.filter(isClientActive).map((client) => ({
                           value: client.client_id,
                           label: `${client.first_name} ${client.last_name}`,
                         }))}

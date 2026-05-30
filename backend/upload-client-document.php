@@ -1,7 +1,7 @@
 <?php
 /**
- * Upload Client Document to Google Drive
- * Similar to signature upload in launchpad, but for client documents
+ * Upload client documents to Google Drive (or local fallback).
+ * Staff documents use upload-staff-document.php (same backend folder).
  */
 
 header("Access-Control-Allow-Origin: *");
@@ -130,7 +130,13 @@ try {
 
     $file = $_FILES['file'];
     $docUuid = $_POST['doc_uuid'] ?? '';
-    $clientId = $_POST['client_id'] ?? '';
+    $clientId = trim((string)($_POST['client_id'] ?? ''));
+
+    if ($clientId === '') {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'client_id is required']);
+        exit();
+    }
 
     // Validate file
     $maxSize = 10 * 1024 * 1024; // 10MB

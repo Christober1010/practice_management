@@ -398,6 +398,10 @@ export default function SchedulingView() {
             row.session_id || `temp-${Math.random().toString(36).substring(2)}`,
           clientId: row.client_id,
           clientName: row.clientName || "",
+          authId:
+            row.auth_id !== null && row.auth_id !== undefined
+              ? String(row.auth_id)
+              : "",
           providerId: providerId,
           provider_name: row.provider_name,
           supervising_provider_name: row.supervising_provider_name,
@@ -914,7 +918,7 @@ export default function SchedulingView() {
                           )}
                           {s.authCode && (
                             <p className="text-xs text-gray-500">
-                              Auth Code: {s.authCode}
+                              Billing code: {s.authCode}
                             </p>
                           )}
                           {s.quickNote && (
@@ -1195,7 +1199,7 @@ export default function SchedulingView() {
                                 )}
                                 {s.authCode && (
                                   <p className="text-xs text-gray-500">
-                                    Auth Code: {s.authCode}
+                                    Billing code: {s.authCode}
                                   </p>
                                 )}
                                 {s.quickNote && (

@@ -17,7 +17,7 @@ $result = $stmt->get_result();
 
 if ($result->num_rows === 0) {
     echo "ERROR: Admin user not found in database!\n";
-    echo "You need to run the SQL script: backend/create_users_table.sql\n";
+    echo "You need to run the SQL script: migration/launchpad/shared/create_users_table.sql\n";
     exit(1);
 }
 

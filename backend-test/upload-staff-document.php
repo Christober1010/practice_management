@@ -1,18 +1,20 @@
 <?php
 /**
- * Upload Staff Document to Google Drive or local storage
- * For Driver License, Background Check, etc.
+ * Upload staff documents to Google Drive or local storage. TEST ENVIRONMENT.
+ * Client documents use upload-client-document.php — separate URL so logs and DevTools match the entity.
  */
 
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
-header("Content-Type: application/json");
+header("Access-Control-Allow-Headers: Content-Type, Accept, Accept-Language, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With");
+header("Access-Control-Max-Age: 86400");
 
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
-    http_response_code(200);
+if (($_SERVER["REQUEST_METHOD"] ?? "") === "OPTIONS") {
+    http_response_code(204);
     exit();
 }
+
+header("Content-Type: application/json; charset=utf-8");
 
 if (file_exists(__DIR__ . '/config.php')) {
     require_once __DIR__ . '/config.php';
@@ -20,7 +22,10 @@ if (file_exists(__DIR__ . '/config.php')) {
 
 $possiblePaths = [
     __DIR__ . '/drive_helper.php',
-    dirname(__DIR__) . '/backend/drive_helper.php',
+    __DIR__ . '/backend/drive_helper.php',
+    dirname(__DIR__) . '/backend-test/drive_helper.php',
+    __DIR__ . '/../maha-launchpad/backend/drive_helper.php',
+    dirname(__DIR__) . '/maha-launchpad/backend/drive_helper.php',
 ];
 $driveHelperPath = null;
 foreach ($possiblePaths as $path) {
@@ -29,13 +34,23 @@ foreach ($possiblePaths as $path) {
         break;
     }
 }
-if ($driveHelperPath) {
-    foreach ([__DIR__ . '/vendor/autoload.php', dirname(__DIR__) . '/vendor/autoload.php'] as $vp) {
-        if (file_exists($vp)) {
-            require_once $vp;
-            break;
-        }
+
+$vendorPaths = [
+    __DIR__ . '/vendor/autoload.php',
+    __DIR__ . '/backend/vendor/autoload.php',
+    dirname(__DIR__) . '/vendor/autoload.php',
+    dirname(__DIR__) . '/backend-test/vendor/autoload.php',
+    __DIR__ . '/../maha-launchpad/vendor/autoload.php',
+    dirname(__DIR__) . '/maha-launchpad/vendor/autoload.php',
+];
+foreach ($vendorPaths as $vp) {
+    if (file_exists($vp)) {
+        require_once $vp;
+        break;
     }
+}
+
+if ($driveHelperPath) {
     require_once $driveHelperPath;
 }
 
@@ -46,10 +61,10 @@ if (!isset($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
 }
 
 $file = $_FILES['file'];
-$staffId = $_POST['staff_id'] ?? '';
+$staffId = trim((string)($_POST['staff_id'] ?? ''));
 $docUuid = $_POST['doc_uuid'] ?? '';
 
-if (empty($staffId)) {
+if ($staffId === '') {
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'staff_id is required']);
     exit();
@@ -90,11 +105,17 @@ if ($driveHelperPath && function_exists('isGoogleDriveEnabled') && isGoogleDrive
         $rootFolderId = function_exists('getDriveRootFolderId') ? getDriveRootFolderId() : null;
         $useSharedDrive = function_exists('isSharedDriveEnabled') ? isSharedDriveEnabled() : false;
         $folderId = getOrCreateDriveFolder($folderName, $rootFolderId, $useSharedDrive);
-        if (!$folderId) throw new Exception("Failed to create staff folder");
+        if (!$folderId) {
+            throw new Exception("Failed to create staff folder");
+        }
         $fileContent = file_get_contents($file['tmp_name']);
-        if ($fileContent === false) throw new Exception("Failed to read file");
+        if ($fileContent === false) {
+            throw new Exception("Failed to read file");
+        }
         $driveResult = uploadFileContentToDrive($fileContent, $storedFilename, $mime, $folderId, $useSharedDrive);
-        if (!$driveResult || !isset($driveResult['fileId'])) throw new Exception("Failed to upload to Drive");
+        if (!$driveResult || !isset($driveResult['fileId'])) {
+            throw new Exception("Failed to upload to Drive");
+        }
         $documentPath = 'drive://' . $driveResult['fileId'];
         $documentFilename = $driveResult['fileId'];
         $savedToDrive = true;

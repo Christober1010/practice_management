@@ -75,6 +75,32 @@ import ClientModulesModal from "./add-client-module";
 import ClientDomainModal from "./add-client-domain";
 import ClientProgramModal, { ProgramsListModal } from "./add-client-program";
 import ClientTargetModal, { TargetsListModal } from "./add-client-target";
+import { usePermissions } from "@/hooks/usePermissions";
+import {
+  allowsClientArchive,
+  allowsClientCreate,
+  allowsClientSessionNotes,
+  allowsClientUpdate,
+  allowsReadClientDetails,
+  canOpenClientMasterDataNav,
+} from "@/lib/clients-rbac-ui";
+
+/** Stable ref for useMemo — row “master data” submenu items */
+const MASTER_DATA_ROW_MENU_ITEMS = [
+  { id: "domains", label: "Domains", icon: Layers, color: "text-indigo-600" },
+  {
+    id: "programs",
+    label: "Programs",
+    icon: ListChecks,
+    color: "text-teal-600",
+  },
+  {
+    id: "targets",
+    label: "Targets",
+    icon: Target,
+    color: "text-orange-600",
+  },
+];
 
 function generateUUID() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -90,7 +116,26 @@ function generateClientUUID() {
     .padStart(16, "0");
 }
 
-export default function ClientsView() {
+export default function ClientsView({ userRole }) {
+  const { can, canAny } = usePermissions(userRole ?? {});
+  const allowCreate = allowsClientCreate(canAny);
+  const allowUpdate = allowsClientUpdate(canAny);
+  const allowArchive = allowsClientArchive(canAny);
+  const allowReadDetails = allowsReadClientDetails(canAny);
+  const allowSessionNotes = allowsClientSessionNotes(canAny);
+  const filteredMasterDataMenu = useMemo(
+    () =>
+      MASTER_DATA_ROW_MENU_ITEMS.filter((s) =>
+        canOpenClientMasterDataNav(can, s.id),
+      ),
+    [can],
+  );
+  const showRowActionsMenu =
+    allowSessionNotes ||
+    allowUpdate ||
+    allowArchive ||
+    filteredMasterDataMenu.length > 0;
+
   // UI-only state
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -153,6 +198,10 @@ export default function ClientsView() {
   }, [clients, searchTerm, statusFilter, activeInactiveFilter, showArchived]);
 
   const handleAddClient = async (clientData) => {
+    if (!allowCreate) {
+      toast.error("You do not have permission to create clients.");
+      return;
+    }
     const newClient = {
       ...clientData,
       id: generateUUID(),
@@ -233,6 +282,10 @@ export default function ClientsView() {
   };
 
   const handleEditClient = async (clientData) => {
+    if (!allowUpdate) {
+      toast.error("You do not have permission to edit clients.");
+      return;
+    }
     try {
       // Upload any queued document files ONLY on Save (not on file select)
       const docs = Array.isArray(clientData.documents)
@@ -301,12 +354,20 @@ export default function ClientsView() {
   };
 
   const handleOpenEditModal = (client) => {
+    if (!allowUpdate) {
+      toast.error("You do not have permission to edit clients.");
+      return;
+    }
     setModalInitialTab(null);
     setEditingClient(client);
     setIsAddModalOpen(true);
   };
 
   const handleArchiveClient = async (clientId) => {
+    if (!allowArchive) {
+      toast.error("You do not have permission to archive or restore clients.");
+      return;
+    }
     const clientToUpdate = clients.find((c) => c.id === clientId);
     if (!clientToUpdate) return;
 
@@ -419,6 +480,7 @@ export default function ClientsView() {
     (staff) => staff.staffType === "BCBA" || staff.staffType === "BCaBA",
   );
   const toggleExpanded = (clientId) => {
+    if (!allowReadDetails) return;
     setExpandedClient((prev) => (prev === clientId ? null : clientId));
   };
 
@@ -432,34 +494,6 @@ export default function ClientsView() {
       .padStart(2, "0")} ${ampm}`;
   };
 
-  // Inside the ClientsView component, after your state declarations
-  const masterDataSubItems = [
-    // {
-    //   id: "modules",
-    //   label: "Modules",
-    //   icon: FolderKanban,
-    //   color: "text-blue-600",
-    // },
-    { id: "domains", label: "Domains", icon: Layers, color: "text-indigo-600" },
-    {
-      id: "programs",
-      label: "Programs",
-      icon: ListChecks,
-      color: "text-teal-600",
-    },
-    {
-      id: "targets",
-      label: "Targets",
-      icon: Target,
-      color: "text-orange-600",
-    },
-    // {
-    //   id: "prompts",
-    //   label: "Prompts",
-    //   icon: SquareTerminal,
-    //   color: "text-rose-600",
-    // },
-  ];
   const [isClientModulesOpen, setIsClientModulesOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [isClientDomainsOpen, setIsClientDomainsOpen] = useState(false);
@@ -589,6 +623,10 @@ export default function ClientsView() {
   };
 
   const handleMasterDataSelect = async (itemId, client) => {
+    if (!canOpenClientMasterDataNav(can, itemId)) {
+      toast.error("You do not have permission to open that screen.");
+      return;
+    }
     // Store client info in localStorage for the master data component to pick up
     const clientInfo = {
       id: client.id,
@@ -614,6 +652,10 @@ export default function ClientsView() {
   };
 
   const handleAddProgram = async (payload) => {
+    if (!allowUpdate) {
+      toast.error("You do not have permission to modify client programs.");
+      return;
+    }
     try {
       setProgramsLoading(true);
       const res = await fetch(`${baseUrl}/client-programs.php`, {
@@ -640,6 +682,10 @@ export default function ClientsView() {
   };
 
   const handleEditProgram = async (payload) => {
+    if (!allowUpdate) {
+      toast.error("You do not have permission to modify client programs.");
+      return;
+    }
     try {
       setProgramsLoading(true);
       const res = await fetch(`${baseUrl}/client-programs.php`, {
@@ -666,6 +712,10 @@ export default function ClientsView() {
   };
 
   const handleAddTarget = async (payload) => {
+    if (!allowUpdate) {
+      toast.error("You do not have permission to modify client targets.");
+      return;
+    }
     try {
       setTargetsLoading(true);
       const res = await fetch(`${baseUrl}/client-target.php`, {
@@ -695,6 +745,10 @@ export default function ClientsView() {
   };
 
   const handleEditTarget = async (payload) => {
+    if (!allowUpdate) {
+      toast.error("You do not have permission to modify client targets.");
+      return;
+    }
     try {
       setTargetsLoading(true);
       const res = await fetch(`${baseUrl}/client-target.php`, {
@@ -755,17 +809,19 @@ export default function ClientsView() {
               </>
             )}
           </Button>
-          <Button
-            onClick={() => {
-              setEditingClient(null);
-              setModalInitialTab(null);
-              setIsAddModalOpen(true);
-            }}
-            size="sm"
-            className="bg-teal-600 hover:bg-teal-700 shadow-lg"
-          >
-            <Plus className="h-4 w-4 mr-2" /> Add Client
-          </Button>
+          {allowCreate && (
+            <Button
+              onClick={() => {
+                setEditingClient(null);
+                setModalInitialTab(null);
+                setIsAddModalOpen(true);
+              }}
+              size="sm"
+              className="bg-teal-600 hover:bg-teal-700 shadow-lg"
+            >
+              <Plus className="h-4 w-4 mr-2" /> Add Client
+            </Button>
+          )}
         </div>
       </div>
 
@@ -1008,8 +1064,15 @@ export default function ClientsView() {
                                   onClick={() =>
                                     toggleExpanded(client.id || "")
                                   }
+                                  disabled={!allowReadDetails}
                                   className="border-slate-300"
-                                  title={isExpanded ? "View less" : "View more"}
+                                  title={
+                                    allowReadDetails
+                                      ? isExpanded
+                                        ? "View less"
+                                        : "View more"
+                                      : "No permission to view client details"
+                                  }
                                 >
                                   {isExpanded ? (
                                     <span>
@@ -1021,113 +1084,136 @@ export default function ClientsView() {
                                     </span>
                                   )}
                                 </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleOpenEditModal(client)}
-                                  className="border-slate-300"
-                                  title="Edit"
-                                >
-                                  <span>
-                                    <Edit className="h-4 w-4" />
-                                  </span>
-                                </Button>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      title="Options"
-                                      variant="outline"
-                                      size="sm"
-                                      className="border-slate-300 bg-transparent"
-                                    >
-                                      <MoreVertical className="h-3 w-3" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent
-                                    align="end"
-                                    className="w-56"
+                                {allowUpdate && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleOpenEditModal(client)}
+                                    className="border-slate-300"
+                                    title="Edit"
                                   >
-                                    <DropdownMenuLabel className="text-xs text-slate-500 font-semibold p-1">
-                                      Actions
-                                    </DropdownMenuLabel>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      onClick={() => {
-                                        setSessionNotesClient(client);
-                                        setIsSessionNotesModalOpen(true);
-                                      }}
-                                      className="cursor-pointer"
+                                    <span>
+                                      <Edit className="h-4 w-4" />
+                                    </span>
+                                  </Button>
+                                )}
+                                {showRowActionsMenu && (
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        title="Options"
+                                        variant="outline"
+                                        size="sm"
+                                        className="border-slate-300 bg-transparent"
+                                      >
+                                        <MoreVertical className="h-3 w-3" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent
+                                      align="end"
+                                      className="w-56"
                                     >
-                                      <BookOpen className="h-4 w-4 mr-2" />
-                                      Session Notes
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuLabel className="text-xs text-slate-500 font-semibold p-1">
-                                      Data Collection
-                                    </DropdownMenuLabel>
-                                    <DropdownMenuItem
-                                      onClick={() => {
-                                        setModalInitialTab("configureData");
-                                        setEditingClient(client);
-                                        setIsAddModalOpen(true);
-                                      }}
-                                      className="cursor-pointer"
-                                    >
-                                      <ListChecks className="h-4 w-4 mr-2 text-teal-600" />
-                                      Configure data
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    {masterDataSubItems.map((subItem) => {
-                                      const SubIcon = subItem.icon;
-                                      return (
+                                      <DropdownMenuLabel className="text-xs text-slate-500 font-semibold p-1">
+                                        Actions
+                                      </DropdownMenuLabel>
+                                      <DropdownMenuSeparator />
+                                      {allowSessionNotes && (
                                         <DropdownMenuItem
-                                          key={subItem.id}
-                                          onClick={() =>
-                                            handleMasterDataSelect(
-                                              subItem.id,
-                                              client,
-                                            )
-                                          }
-                                          className="cursor-pointer text-xs"
+                                          onClick={() => {
+                                            setSessionNotesClient(client);
+                                            setIsSessionNotesModalOpen(true);
+                                          }}
+                                          className="cursor-pointer"
                                         >
-                                          <SubIcon
-                                            className={`h-4 w-4 mr-2 ${subItem.color}`}
-                                          />
-                                          {subItem.label}
+                                          <BookOpen className="h-4 w-4 mr-2" />
+                                          Session Notes
                                         </DropdownMenuItem>
-                                      );
-                                    })}
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      onClick={() =>
-                                        handleArchiveClient(client.id || "")
-                                      }
-                                      className={
-                                        client.archived
-                                          ? "text-green-600"
-                                          : "text-amber-600"
-                                      }
-                                    >
-                                      {client.archived ? (
+                                      )}
+                                      {allowSessionNotes &&
+                                        (allowUpdate ||
+                                          filteredMasterDataMenu.length ||
+                                          allowArchive) && (
+                                          <DropdownMenuSeparator />
+                                        )}
+                                      {allowUpdate && (
                                         <>
-                                          <ArchiveRestore className="h-4 w-4 mr-2" />{" "}
-                                          Restore Client
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Archive className="h-4 w-4 mr-2" />{" "}
-                                          Archive Client
+                                          <DropdownMenuLabel className="text-xs text-slate-500 font-semibold p-1">
+                                            Data Collection
+                                          </DropdownMenuLabel>
+                                          <DropdownMenuItem
+                                            onClick={() => {
+                                              setModalInitialTab(
+                                                "configureData",
+                                              );
+                                              setEditingClient(client);
+                                              setIsAddModalOpen(true);
+                                            }}
+                                            className="cursor-pointer"
+                                          >
+                                            <ListChecks className="h-4 w-4 mr-2 text-teal-600" />
+                                            Configure data
+                                          </DropdownMenuItem>
+                                          <DropdownMenuSeparator />
                                         </>
                                       )}
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                      {filteredMasterDataMenu.map((subItem) => {
+                                        const SubIcon = subItem.icon;
+                                        return (
+                                          <DropdownMenuItem
+                                            key={subItem.id}
+                                            onClick={() =>
+                                              handleMasterDataSelect(
+                                                subItem.id,
+                                                client,
+                                              )
+                                            }
+                                            className="cursor-pointer text-xs"
+                                          >
+                                            <SubIcon
+                                              className={`h-4 w-4 mr-2 ${subItem.color}`}
+                                            />
+                                            {subItem.label}
+                                          </DropdownMenuItem>
+                                        );
+                                      })}
+                                      {allowArchive && (
+                                        <>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem
+                                            onClick={() =>
+                                              handleArchiveClient(
+                                                client.id || "",
+                                              )
+                                            }
+                                            className={
+                                              client.archived
+                                                ? "text-green-600"
+                                                : "text-amber-600"
+                                            }
+                                          >
+                                            {client.archived ? (
+                                              <>
+                                                <ArchiveRestore className="h-4 w-4 mr-2" />{" "}
+                                                Restore Client
+                                              </>
+                                            ) : (
+                                              <>
+                                                <Archive className="h-4 w-4 mr-2" />{" "}
+                                                Archive Client
+                                              </>
+                                            )}
+                                          </DropdownMenuItem>
+                                        </>
+                                      )}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
 
                           {/* Expanded Details Row */}
-                          {isExpanded && (
+                          {isExpanded && allowReadDetails && (
                             <TableRow className="bg-slate-50">
                               <TableCell colSpan={8} className="px-6 py-6">
                                 <div className="space-y-6">
@@ -1911,6 +1997,36 @@ export default function ClientsView() {
                                                       </p>
                                                     </div>
                                                   </div>
+
+                                                  {Array.isArray(auth.ready_to_bill_sessions) &&
+                                                    auth.ready_to_bill_sessions.length > 0 && (
+                                                      <div className="mt-4 pt-3 border-t border-slate-200">
+                                                        <p className="text-green-700 mb-2 text-sm font-semibold">
+                                                          Completed sessions (Ready to Bill)
+                                                        </p>
+                                                        <div className="space-y-1 text-sm">
+                                                          {auth.ready_to_bill_sessions.map(
+                                                            (sess) => (
+                                                              <div
+                                                                key={sess.session_id}
+                                                                className="flex flex-wrap justify-between gap-2 text-slate-700"
+                                                              >
+                                                                <span>
+                                                                  {sess.service_date}
+                                                                </span>
+                                                                <span>
+                                                                  {sess.units} unit
+                                                                  {sess.units === 1 ? "" : "s"}
+                                                                  {sess.hours != null
+                                                                    ? ` (${sess.hours} hr)`
+                                                                    : ""}
+                                                                </span>
+                                                              </div>
+                                                            ),
+                                                          )}
+                                                        </div>
+                                                      </div>
+                                                    )}
                                                 </div>
                                               );
                                             },
@@ -1974,7 +2090,8 @@ export default function ClientsView() {
                                                       </div>
                                                     </div>
                                                     {(doc.document_path ||
-                                                      doc.file_url) && (
+                                                      doc.file_url) &&
+                                                      allowReadDetails && (
                                                       <div className="flex items-center gap-2 ml-4">
                                                         <Button
                                                           variant="outline"
@@ -2327,15 +2444,6 @@ export default function ClientsView() {
         />
       )}
 
-      {/* Session Notes Modal */}
-      <SessionNotesModal
-        isOpen={isSessionNotesModalOpen}
-        onClose={() => {
-          setIsSessionNotesModalOpen(false);
-          setSessionNotesClient(null);
-        }}
-        client={sessionNotesClient}
-      />
     </div>
   );
 }

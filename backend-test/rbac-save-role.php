@@ -33,6 +33,7 @@ if (!is_array($input)) {
 
 $roleName = isset($input['role']) ? strtolower(trim((string) $input['role'])) : '';
 $permKeys = isset($input['permission_keys']) && is_array($input['permission_keys']) ? $input['permission_keys'] : [];
+$grantEntries = isset($input['grant_entries']) && is_array($input['grant_entries']) ? $input['grant_entries'] : null;
 $scope = isset($input['scope']) ? strtolower(trim((string) $input['scope'])) : 'mahaverse';
 if (!in_array($scope, ['mahaverse', 'launchpad'], true)) {
     $scope = 'mahaverse';
@@ -45,7 +46,7 @@ if ($roleName === '') {
 }
 
 $allowedRoles = $scope === 'mahaverse'
-    ? ['admin', 'bcba', 'rbt', 'parent', 'biller']
+    ? ['admin', 'bcba', 'rbt', 'parent', 'biller', 'planner', 'client']
     : ['admin', 'hr', 'staff', 'viewer'];
 if (!in_array($roleName, $allowedRoles, true)) {
     http_response_code(400);
@@ -53,7 +54,6 @@ if (!in_array($roleName, $allowedRoles, true)) {
     exit;
 }
 
-// Normalize permission keys
 $permKeys = array_values(array_unique(array_map(function ($k) {
     return strtolower(trim((string) $k));
 }, $permKeys)));
@@ -88,7 +88,9 @@ if (!rbac_tables_exist($conn)) {
     exit;
 }
 
-    $conn->begin_transaction();
+$hasScopeCol = rbac_role_grants_have_scope_column($conn);
+
+$conn->begin_transaction();
 
 try {
     $del = $conn->prepare('DELETE FROM rbac_role_grants WHERE LOWER(role_name) = ?');
@@ -96,19 +98,52 @@ try {
     $del->execute();
     $del->close();
 
-    foreach ($permKeys as $pk) {
+    $rowsToInsert = [];
+
+    if (is_array($grantEntries) && count($grantEntries) > 0) {
+        foreach ($grantEntries as $e) {
+            if (!is_array($e)) {
+                continue;
+            }
+            $pk = strtolower(trim((string) ($e['perm_key'] ?? '')));
+            if ($pk === '') {
+                continue;
+            }
+            $sc = strtolower(trim((string) ($e['access_scope'] ?? 'all')));
+            if ($sc !== 'self') {
+                $sc = 'all';
+            }
+            if (!$hasScopeCol) {
+                $sc = 'all';
+            }
+            $rowsToInsert[] = ['perm_key' => $pk, 'access_scope' => $sc];
+        }
+    } else {
+        foreach ($permKeys as $pk) {
+            $rowsToInsert[] = ['perm_key' => $pk, 'access_scope' => 'all'];
+        }
+    }
+
+    foreach ($rowsToInsert as $row) {
+        $pk = $row['perm_key'];
+        $sc = $hasScopeCol ? $row['access_scope'] : 'all';
         $stmt = $conn->prepare('SELECT id FROM rbac_permissions WHERE perm_key = ? AND app_scope = ? LIMIT 1');
         $stmt->bind_param('ss', $pk, $scope);
         $stmt->execute();
         $res = $stmt->get_result();
-        $row = $res ? $res->fetch_assoc() : null;
+        $permRow = $res ? $res->fetch_assoc() : null;
         $stmt->close();
-        if (!$row) {
+        if (!$permRow) {
             continue;
         }
-        $pid = (int) $row['id'];
-        $ins = $conn->prepare('INSERT INTO rbac_role_grants (role_name, permission_id) VALUES (?, ?)');
-        $ins->bind_param('si', $roleName, $pid);
+        $pid = (int) $permRow['id'];
+        if ($hasScopeCol) {
+            $ins = $conn->prepare('INSERT INTO rbac_role_grants (role_name, permission_id, access_scope) VALUES (?, ?, ?)');
+            $ins->bind_param('sis', $roleName, $pid, $sc);
+        } else {
+            $ins = $conn->prepare('INSERT INTO rbac_role_grants (role_name, permission_id) VALUES (?, ?)');
+            $ins->bind_param('si', $roleName, $pid);
+        }
         $ins->execute();
         $ins->close();
     }

@@ -11,8 +11,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
-$user = getAuthenticatedUser();
-if ($user && !rbac_user_has_permission_key($user['role'], 'users.read', 'mahaverse')) {
+$authUser = getAuthenticatedUser();
+if ($authUser && !rbac_user_has_permission_key($authUser['role'], 'users.read', 'mahaverse')) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Permission denied']);
     exit;
@@ -20,15 +20,25 @@ if ($user && !rbac_user_has_permission_key($user['role'], 'users.read', 'mahaver
 
 $host = "db5018266079.hosting-data.io";
 $dbname = "dbs14484433";
-$user = "dbu3321929";
+$dbUser = "dbu3321929";
 $pass = "M@h@B3h@v1or@lH3@lth4@ut1sm";
 
 try {
-    $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass);
+    $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $dbUser, $pass);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    $stmt = $conn->query("SELECT * FROM users ORDER BY created_at DESC");
+    // Explicit columns (avoid leaking password hashes); ORDER BY id avoids missing created_at column.
+    $stmt = $conn->query(
+        'SELECT id, email, `role`, first_name, last_name, is_active FROM users ORDER BY id DESC'
+    );
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($users as &$row) {
+        $row['role'] = isset($row['role']) ? trim((string) $row['role']) : '';
+        $raw = $row['is_active'] ?? null;
+        $row['is_active'] = ($raw === 1 || $raw === '1' || $raw === true) ? 1 : 0;
+    }
+    unset($row);
 
     echo json_encode([
         "success" => true,

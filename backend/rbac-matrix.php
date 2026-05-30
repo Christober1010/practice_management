@@ -40,7 +40,7 @@ try {
 if (!rbac_tables_exist($conn)) {
     echo json_encode([
         'success' => false,
-        'message' => 'RBAC tables not installed. Run backend/create_rbac_tables.sql',
+        'message' => 'RBAC tables not installed. Run migration/shared/create_rbac_tables.sql',
     ]);
     exit;
 }
@@ -62,14 +62,18 @@ $permStmt->close();
 
 $roles = [];
 if ($scope === 'mahaverse') {
-    $roles = ['admin', 'bcba', 'rbt', 'parent', 'biller'];
+    $roles = ['admin', 'bcba', 'rbt', 'biller', 'parent', 'planner', 'client'];
 } else {
     $roles = ['admin', 'hr', 'staff', 'viewer'];
 }
 
 $grants = [];
+$grant_scopes = [];
+$hasScope = rbac_role_grants_have_scope_column($conn);
+$scopeSelect = $hasScope ? 'rg.access_scope' : "'all'";
+
 $rg = $conn->query("
-    SELECT LOWER(rg.role_name) AS role_name, p.perm_key
+    SELECT LOWER(rg.role_name) AS role_name, p.perm_key, {$scopeSelect} AS access_scope
     FROM rbac_role_grants rg
     JOIN rbac_permissions p ON p.id = rg.permission_id
     WHERE p.app_scope = '" . $conn->real_escape_string($scope) . "'
@@ -77,10 +81,18 @@ $rg = $conn->query("
 if ($rg) {
     while ($row = $rg->fetch_assoc()) {
         $rn = $row['role_name'];
+        $pk = $row['perm_key'];
+        $sc = strtolower((string) ($row['access_scope'] ?? 'all')) === 'self' ? 'self' : 'all';
         if (!isset($grants[$rn])) {
             $grants[$rn] = [];
         }
-        $grants[$rn][] = $row['perm_key'];
+        $grants[$rn][] = $pk;
+        if (!isset($grant_scopes[$rn])) {
+            $grant_scopes[$rn] = [];
+        }
+        if (!isset($grant_scopes[$rn][$pk]) || ($grant_scopes[$rn][$pk] === 'self' && $sc === 'all')) {
+            $grant_scopes[$rn][$pk] = $sc;
+        }
     }
 }
 
@@ -90,4 +102,6 @@ echo json_encode([
     'permissions' => $permissions,
     'roles' => $roles,
     'grants' => $grants,
+    'grant_scopes' => $grant_scopes,
+    'supports_access_scope' => $hasScope,
 ]);

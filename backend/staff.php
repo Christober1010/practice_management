@@ -4,11 +4,18 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-// Add CORS headers
+// Add CORS headers (must stay compatible with db.php — see Allow-Headers there after require)
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Accept");
+header("Access-Control-Max-Age: 86400");
 header("Content-Type: application/json");
+
+// Preflight without touching DB (avoids slow/failed mysqli during OPTIONS)
+if (($_SERVER["REQUEST_METHOD"] ?? "") === "OPTIONS") {
+    http_response_code(204);
+    exit();
+}
 
 require_once 'db.php';
 
@@ -24,6 +31,35 @@ function safe_json_decode($json_str)
         return null;
     }
     return $decoded;
+}
+
+/** Normalize one document from JSON (snake_case or camelCase) for staff_documents INSERT. */
+function staff_normalize_document_for_db($doc)
+{
+    if (!is_array($doc)) {
+        return null;
+    }
+    $path = $doc['document_path'] ?? $doc['documentPath'] ?? '';
+    $fileUrl = $doc['file_url'] ?? $doc['fileUrl'] ?? '';
+    $path = trim((string)$path);
+    if ($path === '') {
+        $path = trim((string)$fileUrl);
+    }
+    $fn = trim((string)($doc['document_filename'] ?? $doc['documentFilename'] ?? ''));
+    if ($path === '' && $fn === '') {
+        return null;
+    }
+    $uuid = trim((string)($doc['doc_uuid'] ?? $doc['docUuid'] ?? ''));
+    if ($uuid === '') {
+        $uuid = uniqid('doc_', true);
+    }
+    return [
+        'doc_uuid' => $uuid,
+        'document_type' => (string)($doc['document_type'] ?? $doc['documentType'] ?? ''),
+        'document_path' => $path,
+        'document_filename' => $fn,
+        'document_original_filename' => (string)($doc['document_original_filename'] ?? $doc['documentOriginalFilename'] ?? ''),
+    ];
 }
 
 // ============ AVAILABILITY HELPERS ============
@@ -388,6 +424,24 @@ function handleAddStaff($conn)
     $location = $data['location'] ?? null;
     $archived = $data['archived'] ?? false;
 
+    // Enforce termination rules server-side (UI can be bypassed).
+    if ($status === 'Terminated') {
+        if ($dateOfLeaving === null || trim((string) $dateOfLeaving) === '') {
+            http_response_code(400);
+            echo json_encode(["success" => false, "message" => "Date of Leaving is required when Staff Status is Terminated."]);
+            return;
+        }
+    }
+
+    // Enforce termination rules server-side (UI can be bypassed).
+    if ($status === 'Terminated') {
+        if ($dateOfLeaving === null || trim((string) $dateOfLeaving) === '') {
+            http_response_code(400);
+            echo json_encode(["success" => false, "message" => "Date of Leaving is required when Staff Status is Terminated."]);
+            return;
+        }
+    }
+
     // Encode only locationPreferences
     $locationPreferences_json = json_encode($data['locationPreferences'] ?? []);
     if ($locationPreferences_json === false) {
@@ -400,11 +454,24 @@ function handleAddStaff($conn)
     $hasAddrStruct = $conn->query("SHOW COLUMNS FROM staff LIKE 'address_line_1'")->num_rows > 0;
     $hasEmergency = $conn->query("SHOW COLUMNS FROM staff LIKE 'emergency_contact_name'")->num_rows > 0;
     $hasEducation = $conn->query("SHOW COLUMNS FROM staff LIKE 'highest_degree'")->num_rows > 0;
+    $hasLocation = $conn->query("SHOW COLUMNS FROM staff LIKE 'location'")->num_rows > 0;
 
-    $cols = "id, firstName, lastName, fullName, staffType, npiNumber, address, email, phone, dateOfJoining, dateOfLeaving, status, dob, location, locationPreferences, archived";
-    $placeholders = "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), ?";
-    $types = "sssssssssssssssi";
-    $params = [$id, $data['firstName'], $data['lastName'], $fullName, $data['staffType'], $npiNumber, $address, $data['email'], $phone, $dateOfJoining, $dateOfLeaving, $status, $dob, $location, $locationPreferences_json, $archived];
+    $cols = "id, firstName, lastName, fullName, staffType, npiNumber, address, email, phone, dateOfJoining, dateOfLeaving, status, dob";
+    $placeholders = "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
+    $types = "sssssssssssss";
+    $params = [$id, $data['firstName'], $data['lastName'], $fullName, $data['staffType'], $npiNumber, $address, $data['email'], $phone, $dateOfJoining, $dateOfLeaving, $status, $dob];
+
+    if ($hasLocation) {
+        $cols .= ", location";
+        $placeholders .= ", ?";
+        $types .= "s";
+        $params[] = $location;
+    }
+    $cols .= ", locationPreferences, archived";
+    $placeholders .= ", CAST(? AS JSON), ?";
+    $types .= "si";
+    $params[] = $locationPreferences_json;
+    $params[] = $archived;
 
     if ($hasJobTitle) { $cols .= ", job_title"; $placeholders .= ", ?"; $types .= "s"; $params[] = $jobTitle; }
     if ($hasSsn) { $cols .= ", ssn_encrypted"; $placeholders .= ", ?"; $types .= "s"; $params[] = $ssnEncrypted; }
@@ -435,8 +502,14 @@ function handleAddStaff($conn)
         if ($stmt->affected_rows > 0) {
             // Insert into separate tables
             insertStaffAvailability($conn, $id, $data['availability'] ?? []);
-            updateAssignedStaff($conn, $id, $data['assignedStaff'] ?? []);
-            updateAssignedClients($conn, $id, $data['assignedClients'] ?? []);
+            $assignedStaff = $data['assignedStaff'] ?? [];
+            $assignedClients = $data['assignedClients'] ?? [];
+            if ($status === 'Terminated') {
+                $assignedStaff = [];
+                $assignedClients = [];
+            }
+            updateAssignedStaff($conn, $id, $assignedStaff);
+            updateAssignedClients($conn, $id, $assignedClients);
 
             // Handle certifications
             $certifications = $data['certifications'] ?? [];
@@ -481,14 +554,22 @@ function handleAddStaff($conn)
                 if ($docTableCheck && $docTableCheck->num_rows > 0) {
                     $docStmt = $conn->prepare("INSERT INTO staff_documents (staff_id, doc_uuid, document_type, document_path, document_filename, document_original_filename) VALUES (?, ?, ?, ?, ?, ?)");
                     foreach ($data['documents'] as $doc) {
-                        if (empty($doc['document_path']) && empty($doc['document_filename'])) continue;
-                        $docUuid = $doc['doc_uuid'] ?? uniqid('doc_', true);
-                        $docType = $doc['document_type'] ?? '';
-                        $docPath = $doc['document_path'] ?? '';
-                        $docFilename = $doc['document_filename'] ?? '';
-                        $docOriginal = $doc['document_original_filename'] ?? '';
-                        $docStmt->bind_param("ssssss", $id, $docUuid, $docType, $docPath, $docFilename, $docOriginal);
-                        $docStmt->execute();
+                        $norm = staff_normalize_document_for_db($doc);
+                        if ($norm === null) {
+                            continue;
+                        }
+                        $docStmt->bind_param(
+                            "ssssss",
+                            $id,
+                            $norm['doc_uuid'],
+                            $norm['document_type'],
+                            $norm['document_path'],
+                            $norm['document_filename'],
+                            $norm['document_original_filename']
+                        );
+                        if (!$docStmt->execute()) {
+                            error_log('staff_documents INSERT failed (add): ' . $docStmt->error);
+                        }
                     }
                     $docStmt->close();
                 }
@@ -533,6 +614,8 @@ function handleUpdateStaff($conn)
         echo json_encode(["success" => false, "message" => "Staff member not found."]);
         return;
     }
+
+    $hasLocation = $conn->query("SHOW COLUMNS FROM staff LIKE 'location'")->num_rows > 0;
 
     // Get old values from separate tables
     $oldAvailability = getStaffAvailability($conn, $id);
@@ -579,6 +662,12 @@ function handleUpdateStaff($conn)
     $newAssignedStaff = $data['assignedStaff'] ?? [];
     $newAssignedClients = $data['assignedClients'] ?? [];
 
+    // If terminated, assignments must be cleared.
+    if ($status === 'Terminated') {
+        $newAssignedStaff = [];
+        $newAssignedClients = [];
+    }
+
     // Prepare new certifications
     $newCertifications = $data['certifications'] ?? [];
 
@@ -607,12 +696,15 @@ function handleUpdateStaff($conn)
     if (($currentStaffRow['dateOfLeaving'] ?? null) !== $dateOfLeaving) $hasChanged = true;
     if ($currentStaffRow['status'] !== $status) $hasChanged = true;
     if (($currentStaffRow['dob'] ?? null) !== $dob) $hasChanged = true;
-    if (($currentStaffRow['location'] ?? null) !== $location) $hasChanged = true;
+    if ($hasLocation && ($currentStaffRow['location'] ?? null) !== $location) $hasChanged = true;
     if ($currentStaffRow['archived'] != $archived) $hasChanged = true;
-    if (isset($currentStaffRow['job_title']) && ($currentStaffRow['job_title'] ?? null) !== $jobTitle) $hasChanged = true;
-    if (isset($currentStaffRow['ssn_encrypted']) && ($currentStaffRow['ssn_encrypted'] ?? null) !== $ssnEncrypted) $hasChanged = true;
-    if (isset($currentStaffRow['address_line_1']) && ($currentStaffRow['address_line_1'] ?? null) !== $addrLine1) $hasChanged = true;
-    if (isset($currentStaffRow['emergency_contact_name']) && ($currentStaffRow['emergency_contact_name'] ?? null) !== $emergencyName) $hasChanged = true;
+    // Use array_key_exists (not isset): DB NULL makes isset(...) false, so first-time
+    // values (e.g. new SSN) would never mark the row as changed and the UPDATE was skipped.
+    if (array_key_exists('job_title', $currentStaffRow) && (($currentStaffRow['job_title'] ?? null) !== $jobTitle)) $hasChanged = true;
+    if (array_key_exists('ssn_encrypted', $currentStaffRow) && (($currentStaffRow['ssn_encrypted'] ?? null) !== $ssnEncrypted)) $hasChanged = true;
+    if (array_key_exists('address_line_1', $currentStaffRow) && (($currentStaffRow['address_line_1'] ?? null) !== $addrLine1)) $hasChanged = true;
+    if (array_key_exists('emergency_contact_name', $currentStaffRow) && (($currentStaffRow['emergency_contact_name'] ?? null) !== $emergencyName)) $hasChanged = true;
+    if (array_key_exists('highest_degree', $currentStaffRow) && (($currentStaffRow['highest_degree'] ?? null) !== $highestDegree || ($currentStaffRow['year_awarded'] ?? null) !== $yearAwarded || ($currentStaffRow['major'] ?? null) !== $major)) $hasChanged = true;
 
     // Compare arrays/objects
     if ($oldAvailability !== $newAvailability) $hasChanged = true;
@@ -640,19 +732,22 @@ function handleUpdateStaff($conn)
     if ($oldAssignedStaff !== $newAssignedStaff) $hasChanged = true;
     if ($oldAssignedClients !== $newAssignedClients) $hasChanged = true;
 
-    // Compare documents
+    // Compare documents (only if client sent `documents`; omitting it preserves DB rows)
     $oldDocs = [];
     $docTableCheck = $conn->query("SHOW TABLES LIKE 'staff_documents'");
     if ($docTableCheck && $docTableCheck->num_rows > 0) {
-        $oldDocStmt = $conn->prepare("SELECT doc_uuid, document_type, document_path, document_filename FROM staff_documents WHERE staff_id = ?");
+        $oldDocStmt = $conn->prepare("SELECT doc_uuid, document_type, document_path, document_filename, document_original_filename FROM staff_documents WHERE staff_id = ?");
         $oldDocStmt->bind_param("s", $id);
         $oldDocStmt->execute();
         $oldDocRes = $oldDocStmt->get_result();
         while ($d = $oldDocRes->fetch_assoc()) $oldDocs[] = $d;
         $oldDocStmt->close();
     }
-    $newDocs = $data['documents'] ?? [];
-    if (json_encode($oldDocs) !== json_encode($newDocs)) $hasChanged = true;
+    $newDocsPayload = array_key_exists('documents', $data) ? $data['documents'] : null;
+    if ($newDocsPayload !== null) {
+        $newDocsForCompare = is_array($newDocsPayload) ? $newDocsPayload : [];
+        if (json_encode($oldDocs) !== json_encode($newDocsForCompare)) $hasChanged = true;
+    }
 
     // Check for duplicate email
     if ($currentStaffRow['email'] !== $newEmail) {
@@ -685,9 +780,18 @@ function handleUpdateStaff($conn)
     $hasEmergency = $conn->query("SHOW COLUMNS FROM staff LIKE 'emergency_contact_name'")->num_rows > 0;
     $hasEducation = $conn->query("SHOW COLUMNS FROM staff LIKE 'highest_degree'")->num_rows > 0;
 
-    $set = "firstName=?, lastName=?, fullName=?, staffType=?, npiNumber=?, address=?, email=?, phone=?, dateOfJoining=?, dateOfLeaving=?, status=?, dob=?, location=?, locationPreferences=CAST(? AS JSON), archived=?";
-    $types = "ssssssssssssssi";
-    $params = [$data['firstName'], $data['lastName'], $fullName, $data['staffType'], $npiNumber, $address, $newEmail, $phone, $dateOfJoining, $dateOfLeaving, $status, $dob, $location, $locationPreferences_json, $archived];
+    $set = "firstName=?, lastName=?, fullName=?, staffType=?, npiNumber=?, address=?, email=?, phone=?, dateOfJoining=?, dateOfLeaving=?, status=?, dob=?";
+    $types = "ssssssssssss";
+    $params = [$data['firstName'], $data['lastName'], $fullName, $data['staffType'], $npiNumber, $address, $newEmail, $phone, $dateOfJoining, $dateOfLeaving, $status, $dob];
+    if ($hasLocation) {
+        $set .= ", location=?";
+        $types .= "s";
+        $params[] = $location;
+    }
+    $set .= ", locationPreferences=CAST(? AS JSON), archived=?";
+    $types .= "si";
+    $params[] = $locationPreferences_json;
+    $params[] = $archived;
     if ($hasJobTitle) { $set .= ", job_title=?"; $types .= "s"; $params[] = $jobTitle; }
     if ($hasSsn) { $set .= ", ssn_encrypted=?"; $types .= "s"; $params[] = $ssnEncrypted; }
     if ($hasAddrStruct) {
@@ -773,31 +877,54 @@ function handleUpdateStaff($conn)
             $certStmt->close();
         }
 
-        // Replace staff documents
-        $newDocs = $data['documents'] ?? [];
-        if (is_array($newDocs)) {
+        $documentsSavedCount = null;
+        $documentsTableMissing = false;
+        // Replace staff documents only when the request includes `documents` (avoids wiping on partial payloads)
+        if ($newDocsPayload !== null && is_array($newDocsPayload)) {
             $docTableCheck = $conn->query("SHOW TABLES LIKE 'staff_documents'");
             if ($docTableCheck && $docTableCheck->num_rows > 0) {
+                $documentsSavedCount = 0;
                 $delStmt = $conn->prepare("DELETE FROM staff_documents WHERE staff_id = ?");
                 $delStmt->bind_param("s", $id);
                 $delStmt->execute();
                 $delStmt->close();
                 $docStmt = $conn->prepare("INSERT INTO staff_documents (staff_id, doc_uuid, document_type, document_path, document_filename, document_original_filename) VALUES (?, ?, ?, ?, ?, ?)");
-                foreach ($newDocs as $doc) {
-                    if (empty($doc['document_path']) && empty($doc['document_filename'])) continue;
-                    $docUuid = $doc['doc_uuid'] ?? uniqid('doc_', true);
-                    $docType = $doc['document_type'] ?? '';
-                    $docPath = $doc['document_path'] ?? '';
-                    $docFilename = $doc['document_filename'] ?? '';
-                    $docOriginal = $doc['document_original_filename'] ?? '';
-                    $docStmt->bind_param("ssssss", $id, $docUuid, $docType, $docPath, $docFilename, $docOriginal);
-                    $docStmt->execute();
+                foreach ($newDocsPayload as $doc) {
+                    $norm = staff_normalize_document_for_db($doc);
+                    if ($norm === null) {
+                        continue;
+                    }
+                    $docStmt->bind_param(
+                        "ssssss",
+                        $id,
+                        $norm['doc_uuid'],
+                        $norm['document_type'],
+                        $norm['document_path'],
+                        $norm['document_filename'],
+                        $norm['document_original_filename']
+                    );
+                    if ($docStmt->execute()) {
+                        $documentsSavedCount++;
+                    } else {
+                        error_log('staff_documents INSERT failed (update): ' . $docStmt->error);
+                    }
                 }
                 $docStmt->close();
+            } elseif (count($newDocsPayload) > 0) {
+                $documentsTableMissing = true;
+                error_log('staff_documents: table missing but request included documents; run create_staff_documents_table.sql');
             }
         }
 
-        echo json_encode(["success" => true, "message" => "Staff updated successfully"]);
+        $updateResponse = ["success" => true, "message" => "Staff updated successfully"];
+        if ($documentsSavedCount !== null) {
+            $updateResponse["documents_saved"] = $documentsSavedCount;
+        }
+        if ($documentsTableMissing) {
+            $updateResponse["documents_table_missing"] = true;
+            $updateResponse["documents_hint"] = "Create table staff_documents (see migration/shared/create_staff_documents_table.sql).";
+        }
+        echo json_encode($updateResponse);
     } else {
         http_response_code(500);
         echo json_encode(["success" => false, "message" => "Error updating staff: " . $stmt->error]);

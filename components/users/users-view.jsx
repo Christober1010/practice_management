@@ -43,15 +43,17 @@ import {
 import AddUserModal from "./add-users"; // See below
 import { toast, Toaster } from "react-hot-toast";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks"; // Assuming your Redux hooks
-import {
-  addUser,
-  updateUser,
-  toggleActive,
-  deleteUser,
-  fetchUsers,
-  setUsersLoading,
-  setUsersError,
-} from "@/app/store/usersSlice";
+import { toggleActive, deleteUser, fetchUsers } from "@/app/store/usersSlice";
+import { getMahaverseAuthHeaders } from "@/lib/api-auth";
+
+const jsonAuthHeaders = () =>
+  getMahaverseAuthHeaders({ "Content-Type": "application/json" });
+
+/** MySQL often returns tinyint as "0"|"1"; JS treats "0" as truthy — normalize for filters. */
+function userRowIsActive(u) {
+  const v = u?.is_active;
+  return v === 1 || v === true || v === "1";
+}
 
 export default function UsersView() {
   // UI-only state
@@ -70,11 +72,11 @@ export default function UsersView() {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
   const activeUserCount = useMemo(
-    () => users.filter((u) => u.is_active).length,
+    () => users.filter((u) => userRowIsActive(u)).length,
     [users]
   );
   const inactiveUserCount = useMemo(
-    () => users.filter((u) => !u.is_active).length,
+    () => users.filter((u) => !userRowIsActive(u)).length,
     [users]
   );
 
@@ -86,7 +88,8 @@ export default function UsersView() {
           : false
       );
       const matchesRole = roleFilter === "all" || user.role === roleFilter;
-      const matchesActive = user.is_active ? !showInactive : showInactive;
+      const isActive = userRowIsActive(user);
+      const matchesActive = showInactive ? !isActive : isActive;
       return matchesSearch && matchesRole && matchesActive;
     });
   }, [users, searchTerm, roleFilter, showInactive]);
@@ -95,20 +98,25 @@ export default function UsersView() {
     try {
       const res = await fetch(`${baseUrl}/update-users.php`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify(userData),
       });
       const result = await res.json();
-      if (result.success) {
-        dispatch(addUser(userData));
-        setIsAddModalOpen(false);
-        toast.success("User added successfully!");
-      } else {
-        toast.error(`Failed to add user: ${result.message}`);
+      if (!res.ok) {
+        toast.error(result.message || `Request failed (${res.status})`);
+        return false;
       }
+      if (result.success) {
+        await dispatch(fetchUsers());
+        toast.success("User added successfully!");
+        return true;
+      }
+      toast.error(`Failed to add user: ${result.message}`);
+      return false;
     } catch (err) {
       console.error("Error adding user:", err);
       toast.error("An error occurred while adding the user.");
+      return false;
     }
   };
 
@@ -116,20 +124,21 @@ export default function UsersView() {
     try {
       const res = await fetch(`${baseUrl}/update-users.php`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify(userData),
       });
       const result = await res.json();
       if (result.success) {
-        dispatch(updateUser(userData));
-        setEditingUser(null);
+        await dispatch(fetchUsers());
         toast.success("User updated successfully!");
-      } else {
-        toast.error(`Failed to update user: ${result.message}`);
+        return true;
       }
+      toast.error(`Failed to update user: ${result.message}`);
+      return false;
     } catch (err) {
       console.error("Error updating user:", err);
       toast.error("An error occurred while updating the user.");
+      return false;
     }
   };
 
@@ -138,7 +147,7 @@ export default function UsersView() {
     try {
       const res = await fetch(`${baseUrl}/delete-user.php`, {
         method: "DELETE",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify({ id: userId }),
       });
       const result = await res.json();
@@ -159,12 +168,12 @@ export default function UsersView() {
     if (!userToUpdate) return;
     const updatedUser = {
       ...userToUpdate,
-      is_active: userToUpdate.is_active ? 0 : 1,
+      is_active: userRowIsActive(userToUpdate) ? 0 : 1,
     };
     try {
       const res = await fetch(`${baseUrl}/update-users.php`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify(updatedUser),
       });
       const result = await res.json();
@@ -196,6 +205,10 @@ export default function UsersView() {
         return "bg-fuchsia-100 text-fuchsia-800";
       case "parent":
         return "bg-purple-100 text-purple-800";
+      case "planner":
+        return "bg-cyan-100 text-cyan-800";
+      case "client":
+        return "bg-indigo-100 text-indigo-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -269,6 +282,8 @@ export default function UsersView() {
                 <SelectItem value="rbt">RBT</SelectItem>
                 <SelectItem value="biller">Biller</SelectItem>
                 <SelectItem value="parent">Parent</SelectItem>
+                <SelectItem value="planner">Planner</SelectItem>
+                <SelectItem value="client">Client</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -330,7 +345,7 @@ export default function UsersView() {
                                   {user.first_name} {user.last_name}
                                 </div>
                                 <div className="lg:hidden sm:hidden flex flex-wrap gap-1 mt-1">
-                                  {!user.is_active && (
+                                  {!userRowIsActive(user) && (
                                     <Badge
                                       variant="outline"
                                       className="border-amber-300 text-amber-700 text-xs"
@@ -349,10 +364,12 @@ export default function UsersView() {
                           </TableCell>
                           <TableCell className="hidden sm:table-cell py-4 capitalize">
                             <Badge className={getRoleColor(user.role)}>
-                              {["bcba", "rbt"].includes(user.role)
-                                ? user.role.toUpperCase()
-                                : user.role}{" "}
-                            </Badge>{" "}
+                              {user.role
+                                ? ["bcba", "rbt"].includes(user.role)
+                                  ? user.role.toUpperCase()
+                                  : user.role
+                                : "—"}
+                            </Badge>
                           </TableCell>
                           
                           
@@ -399,17 +416,19 @@ export default function UsersView() {
                                   <DropdownMenuItem
                                     onClick={() => handleToggleActive(user.id)}
                                     className={
-                                      user.is_active
+                                      userRowIsActive(user)
                                         ? "text-amber-600"
                                         : "text-green-600"
                                     }
                                   >
-                                    {user.is_active ? (
+                                    {userRowIsActive(user) ? (
                                       <Archive className="h-4 w-4 mr-2" />
                                     ) : (
                                       <ArchiveRestore className="h-4 w-4 mr-2" />
                                     )}
-                                    {user.is_active ? "Deactivate" : "Activate"}
+                                    {userRowIsActive(user)
+                                      ? "Deactivate"
+                                      : "Activate"}
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   {/* <DropdownMenuItem
@@ -454,7 +473,9 @@ export default function UsersView() {
                                         <Badge
                                           className={getRoleColor(user.role)}
                                         >
-                                          {user.role.toUpperCase()}
+                                          {user.role
+                                            ? user.role.toUpperCase()
+                                            : "—"}
                                         </Badge>
                                       </div>
                                       <div>
@@ -479,12 +500,12 @@ export default function UsersView() {
                                         </p>
                                         <Badge
                                           className={
-                                            user.is_active
+                                            userRowIsActive(user)
                                               ? "bg-green-100 text-green-800"
                                               : "bg-amber-100 text-amber-800"
                                           }
                                         >
-                                          {user.is_active
+                                          {userRowIsActive(user)
                                             ? "Active"
                                             : "Inactive"}
                                         </Badge>
@@ -494,9 +515,11 @@ export default function UsersView() {
                                           Created At
                                         </p>
                                         <p className="font-medium">
-                                          {new Date(
-                                            user.created_at
-                                          ).toLocaleString() || "N/A"}
+                                          {user.created_at
+                                            ? new Date(
+                                                user.created_at
+                                              ).toLocaleString()
+                                            : "N/A"}
                                         </p>
                                       </div>
                                       <div>
@@ -504,9 +527,11 @@ export default function UsersView() {
                                           Updated At
                                         </p>
                                         <p className="font-medium">
-                                          {new Date(
-                                            user.updated_at
-                                          ).toLocaleString() || "N/A"}
+                                          {user.updated_at
+                                            ? new Date(
+                                                user.updated_at
+                                              ).toLocaleString()
+                                            : "N/A"}
                                         </p>
                                       </div>
                                     </div>

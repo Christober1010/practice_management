@@ -241,8 +241,9 @@ function handlePutLocation($conn, $input)
         return;
     }
 
+    // 28 placeholders: 27 SET columns + WHERE id (must match types count exactly).
     $stmt->bind_param(
-        "ssssssssssssssssssssssssssssss",
+        str_repeat("s", 28),
         $tax_id_professional,
         $office_phone_number,
         $office_phone_ext,

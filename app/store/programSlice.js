@@ -37,7 +37,7 @@ export const fetchPrograms = createAsyncThunk(
         const normalizeDomains = (domains) =>
           domains.map((d) => ({
             ...d,
-            moduleId: d.module_id || d.moduleId,
+            moduleId: d.module_id || d.moduleId || d.MODULE_ID,
             name: d.NAME || d.name,
             status: d.STATUS || d.status,
             archived: parseInt(d.archived) || 0,

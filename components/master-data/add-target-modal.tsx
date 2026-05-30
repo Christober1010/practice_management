@@ -31,6 +31,20 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
+import {
+  getDomainModuleLabel,
+  mergeCanonicalDomainModules,
+} from "@/lib/domain-module-options";
+import {
+  filterMasterDataForClientScope,
+  findClientByValue,
+  resolveClientRecordId,
+} from "@/lib/master-data-client-scope";
+import {
+  formatTargetInstructions,
+  normalizeTaskStepsForApi,
+  parseTargetInstructions,
+} from "@/lib/target-instructions-format";
 
 interface AddTargetModalProps {
   isOpen: boolean;
@@ -79,6 +93,7 @@ export default function AddTargetModal({
   const [selectedClientValue, setSelectedClientValue] = useState("generic");
 
   const [goalDescription, setGoalDescription] = useState("");
+  const [sd, setSd] = useState("");
   const [instructions, setInstructions] = useState("");
   const [trials, setTrials] = useState("1");
   const [selectedPrompts, setSelectedPrompts] = useState<string[]>([]);
@@ -90,11 +105,28 @@ export default function AddTargetModal({
   const [newTaskSequence, setNewTaskSequence] = useState("1");
   const [programSearch, setProgramSearch] = useState("");
 
-  // Find selected client
-  const selectedClientObj =
+  const selectedClientObj = findClientByValue(clients, selectedClientValue);
+
+  const selectedClientId =
     selectedClientValue === "generic"
-      ? null
-      : clients.find((c) => String(c.id) === String(selectedClientValue)) || null;
+      ? ""
+      : resolveClientRecordId(selectedClientObj) || String(selectedClientValue).trim();
+
+  const modulesForLookup = mergeCanonicalDomainModules(modules);
+
+  const domainsForClient = filterMasterDataForClientScope(domains, {
+    clientId: selectedClientId,
+    isGeneric: selectedClientValue === "generic",
+    keepId: "",
+  });
+
+  const programsForClient = filterMasterDataForClientScope(programs, {
+    clientId: selectedClientId,
+    isGeneric: selectedClientValue === "generic",
+    keepId: programId,
+  });
+
+  const isTaskAnalysisType = activityType === "Task Analysis";
 
   // Pre-fill fields when editing
   useEffect(() => {
@@ -104,7 +136,9 @@ export default function AddTargetModal({
       setActivityType(editingTarget.activityType || editingTarget.activity_type || "");
       setStatus(editingTarget.status || "Active");
       setGoalDescription(editingTarget.goalDescription || editingTarget.goal_description || "");
-      setInstructions(editingTarget.instructions || "");
+      const parsed = parseTargetInstructions(editingTarget.instructions || "");
+      setSd(parsed.sd);
+      setInstructions(parsed.instructions);
       setTrials(String(editingTarget.trials || 1));
 
       // Set prompts - extract IDs from prompt objects
@@ -136,7 +170,9 @@ export default function AddTargetModal({
             (c) => String(c.id) === String(clientInfo.id) || c.name === clientInfo.name
           );
           if (foundClient) {
-            setSelectedClientValue(String(foundClient.id ?? foundClient.name));
+            setSelectedClientValue(
+              resolveClientRecordId(foundClient) || String(foundClient.id ?? foundClient.name)
+            );
           } else if (clientInfo.id) {
             setSelectedClientValue(String(clientInfo.id));
           } else if (clientInfo.name) {
@@ -152,19 +188,41 @@ export default function AddTargetModal({
     }
   }, [editingTarget, isEditing, isOpen, clients]);
 
+  useEffect(() => {
+    if (!programId) return;
+    const stillValid = programsForClient.some((p) => String(p.id) === String(programId));
+    if (!stillValid) setProgramId("");
+  }, [selectedClientValue, selectedClientId, programs, programId]);
+
   const handleAddTask = () => {
     if (!newTaskName.trim()) {
-      toast.error("Task step name is required");
+      toast.error("Task name is required");
       return;
     }
+    const nextOrder =
+      tasks.length > 0
+        ? Math.max(...tasks.map((t) => t.sequence || 0), 0) + 1
+        : Number.parseInt(newTaskSequence, 10) || 1;
     const newTask = {
       id: generateId(),
       name: newTaskName.trim(),
-      sequence: Number.parseInt(newTaskSequence) || 1,
+      sequence: Number.parseInt(newTaskSequence, 10) || nextOrder,
     };
     setTasks([...tasks, newTask]);
     setNewTaskName("");
-    setNewTaskSequence("1");
+    setNewTaskSequence(String(newTask.sequence + 1));
+  };
+
+  const handleUpdateTaskSequence = (taskId: string, sequence: number) => {
+    setTasks((prev) =>
+      prev.map((t) =>
+        t.id === taskId ? { ...t, sequence: Number.isFinite(sequence) && sequence > 0 ? sequence : 1 } : t
+      )
+    );
+  };
+
+  const handleUpdateTaskName = (taskId: string, name: string) => {
+    setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, name } : t)));
   };
 
   const handleDeleteTask = (taskId: string) => {
@@ -180,9 +238,22 @@ export default function AddTargetModal({
     }
 
     if (!goalDescription.trim() || !instructions.trim()) {
-      toast.error("Goal Description and Instructions are required");
+      toast.error(
+        isTaskAnalysisType
+          ? "Goal name and target instructions are required"
+          : "Goal description and instructions are required"
+      );
       return;
     }
+
+    if (isTaskAnalysisType && !sd.trim()) {
+      toast.error("SD (discriminative stimulus) is required for Task Analysis");
+      return;
+    }
+
+    const storedInstructions = isTaskAnalysisType
+      ? formatTargetInstructions(sd, instructions)
+      : instructions.trim();
 
     if (Number.parseInt(trials) < 1 || Number.parseInt(trials) > 100) {
       toast.error("Number of Trials must be between 1 and 100");
@@ -193,6 +264,9 @@ export default function AddTargetModal({
       toast.error("Task Analysis requires at least one task step");
       return;
     }
+
+    const taskPayload =
+      activityType === "Task Analysis" ? normalizeTaskStepsForApi(tasks) : [];
 
     // Convert selected prompt IDs into full prompt objects
     const promptObjects = selectedPrompts
@@ -223,12 +297,15 @@ export default function AddTargetModal({
           activityType: activityType.trim(),
           status,
           goalDescription: goalDescription.trim(),
-          instructions: instructions.trim(),
+          instructions: storedInstructions,
           trials: Number.parseInt(trials) || 1,
           prompts: promptObjects,
-          tasks: activityType === "Task Analysis" ? tasks : [],
+          tasks: taskPayload,
           ...(selectedClientValue !== "generic"
-            ? { client_id: selectedClientObj?.id || selectedClientValue }
+            ? {
+                client_id:
+                  resolveClientRecordId(selectedClientObj) || selectedClientValue,
+              }
             : {}),
         };
         await onEdit(updatedTarget);
@@ -242,12 +319,15 @@ export default function AddTargetModal({
           status,
           archived: 0,
           goalDescription: goalDescription.trim(),
-          instructions: instructions.trim(),
+          instructions: storedInstructions,
           trials: Number.parseInt(trials) || 1,
           prompts: promptObjects,
-          tasks: activityType === "Task Analysis" ? tasks : [],
+          tasks: taskPayload,
           ...(selectedClientValue !== "generic"
-            ? { client_id: selectedClientObj?.id || selectedClientValue }
+            ? {
+                client_id:
+                  resolveClientRecordId(selectedClientObj) || selectedClientValue,
+              }
             : {}),
         };
         await onAdd(newTarget);
@@ -267,6 +347,7 @@ export default function AddTargetModal({
     setActivityType("");
     setStatus("Active");
     setGoalDescription("");
+    setSd("");
     setInstructions("");
     setTrials("1");
     setTasks([]);
@@ -411,11 +492,6 @@ export default function AddTargetModal({
     );
   };
 
-  // Safe way to get names
-  const getModuleName = (mod) => {
-    return mod?.name || mod?.NAME || "Unnamed Module";
-  };
-
   const getDomainName = (dom) => {
     return dom?.name || dom?.NAME || "Unnamed Domain";
   };
@@ -424,43 +500,44 @@ export default function AddTargetModal({
     return prog?.name || prog?.NAME || "Unnamed Program";
   };
 
-  const selectedProgram = programs.find((p) => String(p.id) === String(programId));
-  const selectedDomain = domains.find(
+  const selectedProgram = programsForClient.find(
+    (p) => String(p.id) === String(programId)
+  );
+  const selectedDomain = domainsForClient.find(
     (d) => String(d.id) === String(selectedProgram?.domainId || selectedProgram?.domain_id)
   );
-  const selectedModule = modules.find((m) => String(m.id) === String(selectedDomain?.moduleId || selectedDomain?.module_id));
 
   const selectedDomainName = selectedDomain ? getDomainName(selectedDomain) : "";
-  const selectedModuleName = selectedModule ? getModuleName(selectedModule) : "";
+  const selectedModuleName = selectedDomain
+    ? getDomainModuleLabel(
+        modulesForLookup,
+        selectedDomain.moduleId || selectedDomain.module_id
+      )
+    : "";
   const selectedProgramName = selectedProgram ? getProgramName(selectedProgram) : "";
 
-  // SAFE filtering + sorting
-  const filteredPrograms = programs
-    .filter((p) => p.id != null && String(p.id).trim() !== "")
+  const programLabel = (program) => {
+    const domain = domainsForClient.find(
+      (d) => String(d.id) === String(program.domainId || program.domain_id)
+    );
+    const modName = domain
+      ? getDomainModuleLabel(
+          modulesForLookup,
+          domain.moduleId || domain.module_id
+        )
+      : "—";
+    const domName = domain ? getDomainName(domain) : "";
+    const progName = getProgramName(program);
+    return `${modName !== "—" ? modName : "—"} - ${domName} - ${progName}`;
+  };
+
+  // SAFE filtering + sorting (scoped to client or generic)
+  const filteredPrograms = programsForClient
     .filter((p) => {
       const search = programSearch.toLowerCase();
-      const domain = domains.find((d) => String(d.id) === String(p.domainId || p.domain_id));
-      const module = modules.find((m) => String(m.id) === String(domain?.moduleId || domain?.module_id));
-      const moduleName = module ? getModuleName(module).toLowerCase() : "";
-      const domainName = domain ? getDomainName(domain).toLowerCase() : "";
-      const programName = getProgramName(p).toLowerCase();
-      const label = `${moduleName} - ${domainName} - ${programName}`;
-      return label.includes(search);
+      return programLabel(p).toLowerCase().includes(search);
     })
-    .sort((a, b) => {
-      const domainA = domains.find((d) => String(d.id) === String(a.domainId || a.domain_id));
-      const domainB = domains.find((d) => String(d.id) === String(b.domainId || b.domain_id));
-      const moduleA = modules.find((m) => String(m.id) === String(domainA?.moduleId || domainA?.module_id));
-      const moduleB = modules.find((m) => String(m.id) === String(domainB?.moduleId || domainB?.module_id));
-
-      const moduleCompare = getModuleName(moduleA).localeCompare(getModuleName(moduleB));
-      if (moduleCompare !== 0) return moduleCompare;
-
-      const domainCompare = getDomainName(domainA).localeCompare(getDomainName(domainB));
-      if (domainCompare !== 0) return domainCompare;
-
-      return getProgramName(a).localeCompare(getProgramName(b));
-    });
+    .sort((a, b) => programLabel(a).localeCompare(programLabel(b)));
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -470,7 +547,7 @@ export default function AddTargetModal({
             <div className="text-lg font-semibold">
               {isEditing ? "Edit Target" : "Add New Target"}
             </div>
-            {selectedModule && selectedDomain && selectedProgram && (
+            {selectedDomain && selectedProgram && (
               <div className="flex items-center justify-center gap-2 mt-3 text-sm text-muted-foreground">
                 <span className="font-medium">{selectedModuleName}</span>
                 <ChevronRight className="h-4 w-4" />
@@ -495,7 +572,10 @@ export default function AddTargetModal({
             <Label>Assign to Client</Label>
             <Select
               value={selectedClientValue === "generic" ? "generic" : selectedClientValue}
-              onValueChange={(val) => setSelectedClientValue(val === "generic" ? "generic" : val)}
+              onValueChange={(val) => {
+                setSelectedClientValue(val === "generic" ? "generic" : val);
+                setProgramSearch("");
+              }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Generic (no client)" />
@@ -503,18 +583,21 @@ export default function AddTargetModal({
               <SelectContent>
                 <SelectItem value="generic">Generic (no client)</SelectItem>
                 {clients
-                  .filter((client) => client.id != null && String(client.id).trim() !== "")
                   .map((client) => {
+                    const cid = resolveClientRecordId(client);
+                    if (!cid) return null;
                     const displayName =
                       `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
                       client.name ||
+                      client.NAME ||
                       "Unnamed Client";
                     return (
-                      <SelectItem key={client.id} value={String(client.id)}>
+                      <SelectItem key={cid} value={cid}>
                         {displayName}
                       </SelectItem>
                     );
-                  })}
+                  })
+                  .filter(Boolean)}
               </SelectContent>
             </Select>
 
@@ -533,6 +616,15 @@ export default function AddTargetModal({
           {/* Select Program */}
           <div className="space-y-2">
             <Label>Program *</Label>
+            {selectedClientId ? (
+              <p className="text-xs text-slate-500">
+                Showing programs for this client only.
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500">
+                Showing generic (master) programs only.
+              </p>
+            )}
             <Select
               value={programId}
               onValueChange={(value) => {
@@ -561,24 +653,17 @@ export default function AddTargetModal({
                 </div>
 
                 {filteredPrograms.length === 0 ? (
-                  <div className="p-4 text-center text-muted-foreground">
-                    No programs found
+                  <div className="p-4 text-center text-muted-foreground text-sm">
+                    {selectedClientId
+                      ? "No programs for this client. Add a program with this client selected."
+                      : "No generic programs found. Add a master program or assign a client."}
                   </div>
                 ) : (
-                  filteredPrograms.map((program) => {
-                    const dom = domains.find((d) => String(d.id) === String(program.domainId || program.domain_id));
-                    const mod = modules.find((m) => String(m.id) === String(dom?.moduleId || dom?.module_id));
-                    const modName = mod ? getModuleName(mod) : "";
-                    const domName = dom ? getDomainName(dom) : "";
-                    const progName = getProgramName(program);
-                    const label = `${modName} - ${domName} - ${progName}`;
-
-                    return (
-                      <SelectItem key={program.id} value={String(program.id)}>
-                        {label}
-                      </SelectItem>
-                    );
-                  })
+                  filteredPrograms.map((program) => (
+                    <SelectItem key={program.id} value={String(program.id)}>
+                      {programLabel(program)}
+                    </SelectItem>
+                  ))
                 )}
               </SelectContent>
             </Select>
@@ -618,10 +703,16 @@ export default function AddTargetModal({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="goal-description">Goal Description</Label>
+            <Label htmlFor="goal-description">
+              {isTaskAnalysisType ? "Goal Name *" : "Goal Description *"}
+            </Label>
             <Textarea
               id="goal-description"
-              placeholder="Enter goal description"
+              placeholder={
+                isTaskAnalysisType
+                  ? "e.g. Learner will follow a visual task analysis to complete…"
+                  : "Enter goal description"
+              }
               value={goalDescription}
               onChange={(e) => setGoalDescription(e.target.value)}
               disabled={loading}
@@ -629,20 +720,41 @@ export default function AddTargetModal({
             />
           </div>
 
+          {isTaskAnalysisType && (
+            <div className="space-y-2">
+              <Label htmlFor="target-sd">SD (Discriminative Stimulus) *</Label>
+              <Input
+                id="target-sd"
+                placeholder='e.g. Lets go potty'
+                value={sd}
+                onChange={(e) => setSd(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+          )}
+
           <div className="space-y-2">
-            <Label htmlFor="instructions">Instructions</Label>
+            <Label htmlFor="instructions">
+              {isTaskAnalysisType ? "Target Instructions *" : "Instructions *"}
+            </Label>
             <Textarea
               id="instructions"
-              placeholder="Enter instructions"
+              placeholder={
+                isTaskAnalysisType
+                  ? "1. Present SD\n2. Follow steps in task analysis\n3. Provide prompting as needed"
+                  : "Enter instructions"
+              }
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               disabled={loading}
-              rows={2}
+              rows={isTaskAnalysisType ? 4 : 2}
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="trials">Number of Trials (Enter 1-100)</Label>
+            <Label htmlFor="trials">
+              {isTaskAnalysisType ? "Desired Daily Trials *" : "Number of Trials (Enter 1-100)"}
+            </Label>
             <Input
               id="trials"
               type="number"
@@ -654,70 +766,97 @@ export default function AddTargetModal({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label>Select Prompts</Label>
-            <MultiSelectPrompts />
-          </div>
+          {!isTaskAnalysisType && (
+            <div className="space-y-2">
+              <Label>Select Prompts</Label>
+              <MultiSelectPrompts />
+            </div>
+          )}
 
-          {activityType === "Task Analysis" && (
+          {isTaskAnalysisType && (
             <Card className="bg-slate-50 border-teal-200">
               <CardHeader>
-                <CardTitle className="text-base">Task Steps</CardTitle>
+                <CardTitle className="text-base">Task Analysis Steps</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid grid-cols-1 gap-2">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Task step text"
-                      value={newTaskName}
-                      onChange={(e) => setNewTaskName(e.target.value)}
-                      disabled={loading}
-                    />
-                    <Input
-                      type="number"
-                      min="1"
-                      placeholder="Sequence"
-                      value={newTaskSequence}
-                      onChange={(e) => setNewTaskSequence(e.target.value)}
-                      className="w-20"
-                      disabled={loading}
-                    />
-                    <Button
-                      type="button"
-                      onClick={handleAddTask}
-                      disabled={loading}
-                      size="sm"
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Task name"
+                    value={newTaskName}
+                    onChange={(e) => setNewTaskName(e.target.value)}
+                    disabled={loading}
+                    className="flex-1"
+                  />
+                  <Input
+                    type="number"
+                    min="1"
+                    placeholder="Order"
+                    value={newTaskSequence}
+                    onChange={(e) => setNewTaskSequence(e.target.value)}
+                    className="w-24"
+                    disabled={loading}
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleAddTask}
+                    disabled={loading}
+                    size="sm"
+                    className="shrink-0"
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
                 </div>
 
-                {tasks.length > 0 && (
-                  <div className="space-y-2">
-                    {tasks
+                {tasks.length > 0 ? (
+                  <div className="rounded-md border border-slate-200 overflow-hidden">
+                    <div className="grid grid-cols-[1fr_88px_40px] gap-2 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
+                      <span>Task Name</span>
+                      <span>Display Order</span>
+                      <span />
+                    </div>
+                    {[...tasks]
                       .sort((a, b) => a.sequence - b.sequence)
                       .map((task) => (
                         <div
                           key={task.id}
-                          className="flex justify-between items-center p-2 rounded bg-white border border-slate-200"
+                          className="grid grid-cols-[1fr_88px_40px] gap-2 items-center px-3 py-2 border-t border-slate-200 bg-white"
                         >
-                          <span className="font-medium text-sm">
-                            {task.sequence}. {task.name}
-                          </span>
+                          <Input
+                            value={task.name}
+                            onChange={(e) => handleUpdateTaskName(task.id, e.target.value)}
+                            disabled={loading}
+                            className="h-8"
+                          />
+                          <Input
+                            type="number"
+                            min="1"
+                            value={task.sequence}
+                            onChange={(e) =>
+                              handleUpdateTaskSequence(
+                                task.id,
+                                Number.parseInt(e.target.value, 10) || 1
+                              )
+                            }
+                            disabled={loading}
+                            className="h-8"
+                          />
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
                             onClick={() => handleDeleteTask(task.id)}
                             disabled={loading}
-                            className="text-red-500 hover:text-red-700 h-6 w-6 p-0"
+                            className="text-red-500 hover:text-red-700 h-8 w-8 p-0"
                           >
                             <Trash2 className="h-3 w-3" />
                           </Button>
                         </div>
                       ))}
                   </div>
+                ) : (
+                  <p className="text-sm text-slate-500 text-center py-4">
+                    Add at least one task step for this target.
+                  </p>
                 )}
               </CardContent>
             </Card>

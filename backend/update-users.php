@@ -20,35 +20,124 @@ if ($user && !rbac_user_has_permission_key($user['role'], 'users.write', 'mahave
 
 $host = "db5018266079.hosting-data.io";
 $dbname = "dbs14484433";
-$user = "dbu3321929";
+$dbUser = "dbu3321929";
 $pass = "M@h@B3h@v1or@lH3@lth4@ut1sm";
 
 try {
-    $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $user, $pass);
+    $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $dbUser, $pass);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
     $input = json_decode(file_get_contents("php://input"), true);
     error_log("Received input for update-users.php: " . print_r($input, true));
 
-    // Validate required fields
-    $required = ["id", "email", "role"];  // Password optional for updates
-    foreach ($required as $field) {
-        if (empty($input[$field])) {
-            http_response_code(400);
-            echo json_encode(["success" => false, "message" => "Missing required field: $field"]);
-            exit();
-        }
+    $emailTrim = trim((string) ($input["email"] ?? ''));
+    $roleTrim = trim((string) ($input["role"] ?? ''));
+
+    // Validate required fields (id optional for new users — UI sends UUID but DB may use AUTO_INCREMENT int)
+    if ($emailTrim === '' || $roleTrim === '') {
+        http_response_code(400);
+        $missing = $emailTrim === '' ? 'email' : 'role';
+        echo json_encode(["success" => false, "message" => "Missing required field: $missing"]);
+        exit();
     }
 
-    $userId = $input["id"];
+    $clientId = isset($input["id"]) ? $input["id"] : null;
+    $isUuidClientId = is_string($clientId) && preg_match(
+        '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i',
+        $clientId
+    );
 
-    // Check if user exists
+    $idColRow = $conn->query("SHOW COLUMNS FROM `users` WHERE Field = 'id'")->fetch(PDO::FETCH_ASSOC);
+    $idType = strtolower((string) ($idColRow['Type'] ?? ''));
+    $idExtra = strtolower((string) ($idColRow['Extra'] ?? ''));
+    $idIsAutoIncrement = strpos($idExtra, 'auto_increment') !== false;
+    $idColumnIsNumeric = (bool) preg_match('/^(tinyint|smallint|mediumint|int|bigint)/', $idType);
+
+    // --- New user from Add User modal (React sends a UUID placeholder) ---
+    if ($isUuidClientId) {
+        if (empty($input["PASSWORD"])) {
+            http_response_code(400);
+            echo json_encode(["success" => false, "message" => "Password is required for new users"]);
+            exit();
+        }
+
+        $dupStmt = $conn->prepare("SELECT id FROM users WHERE LOWER(TRIM(email)) = LOWER(?) LIMIT 1");
+        $dupStmt->execute([$emailTrim]);
+        if ($dupStmt->fetch(PDO::FETCH_ASSOC)) {
+            http_response_code(409);
+            echo json_encode(["success" => false, "message" => "A user with this email already exists."]);
+            exit();
+        }
+
+        $hash = password_hash($input["PASSWORD"], PASSWORD_DEFAULT);
+        $paramsBase = [
+            ":email" => $emailTrim,
+            ":pwd" => $hash,
+            ":role" => $roleTrim,
+            ":first_name" => $input["first_name"] ?? '',
+            ":last_name" => $input["last_name"] ?? '',
+            ":is_active" => isset($input["is_active"]) ? (int) $input["is_active"] : 1,
+        ];
+
+        // Typical production schema: INT/BIGINT PRIMARY KEY AUTO_INCREMENT — omit id so MySQL assigns next id.
+        if ($idColumnIsNumeric && $idIsAutoIncrement) {
+            $sql = "INSERT INTO users (email, `password`, role, first_name, last_name, is_active)
+                    VALUES (:email, :pwd, :role, :first_name, :last_name, :is_active)";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute($paramsBase);
+            $newId = $conn->lastInsertId();
+            echo json_encode([
+                "success" => true,
+                "message" => "User added successfully",
+                "id" => $newId,
+            ]);
+            exit();
+        }
+
+        // VARCHAR/CHAR PK (e.g. UUID string): persist client id
+        if (!$idColumnIsNumeric) {
+            $sql = "INSERT INTO users (id, email, `password`, role, first_name, last_name, is_active)
+                    VALUES (:id, :email, :pwd, :role, :first_name, :last_name, :is_active)";
+            $stmt = $conn->prepare($sql);
+            $stmt->execute([
+                ":id" => $clientId,
+                ":email" => $emailTrim,
+                ":pwd" => $hash,
+                ":role" => $roleTrim,
+                ":first_name" => $input["first_name"] ?? '',
+                ":last_name" => $input["last_name"] ?? '',
+                ":is_active" => isset($input["is_active"]) ? (int) $input["is_active"] : 1,
+            ]);
+            echo json_encode([
+                "success" => true,
+                "message" => "User added successfully",
+                "id" => $clientId,
+            ]);
+            exit();
+        }
+
+        http_response_code(500);
+        echo json_encode([
+            "success" => false,
+            "message" => "Cannot create user: users.id must be AUTO_INCREMENT or a non-numeric primary key. Check your database schema.",
+        ]);
+        exit();
+    }
+
+    // --- Edit existing user or legacy insert with explicit numeric/string id ---
+    if ($clientId === null || $clientId === '') {
+        http_response_code(400);
+        echo json_encode(["success" => false, "message" => "Missing required field: id"]);
+        exit();
+    }
+
+    $userId = $clientId;
+
     $stmtCheck = $conn->prepare("SELECT COUNT(*) FROM users WHERE id = :id");
     $stmtCheck->execute([":id" => $userId]);
     $exists = $stmtCheck->fetchColumn() > 0;
 
     if ($exists) {
-        // Update user
         $sql = "UPDATE users SET
             email = :email,
             role = :role,
@@ -56,25 +145,23 @@ try {
             last_name = :last_name,
             is_active = :is_active,
             updated_at = CURRENT_TIMESTAMP";
-        
-        // Handle password only if provided
+
         if (!empty($input["PASSWORD"])) {
-            $sql .= ", PASSWORD = :PASSWORD";
+            $sql .= ", `password` = :pwd";
         }
-        
+
         $sql .= " WHERE id = :id";
     } else {
-        // Insert new user (require password for create)
         if (empty($input["PASSWORD"])) {
             http_response_code(400);
             echo json_encode(["success" => false, "message" => "Password is required for new users"]);
             exit();
         }
-        
+
         $sql = "INSERT INTO users (
-            id, email, PASSWORD, role, first_name, last_name, is_active
+            id, email, `password`, role, first_name, last_name, is_active
         ) VALUES (
-            :id, :email, :PASSWORD, :role, :first_name, :last_name, :is_active
+            :id, :email, :pwd, :role, :first_name, :last_name, :is_active
         )";
     }
 
@@ -82,16 +169,15 @@ try {
 
     $params = [
         ":id" => $userId,
-        ":email" => $input["email"],
-        ":role" => $input["role"],
+        ":email" => $emailTrim,
+        ":role" => $roleTrim,
         ":first_name" => $input["first_name"] ?? '',
         ":last_name" => $input["last_name"] ?? '',
-        ":is_active" => $input["is_active"] ?? 1
+        ":is_active" => isset($input["is_active"]) ? (int) $input["is_active"] : 1,
     ];
 
-    // Add hashed password if provided
     if (!empty($input["PASSWORD"])) {
-        $params[":PASSWORD"] = password_hash($input["PASSWORD"], PASSWORD_DEFAULT);
+        $params[":pwd"] = password_hash($input["PASSWORD"], PASSWORD_DEFAULT);
     }
 
     error_log("Executing SQL with parameters: " . print_r($params, true));
@@ -100,7 +186,7 @@ try {
 
     echo json_encode([
         "success" => true,
-        "message" => $exists ? "User updated successfully" : "User added successfully"
+        "message" => $exists ? "User updated successfully" : "User added successfully",
     ]);
 } catch (PDOException $e) {
     error_log("Database error in update-users.php: " . $e->getMessage());

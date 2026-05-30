@@ -45,7 +45,12 @@ import {
   XCircle,
 } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AddReportModal from "./add-report-modal";
+import ReportsSpreadsheetGrid from "./reports-spreadsheet-grid";
+import ScheduleTrackerGrid from "./schedule-tracker-grid";
+import ScheduleTrackerImport from "./schedule-tracker-import";
+import { stripExcludedReportFields } from "./report-column-exclusions";
 
 export default function ReportsView() {
   const [reports, setReports] = useState([]);
@@ -56,6 +61,8 @@ export default function ReportsView() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingReport, setEditingReport] = useState(null);
   const [expandedReport, setExpandedReport] = useState(null);
+  const [viewTab, setViewTab] = useState("summary");
+  const [scheduleTrackerKey, setScheduleTrackerKey] = useState(0);
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
 
@@ -84,14 +91,17 @@ export default function ReportsView() {
     });
   }, [reports, searchTerm, statusFilter, showArchived]);
 
-  const fetchReports = async () => {
+  const fetchReports = async (options = {}) => {
+    const silent = options.silent === true;
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const archived = showArchived ? 1 : 0;
       const res = await fetch(`${baseUrl}/reports.php?archived=${archived}`);
       const result = await res.json();
       if (result.success) {
-        setReports(result.data || []);
+        setReports(
+          (result.data || []).map((r) => stripExcludedReportFields(r))
+        );
       } else {
         toast.error(`Failed to fetch reports: ${result.message}`);
       }
@@ -99,7 +109,7 @@ export default function ReportsView() {
       console.error("Error fetching reports:", err);
       toast.error("An error occurred while fetching reports.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -109,7 +119,6 @@ export default function ReportsView() {
 
   const handleAddReport = async (reportData) => {
     try {
-      // Check if it's an array (Excel import) or single report
       const isArray = Array.isArray(reportData);
       const dataToSend = isArray ? reportData : [reportData];
 
@@ -121,20 +130,22 @@ export default function ReportsView() {
       const result = await res.json();
       if (result.success) {
         setIsAddModalOpen(false);
-        fetchReports();
+        await fetchReports({ silent: true });
         if (isArray) {
           toast.success(`${reportData.length} reports added successfully!`);
         } else {
           toast.success("Report added successfully!");
         }
-      } else {
-        toast.error(
-          `Failed to add report${isArray ? "s" : ""}: ${result.message || "Unknown error"}`
-        );
+        return true;
       }
+      toast.error(
+        `Failed to add report${isArray ? "s" : ""}: ${result.message || "Unknown error"}`
+      );
+      return false;
     } catch (err) {
       console.error("Error adding report:", err);
       toast.error("An error occurred while adding the report.");
+      return false;
     }
   };
 
@@ -149,16 +160,18 @@ export default function ReportsView() {
       if (result.success) {
         setEditingReport(null);
         setIsAddModalOpen(false);
-        fetchReports();
+        await fetchReports({ silent: true });
         toast.success("Report updated successfully!");
-      } else {
-        toast.error(
-          `Failed to update report: ${result.message || "Unknown error"}`
-        );
+        return true;
       }
+      toast.error(
+        `Failed to update report: ${result.message || "Unknown error"}`
+      );
+      return false;
     } catch (err) {
       console.error("Error updating report:", err);
       toast.error("An error occurred while updating the report.");
+      return false;
     }
   };
 
@@ -187,7 +200,7 @@ export default function ReportsView() {
         toast.success(
           archived ? "Report archived!" : "Report restored!"
         );
-        fetchReports();
+        fetchReports({ silent: true });
       } else {
         toast.error(
           `Failed to update report: ${result.message || "Unknown error"}`
@@ -287,7 +300,7 @@ export default function ReportsView() {
             size="sm"
             className="bg-teal-600 hover:bg-teal-700 shadow-lg"
           >
-            <Plus className="h-4 w-4 mr-2" /> Add Report
+            <Plus className="h-4 w-4 mr-2" /> Full form
           </Button>
         </div>
       </div>
@@ -321,25 +334,42 @@ export default function ReportsView() {
         </CardContent>
       </Card>
 
-      {/* Reports Table */}
-      {loading ? (
-        <div className="h-64 w-64 mx-auto">
-          <p className="text-center animate-pulse text-gray-500">
-            Fetching reports...
-          </p>
-        </div>
-      ) : (
-        <Card className="shadow-lg border-0">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-slate-800 flex items-center">
-              <FileText className="h-5 w-5 mr-2 text-teal-600" />
-              {showArchived ? "Archived" : "Active"} Reports (
-              {filteredReports.length})
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="overflow-auto">
-              <Table>
+      <Tabs
+        value={viewTab}
+        onValueChange={setViewTab}
+        className="space-y-4"
+      >
+        <TabsList className="grid w-full max-w-2xl grid-cols-3 bg-slate-100 p-1">
+          <TabsTrigger value="summary" className="text-sm">
+            Summary list
+          </TabsTrigger>
+          <TabsTrigger value="grid" className="text-sm">
+            Quick edit table
+          </TabsTrigger>
+          <TabsTrigger value="scheduleTracker" className="text-sm">
+            Schedule Tracker
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="summary" className="mt-0 space-y-0">
+          {loading ? (
+            <div className="h-64 w-64 mx-auto">
+              <p className="text-center animate-pulse text-gray-500">
+                Fetching reports...
+              </p>
+            </div>
+          ) : (
+            <Card className="shadow-lg border-0">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-slate-800 flex items-center">
+                  <FileText className="h-5 w-5 mr-2 text-teal-600" />
+                  {showArchived ? "Archived" : "Active"} Reports (
+                  {filteredReports.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-auto">
+                  <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50 border-b">
                     <TableHead className="font-semibold text-slate-700">
@@ -681,9 +711,9 @@ export default function ReportsView() {
                                             Rendered Duration
                                           </p>
                                           <p className="font-medium">
-                                            {report.duration_render_in_hrs ||
-                                              report.duration_render_in_min
-                                              ? `${report.duration_render_in_hrs || 0} hrs ${report.duration_render_in_min || 0} min`
+                                            {report.duration_render_in_min != null &&
+                                            report.duration_render_in_min !== ""
+                                              ? `${report.duration_render_in_min} min`
                                               : "N/A"}
                                           </p>
                                         </div>
@@ -823,7 +853,64 @@ export default function ReportsView() {
             </div>
           </CardContent>
         </Card>
-      )}
+          )}
+        </TabsContent>
+
+        <TabsContent value="grid" className="mt-0">
+          {loading ? (
+            <div className="h-48 flex items-center justify-center text-slate-500 animate-pulse text-sm">
+              Fetching reports…
+            </div>
+          ) : (
+            <Card className="shadow-lg border-0">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-slate-800 flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-teal-600" />
+                  Quick edit
+                  <span className="text-sm font-normal text-slate-500">
+                    ({filteredReports.length} row
+                    {filteredReports.length === 1 ? "" : "s"})
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-2 sm:px-4 pb-4">
+                <ReportsSpreadsheetGrid
+                  rows={filteredReports}
+                  disabled={loading}
+                  readOnlyArchived={showArchived}
+                  onSaveExisting={handleEditReport}
+                  onCreateNew={handleAddReport}
+                />
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="scheduleTracker" className="mt-0 space-y-4">
+          <Card className="shadow-lg border-0">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-slate-800 text-lg">
+                Import schedule (Excel)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScheduleTrackerImport
+                onImported={() => {
+                  fetchReports({ silent: true });
+                  setScheduleTrackerKey((k) => k + 1);
+                }}
+              />
+            </CardContent>
+          </Card>
+          <div className="space-y-1">
+            <h3 className="text-lg font-semibold text-slate-800">Edit misc hours</h3>
+            <p className="text-sm text-slate-500">
+              Read-only columns match your tracker; only Misc Hrs is saved here.
+            </p>
+          </div>
+          <ScheduleTrackerGrid key={scheduleTrackerKey} />
+        </TabsContent>
+      </Tabs>
 
       {/* Add/Edit Report Modal */}
       {isAddModalOpen && (

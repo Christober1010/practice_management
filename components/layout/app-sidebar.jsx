@@ -7,7 +7,6 @@ import {
   LogOut,
   UserCheck,
   Database,
-  ChevronRight,
   ListChecks,
   Target,
   Layers,
@@ -22,11 +21,14 @@ import {
   Building2,
   Heart,
   Shield,
+  Activity,
+  FolderOpen,
 } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
   PERM,
   buildSubmenuPermissionMap,
+  SUBMENU_VIEW_OR_MANAGE,
 } from "@/lib/rbac-permission-keys";
 import {
   Sidebar,
@@ -61,9 +63,8 @@ export default function AppSidebar({
   const router = useRouter();
   const [showMasterDataMenu, setShowMasterDataMenu] = useState(false);
   const [showManageDataMenu, setShowManageDataMenu] = useState(false);
+  const [showBillingMenu, setShowBillingMenu] = useState(false);
   const lastScrollY = useRef(0);
-  const masterDataTimeoutRef = useRef(null);
-  const manageDataTimeoutRef = useRef(null);
   const { isMobile, setOpenMobile, setOpen } = useSidebar();
 
   const masterDataSubItems = [
@@ -86,9 +87,27 @@ export default function AppSidebar({
       icon: SquareTerminal,
       color: "text-rose-600",
     },
+    {
+      id: "behaviors",
+      label: "Behaviors",
+      icon: Activity,
+      color: "text-red-600",
+    },
   ];
 
   const manageDataSubItems = [
+    {
+      id: "behaviorCategories",
+      label: "Behavior Categories",
+      icon: FolderOpen,
+      color: "text-amber-600",
+    },
+    {
+      id: "payerPayments",
+      label: "Payer Payments",
+      icon: Shield,
+      color: "text-emerald-600",
+    },
     {
       id: "provider",
       label: "Manage Providers",
@@ -138,14 +157,32 @@ export default function AppSidebar({
       color: "text-cyan-600",
     },
   ];
+  const billingSubItems = [
+    {
+      id: "billing",
+      label: "Overview",
+      icon: FileText,
+      color: "text-emerald-600",
+    },
+    {
+      id: "claims",
+      label: "Claims",
+      icon: Shield,
+      color: "text-blue-600",
+    },
+  ];
 
-  const { can } = usePermissions(userRole);
+  const { can, canAny } = usePermissions(userRole);
 
   const subPermMap = buildSubmenuPermissionMap();
-  const masterDataSubItemsFiltered = masterDataSubItems.filter((s) =>
-    can(subPermMap[s.id])
-  );
-  const manageDataSubItemsFiltered = manageDataSubItems.filter((s) =>
+  const canSubmenu = (id) => {
+    const pair = SUBMENU_VIEW_OR_MANAGE[id];
+    if (pair) return canAny(pair);
+    return can(subPermMap[id]);
+  };
+  const masterDataSubItemsFiltered = masterDataSubItems.filter((s) => canSubmenu(s.id));
+  const manageDataSubItemsFiltered = manageDataSubItems.filter((s) => canSubmenu(s.id));
+  const billingSubItemsFiltered = billingSubItems.filter((s) =>
     can(subPermMap[s.id])
   );
 
@@ -197,14 +234,14 @@ export default function AppSidebar({
     if (can(PERM.VIEW_MASTER_DATA) && masterDataSubItemsFiltered.length > 0) {
       push({
         id: "masterData",
-        label: "Data Collection",
+        label: "Configure data",
         icon: Database,
         color: "text-orange-600",
         hasSubmenu: true,
         subItems: masterDataSubItemsFiltered,
       });
     }
-    if (can(PERM.VIEW_MANAGE_DATA) && manageDataSubItemsFiltered.length > 0) {
+    if (manageDataSubItemsFiltered.length > 0) {
       push({
         id: "manageData",
         label: "Manage Data",
@@ -231,12 +268,14 @@ export default function AppSidebar({
         href: "/launchpad/",
       });
     }
-    if (can(PERM.VIEW_BILLING)) {
+    if (can(PERM.VIEW_BILLING) && billingSubItemsFiltered.length > 0) {
       push({
         id: "billing",
         label: "Billing",
         icon: FileText,
         color: "text-emerald-600",
+        hasSubmenu: true,
+        subItems: billingSubItemsFiltered,
       });
     }
     if (userRole.role === "admin" && can(PERM.USERS_WRITE)) {
@@ -318,6 +357,7 @@ export default function AppSidebar({
     localStorage.setItem("currentView", id);
     setShowMasterDataMenu(false);
     setShowManageDataMenu(false);
+    setShowBillingMenu(false);
     // Desktop: do not call setOpen(false) here — that collapses the rail to icon-only.
     // Mobile: close the sheet drawer only.
     if (isMobile) {
@@ -325,47 +365,34 @@ export default function AppSidebar({
     }
   };
 
-  const handleMasterDataHover = (isEntering) => {
-    if (masterDataTimeoutRef.current) {
-      clearTimeout(masterDataTimeoutRef.current);
-    }
-
-    if (isEntering) {
-      setOpen(true);
-      setShowMasterDataMenu(true);
-    } else {
-      masterDataTimeoutRef.current = setTimeout(() => {
-        setShowMasterDataMenu(false);
-      }, 200);
-    }
-  };
-
-  const handleManageDataHover = (isEntering) => {
-    if (manageDataTimeoutRef.current) {
-      clearTimeout(manageDataTimeoutRef.current);
-    }
-
-    if (isEntering) {
-      setOpen(true);
-      setShowManageDataMenu(true);
-    } else {
-      manageDataTimeoutRef.current = setTimeout(() => {
-        setShowManageDataMenu(false);
-      }, 200);
-    }
-  };
-
   const toggleSubmenu = (menuId) => {
-    // Mobile-friendly: tap to open/close submenus (hover doesn't exist on touch).
     if (menuId === "manageData") {
-      setShowManageDataMenu((v) => !v);
+      setShowManageDataMenu((v) => {
+        const next = !v;
+        if (next) setOpen(true);
+        return next;
+      });
       setShowMasterDataMenu(false);
       return;
     }
     if (menuId === "masterData") {
-      setShowMasterDataMenu((v) => !v);
+      setShowMasterDataMenu((v) => {
+        const next = !v;
+        if (next) setOpen(true);
+        return next;
+      });
       setShowManageDataMenu(false);
+      setShowBillingMenu(false);
       return;
+    }
+    if (menuId === "billing") {
+      setShowBillingMenu((v) => {
+        const next = !v;
+        if (next) setOpen(true);
+        return next;
+      });
+      setShowManageDataMenu(false);
+      setShowMasterDataMenu(false);
     }
   };
 
@@ -459,40 +486,46 @@ export default function AppSidebar({
               const isMasterDataSubitem = masterDataSubItemsFiltered.some(
                 (subItem) => subItem.id === currentView
               );
+              const isBillingSubitem = billingSubItemsFiltered.some(
+                (subItem) => subItem.id === currentView
+              );
               const isActiveParent = item.id === "manageData" && isManageDataSubitem;
               const isActiveMasterParent = item.id === "masterData" && isMasterDataSubitem;
+              const isActiveBillingParent = item.id === "billing" && isBillingSubitem;
 
               if (item.hasSubmenu) {
-                const isManageData = item.id === "manageData";
                 const subItems = item.subItems || [];
-                const showSubmenu = isManageData ? showManageDataMenu : showMasterDataMenu;
-                const handleHover = isManageData ? handleManageDataHover : handleMasterDataHover;
+                const showSubmenu =
+                  item.id === "manageData"
+                    ? showManageDataMenu
+                    : item.id === "masterData"
+                    ? showMasterDataMenu
+                    : showBillingMenu;
 
                 return (
                   <SidebarMenuItem key={item.id} className="relative">
-                    <div
-                      onMouseEnter={() => (!isMobile ? handleHover(true) : undefined)}
-                      onMouseLeave={() => (!isMobile ? handleHover(false) : undefined)}
-                    >
+                    <div>
                       <SidebarMenuButton
                         asChild
-                        isActive={isActive || isActiveParent || isActiveMasterParent}
+                        isActive={
+                          isActive ||
+                          isActiveParent ||
+                          isActiveMasterParent ||
+                          isActiveBillingParent
+                        }
                         tooltip={item.label}
                       >
                         <a
                           href="#"
                           onClick={(e) => {
                             e.preventDefault();
-                            // Desktop: keep existing behavior (click selects parent + hover for submenu).
-                            // Mobile: tap toggles submenu dropdown.
-                            if (isMobile) {
-                              toggleSubmenu(item.id);
-                            } else {
-                              handleMenuSelect(item.id);
-                            }
+                            toggleSubmenu(item.id);
                           }}
                           className={`flex items-center space-x-3 px-3 py-2 rounded-lg transition-colors ${
-                            isActive || isActiveParent || isActiveMasterParent
+                            isActive ||
+                            isActiveParent ||
+                            isActiveMasterParent ||
+                            isActiveBillingParent
                               ? "bg-teal-50 text-teal-700"
                               : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                           }`}
@@ -500,82 +533,51 @@ export default function AppSidebar({
                           <div className="flex items-center space-x-3">
                             <Icon
                               className={`h-4 w-4 mr-2 ${
-                                isActive || isActiveParent || isActiveMasterParent ? "text-teal-600" : item.color
+                                isActive ||
+                                isActiveParent ||
+                                isActiveMasterParent ||
+                                isActiveBillingParent
+                                  ? "text-teal-600"
+                                  : item.color
                               }`}
                             />
                             <span className="group-data-[state=collapsed]/sidebar-wrapper:hidden">
                               {item.label}
                             </span>
                           </div>
-                          {isMobile ? (
-                            <ChevronDown
-                              className={`h-4 w-4 group-data-[state=collapsed]/sidebar-wrapper:hidden transition-transform ${
-                                showSubmenu ? "rotate-180" : ""
-                              }`}
-                            />
-                          ) : (
-                            <ChevronRight className="h-4 w-4 group-data-[state=collapsed]/sidebar-wrapper:hidden" />
-                          )}
+                          <ChevronDown
+                            className={`h-4 w-4 group-data-[state=collapsed]/sidebar-wrapper:hidden transition-transform ${
+                              showSubmenu ? "rotate-180" : ""
+                            }`}
+                          />
                         </a>
                       </SidebarMenuButton>
 
-                      {/* Submenu */}
                       {showSubmenu && (
-                        isMobile ? (
-                          // Mobile: inline dropdown (works in touch + sheet; avoids absolute/hover)
-                          <div className="mt-1 ml-6 space-y-1 border-l border-slate-200 pl-3">
-                            {subItems.map((subItem) => {
-                              const SubIcon = subItem.icon;
-                              return (
-                                <button
-                                  key={subItem.id}
-                                  onClick={() => handleMenuSelect(subItem.id)}
-                                  className={`w-full flex items-center px-3 py-2 text-sm rounded-md transition-colors ${
-                                    currentView === subItem.id
-                                      ? "bg-teal-50 text-teal-700"
-                                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                        <div className="mt-1 ml-2 space-y-1 border-l border-slate-200 pl-3">
+                          {subItems.map((subItem) => {
+                            const SubIcon = subItem.icon;
+                            return (
+                              <button
+                                key={subItem.id}
+                                type="button"
+                                onClick={() => handleMenuSelect(subItem.id)}
+                                className={`w-full flex items-center px-3 py-2 text-sm rounded-md transition-colors ${
+                                  currentView === subItem.id
+                                    ? "bg-teal-50 text-teal-700"
+                                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                                }`}
+                              >
+                                <SubIcon
+                                  className={`h-4 w-4 mr-3 ${
+                                    currentView === subItem.id ? "text-teal-600" : subItem.color
                                   }`}
-                                >
-                                  <SubIcon
-                                    className={`h-4 w-4 mr-3 ${
-                                      currentView === subItem.id
-                                        ? "text-teal-600"
-                                        : subItem.color
-                                    }`}
-                                  />
-                                  {subItem.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          // Desktop: hover dropdown
-                          <div className="absolute ml-2 pl-2 w-56 bg-white rounded-lg shadow-lg border border-slate-200 py-2 z-50">
-                            {subItems.map((subItem) => {
-                              const SubIcon = subItem.icon;
-                              return (
-                                <button
-                                  key={subItem.id}
-                                  onClick={() => handleMenuSelect(subItem.id)}
-                                  className={`w-full flex items-center px-4 py-2 text-sm transition-colors ${
-                                    currentView === subItem.id
-                                      ? "bg-teal-50 text-teal-700"
-                                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-                                  }`}
-                                >
-                                  <SubIcon
-                                    className={`h-4 w-4 mr-3 ${
-                                      currentView === subItem.id
-                                        ? "text-teal-600"
-                                        : subItem.color
-                                    }`}
-                                  />
-                                  {subItem.label}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )
+                                />
+                                {subItem.label}
+                              </button>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
                   </SidebarMenuItem>

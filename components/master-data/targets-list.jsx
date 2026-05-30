@@ -37,6 +37,10 @@ import { fetchPrograms } from "@/app/store/programSlice";
 import { fetchClients } from "@/app/store/clientSlice";
 import AddTargetModal from "./add-target-modal";
 import DeleteConfirmModal from "./DeleteConfirmModal";
+import {
+  getDomainModuleLabel,
+  mergeCanonicalDomainModules,
+} from "@/lib/domain-module-options";
 
 export default function TargetsList() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -72,6 +76,14 @@ export default function TargetsList() {
   const genericDomains = programsData.domains || [];
   const genericModules = programsData.modules || [];
 
+  const allModules = useMemo(
+    () =>
+      mergeCanonicalDomainModules([
+        ...genericModules,
+        ...(clientTargetsData.modules || []),
+      ]),
+    [genericModules, clientTargetsData.modules]
+  );
 
   useEffect(() => {
     dispatch(fetchPrograms());
@@ -165,11 +177,7 @@ export default function TargetsList() {
             (d) => String(d.id) === String(program.domainId || program.domain_id)
           )
         : null;
-      const module = domain
-        ? genericModules.find(
-            (m) => String(m.id) === String(domain.moduleId || domain.module_id)
-          )
-        : null;
+      const moduleId = domain?.moduleId || domain?.module_id;
       return {
         id: `generic-${a.id}`,
         rawId: a.id,
@@ -183,18 +191,13 @@ export default function TargetsList() {
         programId: a.programId || a.program_id,
         programName: program?.name || program?.NAME || "N/A",
         domainName: domain?.name || domain?.NAME || "N/A",
-        moduleName: module?.name || module?.NAME || "N/A",
+        moduleName: getDomainModuleLabel(allModules, moduleId),
         prompts: a.prompts || [],
         tasks: a.tasks || [],
         type: "generic",
       };
     });
-  }, [
-    genericActivities,
-    genericPrograms,
-    genericDomains,
-    genericModules,
-  ]);
+  }, [genericActivities, genericPrograms, genericDomains, allModules]);
 
   // normalize client targets
   const clientTargets = useMemo(() => {
@@ -209,7 +212,10 @@ export default function TargetsList() {
     // Merge generic and client data for comprehensive lookups
     const allProgramsArray = [...genericPrograms, ...clientProgramsArray];
     const allDomainsArray = [...genericDomains, ...clientDomainsArray];
-    const allModulesArray = [...genericModules, ...clientModulesArray];
+    const allModulesArray = mergeCanonicalDomainModules([
+      ...genericModules,
+      ...clientModulesArray,
+    ]);
 
     const clientMap = {};
     clients.forEach((c) => {
@@ -256,15 +262,6 @@ export default function TargetsList() {
       // Get module ID from domain (try both field names)
       const domainModuleId = domain?.module_id || domain?.moduleId;
       
-      // Find module in merged array
-      const module = domainModuleId
-        ? allModulesArray.find((m) => {
-            const mid = String(m?.id || "");
-            const dmid = String(domainModuleId || "");
-            return mid === dmid && mid !== "";
-          })
-        : null;
-      
       const clientName = clientMap[String(a.client_id)] || "Unknown Client";
 
       return {
@@ -280,7 +277,7 @@ export default function TargetsList() {
         programId: targetProgramId,
         programName: program?.name || program?.NAME || "—",
         domainName: domain?.name || domain?.NAME || "—",
-        moduleName: module?.name || module?.NAME || "—",
+        moduleName: getDomainModuleLabel(allModulesArray, domainModuleId),
         client_name: clientName,
         client_id: a.client_id,
         prompts: a.prompts || [],
@@ -691,10 +688,10 @@ export default function TargetsList() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50">
-                    <TableHead className="px-2">Module Name</TableHead>
-                    <TableHead className="px-2">Domain Name</TableHead>
-                    <TableHead className="px-2">Program Name</TableHead>
                     <TableHead className="px-2">Target Name</TableHead>
+                    <TableHead className="px-2">Module</TableHead>
+                    <TableHead className="px-2">Domain</TableHead>
+                    <TableHead className="px-2">Program</TableHead>
                     <TableHead className="px-2">Type</TableHead>
                     <TableHead className="hidden md:table-cell">
                       Activity Type
@@ -710,24 +707,24 @@ export default function TargetsList() {
                   {displayedTargets.map((t) => (
                     <TableRow key={t.id} className="hover:bg-slate-50">
                       <TableCell className="font-medium p-2">
-                        {t.moduleName}
-                      </TableCell>
-
-                      <TableCell className="font-medium p-2">
-                        {t.domainName}
-                      </TableCell>
-
-                      <TableCell className="font-medium p-2">
-                        {t.programName}
-                      </TableCell>
-
-                      <TableCell className="font-medium p-2">
                         {t.name}
                         {t.archived && (
                           <Badge variant="outline" className="ml-2 text-xs">
                             Archived
                           </Badge>
                         )}
+                      </TableCell>
+
+                      <TableCell className="p-2 text-slate-700">
+                        {t.moduleName || "—"}
+                      </TableCell>
+
+                      <TableCell className="p-2 text-slate-700">
+                        {t.domainName || "—"}
+                      </TableCell>
+
+                      <TableCell className="p-2 text-slate-700">
+                        {t.programName || "—"}
                       </TableCell>
 
                       <TableCell className="p-2">

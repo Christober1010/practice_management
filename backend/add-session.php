@@ -6,7 +6,7 @@
 
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, Cache-Control");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Cache-Control, Accept");
 header("Access-Control-Max-Age: 86400");
 header("Content-Type: application/json; charset=UTF-8");
 
@@ -33,6 +33,346 @@ if ($conn->connect_error) {
     http_response_code(500);
     echo json_encode(["error" => "Database connection failed"]);
     exit();
+}
+
+/**
+ * Some deployments migrated sessions.authorized_hours; others did not.
+ * When missing, omit the column from INSERT/UPDATE so session create still works.
+ */
+function sessions_has_authorized_hours_column(mysqli $conn): bool
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $r = @$conn->query("SHOW COLUMNS FROM `sessions` LIKE 'authorized_hours'");
+    $cached = ($r && $r->num_rows > 0);
+    if ($r) {
+        $r->free();
+    }
+    return $cached;
+}
+
+function sessions_has_claim_columns(mysqli $conn): array
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $cached = ['claim_id' => false, 'claim_status' => false];
+    $r = @$conn->query("SHOW COLUMNS FROM `sessions`");
+    if ($r) {
+        while ($row = $r->fetch_assoc()) {
+            $f = $row['Field'] ?? '';
+            if ($f === 'claim_id') {
+                $cached['claim_id'] = true;
+            }
+            if ($f === 'claim_status') {
+                $cached['claim_status'] = true;
+            }
+        }
+        $r->free();
+    }
+    return $cached;
+}
+
+function session_is_completed_status($status): bool
+{
+    $v = strtolower(trim((string)$status));
+    return $v === 'rendered' || $v === 'completed';
+}
+
+/** Completed / billed session — only time and location may change on update. */
+function session_row_is_completed(array $row): bool
+{
+    if (session_is_completed_status($row['status'] ?? $row['STATUS'] ?? '')) {
+        return true;
+    }
+    if (floatval($row['rendered_hours'] ?? 0) > 0) {
+        return true;
+    }
+    $cs = strtolower(trim((string)($row['claim_status'] ?? '')));
+    if ($cs !== '' && str_contains($cs, 'ready to bill')) {
+        return true;
+    }
+    if (trim((string)($row['claim_id'] ?? '')) !== '') {
+        return true;
+    }
+    return false;
+}
+
+function session_status_is_cancelled($status): bool
+{
+    return strtolower(trim((string)$status)) === 'cancelled';
+}
+
+class ProviderScheduleConflictException extends Exception
+{
+    private array $payload;
+
+    public function __construct(array $conflict, string $providerName = '')
+    {
+        $this->payload = provider_double_booked_response($conflict, $providerName);
+        parent::__construct((string)($this->payload['error'] ?? 'Provider is double-booked'));
+    }
+
+    public function getPayload(): array
+    {
+        return array_merge($this->payload, ['success' => false]);
+    }
+}
+
+/** Resolved sessions.status / STATUS column name for SQL fragments. */
+function sessions_status_column(mysqli $conn): string
+{
+    static $col = null;
+    if ($col !== null) {
+        return $col;
+    }
+    $col = 'status';
+    $r = @$conn->query('SHOW COLUMNS FROM `sessions`');
+    if ($r) {
+        while ($row = $r->fetch_assoc()) {
+            $field = (string)($row['Field'] ?? '');
+            if (strcasecmp($field, 'STATUS') === 0) {
+                $col = $field;
+                break;
+            }
+            if (strcasecmp($field, 'status') === 0) {
+                $col = $field;
+            }
+        }
+        $r->free();
+    }
+    return $col;
+}
+
+function sessions_status_sql_expr(mysqli $conn, string $alias = 's'): string
+{
+    $col = sessions_status_column($conn);
+    return "LOWER(TRIM(IFNULL({$alias}.`{$col}`, '')))";
+}
+
+function schedule_windows_overlap(string $startUtc, string $endUtc, string $otherStart, string $otherEnd): bool
+{
+    $s = strtotime($startUtc);
+    $e = strtotime($endUtc);
+    $os = strtotime($otherStart);
+    $oe = strtotime($otherEnd);
+    if ($s === false || $e === false || $os === false || $oe === false) {
+        return false;
+    }
+    return $s < $oe && $os < $e;
+}
+
+/**
+ * Find an active session overlapping the provider's time window.
+ *
+ * @param int[] $excludeSessionIds
+ * @return array<string,mixed>|null
+ */
+function find_provider_schedule_conflict(
+    mysqli $conn,
+    string $providerId,
+    string $startUtc,
+    string $endUtc,
+    array $excludeSessionIds = []
+): ?array {
+    if (trim($providerId) === '' || trim($startUtc) === '' || trim($endUtc) === '') {
+        return null;
+    }
+    if (strtotime($endUtc) <= strtotime($startUtc)) {
+        return null;
+    }
+
+    $excludeSessionIds = array_values(array_unique(array_filter(array_map('intval', $excludeSessionIds))));
+    $excludeSql = '';
+    if (!empty($excludeSessionIds)) {
+        $excludeSql = ' AND s.session_id NOT IN (' . implode(',', $excludeSessionIds) . ')';
+    }
+
+    $statusExpr = sessions_status_sql_expr($conn, 's');
+    $sql = "
+        SELECT s.session_id, s.client_id, s.start_utc, s.end_utc, s.provider_name,
+               TRIM(CONCAT(IFNULL(c.first_name, ''), ' ', IFNULL(c.last_name, ''))) AS client_name
+        FROM sessions s
+        LEFT JOIN clients c ON s.client_id = c.client_id
+        WHERE s.provider_id = ?
+          AND {$statusExpr} <> 'cancelled'
+          AND s.start_utc < ?
+          AND s.end_utc > ?
+          {$excludeSql}
+        ORDER BY s.start_utc ASC
+        LIMIT 1
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        file_put_contents(
+            'debug.log',
+            'find_provider_schedule_conflict prepare failed: ' . $conn->error . "\n",
+            FILE_APPEND
+        );
+        throw new Exception('Unable to validate provider schedule (database error).');
+    }
+    $stmt->bind_param('sss', $providerId, $endUtc, $startUtc);
+    if (!$stmt->execute()) {
+        $err = $stmt->error;
+        $stmt->close();
+        throw new Exception('Unable to validate provider schedule: ' . $err);
+    }
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$row) {
+        return null;
+    }
+
+    $clientName = trim((string)($row['client_name'] ?? ''));
+    if ($clientName === '') {
+        $clientName = 'another client';
+    }
+    $row['client_name'] = $clientName;
+
+    return $row;
+}
+
+function provider_double_booked_response(array $conflict, string $providerName = ''): array
+{
+    $client = trim((string)($conflict['client_name'] ?? 'another client'));
+    $providerLabel = trim($providerName) !== ''
+        ? $providerName
+        : trim((string)($conflict['provider_name'] ?? 'This provider'));
+    $start = (string)($conflict['start_utc'] ?? '');
+    $end = (string)($conflict['end_utc'] ?? '');
+
+    return [
+        'error' => sprintf(
+            '%s is already booked with %s from %s to %s. Choose a different time or provider.',
+            $providerLabel,
+            $client,
+            $start,
+            $end
+        ),
+        'code' => 'provider_double_booked',
+        'success' => false,
+        'conflict' => [
+            'session_id' => (int)($conflict['session_id'] ?? 0),
+            'client_name' => $client,
+            'provider_name' => $providerLabel,
+            'start_utc' => $start,
+            'end_utc' => $end,
+        ],
+    ];
+}
+
+/**
+ * Block save when provider overlaps DB sessions or pending windows in this request.
+ *
+ * @param array<int, array{start:string,end:string}> $pendingWindows
+ */
+function ensure_provider_schedule_clear(
+    mysqli $conn,
+    string $providerId,
+    string $startUtc,
+    string $endUtc,
+    array $excludeSessionIds,
+    array $pendingWindows,
+    string $providerName
+): void {
+    $conflict = find_provider_schedule_conflict($conn, $providerId, $startUtc, $endUtc, $excludeSessionIds);
+    if ($conflict) {
+        throw new ProviderScheduleConflictException($conflict, $providerName);
+    }
+
+    foreach ($pendingWindows as $pending) {
+        $pStart = (string)($pending['start'] ?? '');
+        $pEnd = (string)($pending['end'] ?? '');
+        if ($pStart === '' || $pEnd === '') {
+            continue;
+        }
+        if (schedule_windows_overlap($startUtc, $endUtc, $pStart, $pEnd)) {
+            throw new ProviderScheduleConflictException([
+                'session_id' => 0,
+                'client_name' => 'another session in this save',
+                'provider_name' => $providerName,
+                'start_utc' => $pStart,
+                'end_utc' => $pEnd,
+            ], $providerName);
+        }
+    }
+}
+
+function lock_provider_sessions_for_update(mysqli $conn, string $providerId): void
+{
+    if (trim($providerId) === '') {
+        return;
+    }
+    $stmt = $conn->prepare('SELECT session_id FROM sessions WHERE provider_id = ? FOR UPDATE');
+    if (!$stmt) {
+        throw new Exception('Unable to lock provider schedule: ' . $conn->error);
+    }
+    $stmt->bind_param('s', $providerId);
+    if (!$stmt->execute()) {
+        $err = $stmt->error;
+        $stmt->close();
+        throw new Exception('Unable to lock provider schedule: ' . $err);
+    }
+    $stmt->get_result();
+    $stmt->close();
+}
+
+function build_claim_id($sessionId, $startUtc = null): string
+{
+    $datePart = date('Ymd');
+    if (!empty($startUtc)) {
+        $ts = strtotime((string)$startUtc);
+        if ($ts !== false) {
+            $datePart = gmdate('Ymd', $ts);
+        }
+    }
+    return "CLM-{$datePart}-{$sessionId}";
+}
+
+function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = null): void
+{
+    $cols = sessions_has_claim_columns($conn);
+    if (!$cols['claim_id'] || !$cols['claim_status']) {
+        return;
+    }
+
+    $stmt = $conn->prepare("SELECT claim_id, claim_status FROM sessions WHERE session_id = ? LIMIT 1");
+    if (!$stmt) {
+        return;
+    }
+    $stmt->bind_param("i", $sessionId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$row) {
+        return;
+    }
+
+    $nextClaimId = trim((string)($row['claim_id'] ?? ''));
+    $nextClaimStatus = trim((string)($row['claim_status'] ?? ''));
+    if ($nextClaimId === '' && $cols['claim_id']) {
+        $nextClaimId = build_claim_id($sessionId, $startUtc);
+    }
+    if ($nextClaimStatus === '' && $cols['claim_status']) {
+        $nextClaimStatus = 'Ready to Bill';
+    }
+
+    if (($row['claim_id'] ?? '') === $nextClaimId && ($row['claim_status'] ?? '') === $nextClaimStatus) {
+        return;
+    }
+
+    $upd = $conn->prepare("UPDATE sessions SET claim_id = ?, claim_status = ? WHERE session_id = ?");
+    if (!$upd) {
+        return;
+    }
+    $upd->bind_param("ssi", $nextClaimId, $nextClaimStatus, $sessionId);
+    $upd->execute();
+    $upd->close();
 }
 
 // Utility Functions
@@ -204,53 +544,11 @@ function getEmailRecipients($conn, $clientId, $providerId = null, $supervisingPr
     }
 
     if ($providerId) {
-        file_put_contents('debug.log', "Looking up provider staffType for ID: $providerId\n", FILE_APPEND);
-
-        $staffStmt = $conn->prepare("SELECT email, staffType, firstName, lastName FROM staff WHERE id = ?");
-        $staffStmt->bind_param("s", $providerId);
-        $staffStmt->execute();
-        $staffResult = $staffStmt->get_result();
-        $staffData = $staffResult->fetch_assoc();
-        $staffStmt->close();
-
-        if ($staffData) {
-            $providerName = trim(($staffData['firstName'] ?? '') . ' ' . ($staffData['lastName'] ?? ''));
-            file_put_contents('debug.log', "Staff found: $providerName with staffType: " . ($staffData['staffType'] ?? 'null') . "\n", FILE_APPEND);
-
-            if (strtoupper($staffData['staffType'] ?? '') === 'RBT' && $supervisingProviderId) {
-                file_put_contents('debug.log', "RBT detected, looking up supervisor: $supervisingProviderId\n", FILE_APPEND);
-
-                $supervisorStmt = $conn->prepare("SELECT email, firstName, lastName FROM staff WHERE id = ?");
-                $supervisorStmt->bind_param("s", $supervisingProviderId);
-                $supervisorStmt->execute();
-                $supervisorResult = $supervisorStmt->get_result();
-                $supervisorData = $supervisorResult->fetch_assoc();
-                $supervisorStmt->close();
-
-                if ($supervisorData && $supervisorData['email']) {
-                    $supervisorName = trim(($supervisorData['firstName'] ?? '') . ' ' . ($supervisorData['lastName'] ?? ''));
-                    $recipients[] = [
-                        'email' => $supervisorData['email'],
-                        'name' => $supervisorName,
-                        'type' => 'supervisor'
-                    ];
-                    file_put_contents('debug.log', "RBT session detected (Provider: $providerId) - sending email to supervisor: {$supervisorData['email']}\n", FILE_APPEND);
-                } else {
-                    file_put_contents('debug.log', "RBT session detected but supervisor email not found for supervisor ID: $supervisingProviderId\n", FILE_APPEND);
-                }
-            } else {
-                if ($staffData['email']) {
-                    $recipients[] = [
-                        'email' => $staffData['email'],
-                        'name' => $providerName,
-                        'type' => 'provider'
-                    ];
-                    file_put_contents('debug.log', "Provider staffType: " . ($staffData['staffType'] ?? 'unknown') . " - sending to provider email: {$staffData['email']}\n", FILE_APPEND);
-                }
-            }
-        } else {
-            file_put_contents('debug.log', "Provider not found in staff table\n", FILE_APPEND);
-        }
+        file_put_contents(
+            'debug.log',
+            "Provider/supervisor email notifications are disabled for scheduling.\n",
+            FILE_APPEND
+        );
     }
 
     return [
@@ -269,15 +567,107 @@ function computeScheduledHours($startUtc, $endUtc)
     return round($hours, 2);
 }
 
+function buildRecurringOccurrenceStarts(DateTime $baseStart, string $frequency, array $days, string $endsType, ?string $endsDate, int $occurrences): array
+{
+    $results = [];
+    $guard = 0;
+    $maxGuard = 1500;
+    $dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    $normalizedDays = array_values(array_intersect($days, $dayNames));
+    $targetAdditional = max(0, $occurrences - 1);
+
+    if ($frequency === 'Weekly' && count($normalizedDays) > 0) {
+        $wanted = array_flip($normalizedDays);
+        $scan = clone $baseStart;
+        $scan->modify('+1 day');
+        while ($guard < $maxGuard) {
+            $guard++;
+            if ($endsType === 'After' && count($results) >= $targetAdditional) break;
+            if ($endsType === 'On' && $endsDate && $scan->format('Y-m-d') > $endsDate) break;
+            $dn = $dayNames[(int)$scan->format('w')];
+            if (isset($wanted[$dn])) {
+                $results[] = clone $scan;
+            }
+            $scan->modify('+1 day');
+        }
+        return $results;
+    }
+
+    $step = '+1 day';
+    if ($frequency === 'Weekly') $step = '+7 days';
+    if ($frequency === 'Biweekly') $step = '+14 days';
+    if ($frequency === 'Monthly') $step = '+1 month';
+
+    $scan = clone $baseStart;
+    while ($guard < $maxGuard) {
+        $guard++;
+        $scan->modify($step);
+        if ($endsType === 'After') {
+            if (count($results) >= $targetAdditional) break;
+            $results[] = clone $scan;
+            if (count($results) >= $targetAdditional) break;
+        } else { // On
+            if ($endsDate && $scan->format('Y-m-d') > $endsDate) break;
+            $results[] = clone $scan;
+        }
+    }
+    return $results;
+}
+
+/**
+ * Some DBs use client_auth.auth_id as PK; others use client_auth.id with auth_id nullable.
+ * Scheduling sends the numeric PK from the API (may be id). Build WHERE that matches either column when both exist.
+ *
+ * @return array{clause: string, dual: bool}
+ */
+function client_auth_identifier_where(mysqli $conn, string $tableAlias = ''): array
+{
+    static $cache = [];
+    $key = $tableAlias;
+    if (isset($cache[$key])) {
+        return $cache[$key];
+    }
+    $hasAuthId = false;
+    $hasId = false;
+    $r = @$conn->query("SHOW COLUMNS FROM `client_auth`");
+    if ($r) {
+        while ($row = $r->fetch_assoc()) {
+            $f = $row['Field'] ?? '';
+            if ($f === 'auth_id') {
+                $hasAuthId = true;
+            }
+            if ($f === 'id') {
+                $hasId = true;
+            }
+        }
+        $r->free();
+    }
+    $p = $tableAlias;
+    if ($hasAuthId && $hasId) {
+        $cache[$key] = ['clause' => "({$p}auth_id = ? OR {$p}id = ?)", 'dual' => true];
+    } elseif ($hasId && !$hasAuthId) {
+        $cache[$key] = ['clause' => "{$p}id = ?", 'dual' => false];
+    } else {
+        $cache[$key] = ['clause' => "{$p}auth_id = ?", 'dual' => false];
+    }
+    return $cache[$key];
+}
+
 function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
 {
     if (!$authId) {
         throw new Exception("auth_id is required");
     }
 
-    // Step 1: Verify auth_id exists
-    $checkStmt = $conn->prepare("SELECT insurance_id, balance_units FROM client_auth WHERE auth_id = ?");
-    $checkStmt->bind_param("i", $authId);
+    $match = client_auth_identifier_where($conn, '');
+
+    // Step 1: Verify authorization row exists
+    $checkStmt = $conn->prepare("SELECT insurance_id, balance_units FROM client_auth WHERE {$match['clause']}");
+    if ($match['dual']) {
+        $checkStmt->bind_param("ii", $authId, $authId);
+    } else {
+        $checkStmt->bind_param("i", $authId);
+    }
     $checkStmt->execute();
     $result = $checkStmt->get_result();
     $authData = $result->fetch_assoc();
@@ -303,8 +693,14 @@ function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
     }
 
     // Step 3: Check active authorization
-    $stmt = $conn->prepare("SELECT balance_units, status FROM client_auth WHERE auth_id = ? AND UPPER(status) = 'ACTIVE'");
-    $stmt->bind_param("i", $authId);
+    $stmt = $conn->prepare(
+        "SELECT balance_units, status FROM client_auth WHERE {$match['clause']} AND UPPER(TRIM(IFNULL(status,''))) = 'ACTIVE'"
+    );
+    if ($match['dual']) {
+        $stmt->bind_param("ii", $authId, $authId);
+    } else {
+        $stmt->bind_param("i", $authId);
+    }
     $stmt->execute();
     $result = $stmt->get_result();
     $row = $result->fetch_assoc();
@@ -321,9 +717,13 @@ function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
     }
 
     // Step 4: Update balance_units
-    $stmt = $conn->prepare("UPDATE client_auth SET balance_units = ? WHERE auth_id = ?");
+    $stmt = $conn->prepare("UPDATE client_auth SET balance_units = ? WHERE {$match['clause']}");
     $newBalanceStr = number_format($newBalance, 2, '.', ''); // Format as string for VARCHAR
-    $stmt->bind_param("si", $newBalanceStr, $authId);
+    if ($match['dual']) {
+        $stmt->bind_param("sii", $newBalanceStr, $authId, $authId);
+    } else {
+        $stmt->bind_param("si", $newBalanceStr, $authId);
+    }
     $success = $stmt->execute();
     if (!$success) {
         $error = $stmt->error;
@@ -335,6 +735,8 @@ function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
     file_put_contents('debug.log', "updateClientAuthUnitsScheduled: auth_id=$authId, client_id=$clientId, hoursChange=$hoursToAdd, currentBalance=$currentBalance, newBalance=$newBalance, Success=true\n", FILE_APPEND);
     return true;
 }
+
+require_once __DIR__ . '/config.php';
 
 // Main Logic
 $method = $_SERVER['REQUEST_METHOD'];
@@ -358,6 +760,11 @@ try {
             $clientId = (string)$input['clientId'];
             $provider = (string)$input['provider'];
             $providerName = (string)$input['providerName'];
+
+            $authUser = getAuthenticatedUser();
+            if ($authUser) {
+                rbac_enforce_session_action($authUser, $conn, 'create', $provider);
+            }
             $supervisingProvider = isset($input['supervisingProvider']) ? (string)$input['supervisingProvider'] : null;
             $supervisingProviderName = isset($input['supervisingProviderName']) ? (string)$input['supervisingProviderName'] : null;
             $authId = (int)$input['authId'];
@@ -416,49 +823,99 @@ try {
                 echo json_encode(["error" => "Invalid status. Must be 'Scheduled', 'Rendered', or 'Cancelled'"]);
                 exit();
             }
-            $authorizedHours = isset($input['authorizedHours']) ? (string)floatval($input['authorizedHours']) : null;
-            $scheduledHours = isset($input['scheduledHours']) ? (string)floatval($input['scheduledHours']) : null;
-            $renderedHours = isset($input['renderedHours']) ? (string)floatval($input['renderedHours']) : '0.00';
+            // Accept camelCase or snake_case from API / scheduling-view payload
+            $authorizedHoursRaw = $input['authorizedHours'] ?? $input['authorized_hours'] ?? null;
+            $scheduledHoursRaw = $input['scheduledHours'] ?? $input['scheduled_hours'] ?? null;
+            $renderedHoursRaw = $input['renderedHours'] ?? $input['rendered_hours'] ?? null;
 
-            // Validate auth_id and balance before transaction
-            $stmt = $conn->prepare("
-        SELECT ca.insurance_id, ca.status, ca.balance_units, ci.client_id 
-        FROM client_auth ca 
-        LEFT JOIN client_insurance ci ON ca.insurance_id = ci.insurance_id 
-        WHERE ca.auth_id = ? AND UPPER(ca.status) = 'ACTIVE' AND ci.client_id = ?
-    ");
-            $stmt->bind_param("is", $authId, $clientId);
+            $authorizedHours = $authorizedHoursRaw !== null && $authorizedHoursRaw !== ''
+                ? (string) floatval($authorizedHoursRaw)
+                : '0.00';
+            $scheduledHours = $scheduledHoursRaw !== null && $scheduledHoursRaw !== ''
+                ? (string) floatval($scheduledHoursRaw)
+                : null;
+            $renderedHours = $renderedHoursRaw !== null && $renderedHoursRaw !== ''
+                ? (string) floatval($renderedHoursRaw)
+                : '0.00';
+
+            // Validate auth / balance (match active auth + client's insurance). Identifier may be auth_id OR id column.
+            $caMatch = client_auth_identifier_where($conn, 'ca.');
+            $sqlAuthValidate = "
+        SELECT ca.insurance_id, ca.status, ca.balance_units, ci.client_id
+        FROM client_auth ca
+        INNER JOIN client_insurance ci ON ca.insurance_id = ci.insurance_id AND ci.client_id = ?
+        WHERE {$caMatch['clause']} AND UPPER(TRIM(IFNULL(ca.status,''))) = 'ACTIVE'
+    ";
+            $stmt = $conn->prepare($sqlAuthValidate);
+            if ($caMatch['dual']) {
+                $stmt->bind_param("sii", $clientId, $authId, $authId);
+            } else {
+                $stmt->bind_param("si", $clientId, $authId);
+            }
             $stmt->execute();
             $result = $stmt->get_result();
             $authData = $result->fetch_assoc();
             $stmt->close();
 
             if (!$authData) {
-                // Debug: Check why auth_id is invalid
-                $debugStmt = $conn->prepare("SELECT auth_id, insurance_id, status FROM client_auth WHERE auth_id = ?");
-                $debugStmt->bind_param("i", $authId);
-                $debugStmt->execute();
-                $debugResult = $debugStmt->get_result();
-                $debugAuth = $debugResult->fetch_assoc();
-                $debugStmt->close();
-
-                $debugMsg = "POST Validation failed: auth_id=$authId, client_id=$clientId. ";
-                if (!$debugAuth) {
-                    $debugMsg .= "auth_id not found in client_auth.";
+                // Diagnose so UI / admins get a precise reason (not only debug.log)
+                $why = ['auth_id' => $authId, 'client_id' => $clientId];
+                $diagMatch = client_auth_identifier_where($conn, '');
+                $chk = $conn->prepare(
+                    "SELECT * FROM client_auth WHERE {$diagMatch['clause']} LIMIT 1"
+                );
+                if ($diagMatch['dual']) {
+                    $chk->bind_param("ii", $authId, $authId);
                 } else {
-                    $debugMsg .= "auth_id found, status={$debugAuth['status']}, insurance_id={$debugAuth['insurance_id']}. ";
-                    $checkInsuranceStmt = $conn->prepare("SELECT insurance_id FROM client_insurance WHERE insurance_id = ? AND client_id = ?");
-                    $checkInsuranceStmt->bind_param("is", $debugAuth['insurance_id'], $clientId);
-                    $checkInsuranceStmt->execute();
-                    $insuranceResult = $checkInsuranceStmt->get_result();
-                    $insuranceData = $insuranceResult->fetch_assoc();
-                    $checkInsuranceStmt->close();
-                    $debugMsg .= $insuranceData ? "Insurance linked." : "Insurance not linked to client.";
+                    $chk->bind_param("i", $authId);
                 }
-                file_put_contents('debug.log', $debugMsg . "\n", FILE_APPEND);
+                $chk->execute();
+                $rowAuth = $chk->get_result()->fetch_assoc();
+                $chk->close();
+
+                if (!$rowAuth) {
+                    $why['reason'] = 'authorization_row_not_found';
+                    $why['hint'] =
+                        'No client_auth row matches this id on the API database. '
+                        . 'If scheduling shows an auth from another environment, fix NEXT_PUBLIC_BASE_URL / DB parity. '
+                        . 'Otherwise re-save the client\'s authorizations.';
+                } else {
+                    $why['auth_status_db'] = $rowAuth['status'];
+                    $why['insurance_id'] = $rowAuth['insurance_id'];
+                    $activeOk = preg_match('/^active$/i', trim((string) ($rowAuth['status'] ?? ''))) === 1;
+                    if (!$activeOk) {
+                        $why['reason'] = 'authorization_not_active';
+                        $why['hint'] = 'Open the client profile and set this authorization status to Active in client_auth.';
+                    } else {
+                        $lnk = $conn->prepare(
+                            "SELECT insurance_id FROM client_insurance WHERE insurance_id = ? AND client_id = ? LIMIT 1"
+                        );
+                        $lnk->bind_param("is", $rowAuth['insurance_id'], $clientId);
+                        $lnk->execute();
+                        $hasLink = $lnk->get_result()->fetch_assoc();
+                        $lnk->close();
+                        if (!$hasLink) {
+                            $why['reason'] = 'insurance_not_linked_to_client';
+                            $why['hint'] =
+                                'This authorization\'s insurance_id is not attached to this client_id in client_insurance. '
+                                . 'Fix client insurances so the authorization\'s insurance belongs to this client.';
+                        } else {
+                            $why['reason'] = 'authorization_validation_failed';
+                            $why['hint'] = 'Unexpected validation failure — check DB consistency.';
+                        }
+                    }
+                }
+
+                file_put_contents(
+                    'debug.log',
+                    "POST auth validation failed: " . json_encode($why, JSON_UNESCAPED_UNICODE) . "\n",
+                    FILE_APPEND
+                );
 
                 http_response_code(400);
-                echo json_encode(["error" => "Invalid or inactive auth_id, or auth_id does not belong to client", "auth_id" => $authId, "client_id" => $clientId]);
+                echo json_encode(array_merge([
+                    'error' => 'Invalid or inactive auth_id, or auth_id does not belong to client',
+                ], $why));
                 exit();
             }
 
@@ -471,13 +928,13 @@ try {
                 exit();
             }
 
-            $conn->begin_transaction();
-            try {
-                $sessionIds = [];
-                $sessionsToCreate = [];
-                $recurringId = null;
+            $sessionsHasAuthorizedHours = sessions_has_authorized_hours_column($conn);
 
-                if ($recurringFrequency !== 'No' && $recurringFrequency !== 'Never') {
+            // Build occurrence list before transaction (also used for double-book check).
+            $sessionsToCreate = [];
+            $recurringId = null;
+
+            if ($recurringFrequency !== 'No' && $recurringFrequency !== 'Never') {
                     $recurringId = (int)(microtime(true) * 10000) . rand(1000, 9999);
 
                     $startDate = new DateTime($startMySQL, new DateTimeZone('UTC'));
@@ -544,14 +1001,21 @@ try {
                                 break;
                         }
                     }
-                } else {
-                    $sessionsToCreate[] = [
-                        'start' => $startMySQL,
-                        'end' => $endMySQL
-                    ];
-                }
+            } else {
+                $sessionsToCreate[] = [
+                    'start' => $startMySQL,
+                    'end' => $endMySQL
+                ];
+            }
 
-                $stmt = $conn->prepare("
+            $conn->begin_transaction();
+            try {
+                $sessionIds = [];
+                lock_provider_sessions_for_update($conn, $provider);
+                $pendingScheduleWindows = [];
+
+                if ($sessionsHasAuthorizedHours) {
+                    $stmt = $conn->prepare("
             INSERT INTO sessions (
                 client_id, provider_id, provider_name, supervising_provider_id, supervising_provider_name,
                 start_utc, end_utc, start_tz, end_tz, auth_code, recurring, recurring_days, place_of_service,
@@ -559,45 +1023,97 @@ try {
                 recurring_id, auth_id
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
+                } else {
+                    $stmt = $conn->prepare("
+            INSERT INTO sessions (
+                client_id, provider_id, provider_name, supervising_provider_id, supervising_provider_name,
+                start_utc, end_utc, start_tz, end_tz, auth_code, recurring, recurring_days, place_of_service,
+                location_address, quick_note, status, scheduled_hours, rendered_hours,
+                recurring_id, auth_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+                }
 
                 $totalScheduledHours = 0;
                 foreach ($sessionsToCreate as $session) {
+                    ensure_provider_schedule_clear(
+                        $conn,
+                        $provider,
+                        $session['start'],
+                        $session['end'],
+                        [],
+                        $pendingScheduleWindows,
+                        $providerName
+                    );
+
                     $sessionScheduledHours = $scheduledHours !== null
                         ? (string)floatval($scheduledHours)
                         : (string)computeScheduledHours($session['start'], $session['end']);
 
                     $recurring_id = $recurringFrequency !== 'No' ? $recurringId : null;
 
-                    $stmt->bind_param(
-                        "ssssssssssssssssdddii",
-                        $clientId,
-                        $provider,
-                        $providerName,
-                        $supervisingProvider,
-                        $supervisingProviderName,
-                        $session['start'],
-                        $session['end'],
-                        $startTz,
-                        $endTz,
-                        $authCode,
-                        $recurringFrequency,
-                        $recurringDays,
-                        $placeOfService,
-                        $locationAddress,
-                        $quickNote,
-                        $status,
-                        $authorizedHours,
-                        $sessionScheduledHours,
-                        $renderedHours,
-                        $recurring_id,
-                        $authId
-                    );
-
+                    if ($sessionsHasAuthorizedHours) {
+                        $stmt->bind_param(
+                            "ssssssssssssssssdddii",
+                            $clientId,
+                            $provider,
+                            $providerName,
+                            $supervisingProvider,
+                            $supervisingProviderName,
+                            $session['start'],
+                            $session['end'],
+                            $startTz,
+                            $endTz,
+                            $authCode,
+                            $recurringFrequency,
+                            $recurringDays,
+                            $placeOfService,
+                            $locationAddress,
+                            $quickNote,
+                            $status,
+                            $authorizedHours,
+                            $sessionScheduledHours,
+                            $renderedHours,
+                            $recurring_id,
+                            $authId
+                        );
+                    } else {
+                        $stmt->bind_param(
+                            "ssssssssssssssssddii",
+                            $clientId,
+                            $provider,
+                            $providerName,
+                            $supervisingProvider,
+                            $supervisingProviderName,
+                            $session['start'],
+                            $session['end'],
+                            $startTz,
+                            $endTz,
+                            $authCode,
+                            $recurringFrequency,
+                            $recurringDays,
+                            $placeOfService,
+                            $locationAddress,
+                            $quickNote,
+                            $status,
+                            $sessionScheduledHours,
+                            $renderedHours,
+                            $recurring_id,
+                            $authId
+                        );
+                    }
 
                     if ($stmt->execute()) {
                         $sessionIds[] = $stmt->insert_id;
                         $totalScheduledHours += floatval($sessionScheduledHours);
+                        $pendingScheduleWindows[] = [
+                            'start' => $session['start'],
+                            'end' => $session['end'],
+                        ];
                         file_put_contents('debug.log', "Inserted session_id: {$stmt->insert_id}, start_utc: {$session['start']}, scheduled_hours: $sessionScheduledHours\n", FILE_APPEND);
+                        if (session_is_completed_status($status)) {
+                            ensure_session_claim_ready($conn, (int)$stmt->insert_id, $session['start']);
+                        }
                     } else {
                         throw new Exception("Failed to create session: " . $stmt->error);
                     }
@@ -684,6 +1200,12 @@ try {
                     "recurring_id" => $recurringId,
                     "total_scheduled_hours" => $totalScheduledHours
                 ]);
+            } catch (ProviderScheduleConflictException $e) {
+                $conn->rollback();
+                http_response_code(409);
+                echo json_encode($e->getPayload());
+                file_put_contents('debug.log', "POST provider conflict: " . $e->getMessage() . "\n", FILE_APPEND);
+                exit();
             } catch (Exception $e) {
                 $conn->rollback();
                 http_response_code(500);
@@ -691,7 +1213,8 @@ try {
                     "error" => "Failed to create sessions: " . $e->getMessage(),
                     "payload" => $input,
                     "auth_id" => $authId,
-                    "client_id" => $clientId
+                    "client_id" => $clientId,
+                    "success" => false,
                 ]);
                 file_put_contents('debug.log', "POST Transaction failed: " . $e->getMessage() . "\nPayload: " . json_encode($input) . "\n", FILE_APPEND);
                 exit();
@@ -790,11 +1313,14 @@ try {
             $sessionId = (int)$input['session_id'];
             $editMode = isset($input['editMode']) ? (string)$input['editMode'] : 'single';
 
+            $sessionsHasAuthorizedHours = sessions_has_authorized_hours_column($conn);
+            $authHoursSelect = $sessionsHasAuthorizedHours ? ', authorized_hours' : '';
+
             // Get the current session
             $stmt = $conn->prepare("
         SELECT client_id, auth_id, provider_id, provider_name, supervising_provider_id, supervising_provider_name,
                start_utc, end_utc, start_tz, end_tz, auth_code, place_of_service, location_address,
-               quick_note, status, authorized_hours, scheduled_hours, rendered_hours, recurring_id
+               quick_note, recurring, recurring_days, status{$authHoursSelect}, scheduled_hours, rendered_hours, recurring_id
         FROM sessions WHERE session_id = ?
     ");
             $stmt->bind_param("i", $sessionId);
@@ -807,6 +1333,50 @@ try {
                 http_response_code(404);
                 echo json_encode(["error" => "Session not found"]);
                 exit();
+            }
+
+            $incomingRecurring = is_array($input['recurring'] ?? null) ? $input['recurring'] : null;
+            $hasRecurringPayload = is_array($incomingRecurring);
+            $targetRecurringFrequency = $hasRecurringPayload
+                ? (string)($incomingRecurring['frequency'] ?? 'No')
+                : (string)($currentSession['recurring'] ?? 'No');
+            if ($targetRecurringFrequency === '' || $targetRecurringFrequency === 'Never') {
+                $targetRecurringFrequency = 'No';
+            }
+            if (!in_array($targetRecurringFrequency, ['No', 'Daily', 'Weekly', 'Biweekly', 'Monthly'], true)) {
+                http_response_code(400);
+                echo json_encode(["error" => "Invalid recurring frequency in update"]);
+                exit();
+            }
+
+            $targetRecurringDays = null;
+            if ($targetRecurringFrequency === 'Weekly') {
+                if ($hasRecurringPayload && !empty($incomingRecurring['days']) && is_array($incomingRecurring['days'])) {
+                    $targetRecurringDays = implode(',', $incomingRecurring['days']);
+                } else {
+                    $targetRecurringDays = $currentSession['recurring_days'] ?? null;
+                }
+            }
+
+            $targetRecurringId = $currentSession['recurring_id'] ?? null;
+            if ($targetRecurringFrequency === 'No') {
+                $targetRecurringId = null;
+            } elseif (empty($targetRecurringId)) {
+                $targetRecurringId = (int)(microtime(true) * 10000) . rand(1000, 9999);
+            }
+
+            $authUserPut = getAuthenticatedUser();
+            if ($authUserPut) {
+                $noteAction = 'update';
+                if (
+                    isset($input['quickNote']) &&
+                    trim((string) $input['quickNote']) !== '' &&
+                    empty($input['startDateTime']) &&
+                    empty($input['endDateTime'])
+                ) {
+                    $noteAction = 'notes';
+                }
+                rbac_enforce_session_action($authUserPut, $conn, $noteAction, $currentSession['provider_id'] ?? null);
             }
 
             $conn->begin_transaction();
@@ -843,6 +1413,16 @@ try {
                     file_put_contents('debug.log', "Edit Mode: SINGLE - Updating session_id: $sessionId\n", FILE_APPEND);
                 }
 
+                $allExcludeSessionIds = array_values(array_unique(array_map(
+                    static fn($s) => (int)$s['session_id'],
+                    $sessionsToUpdate
+                )));
+                $providerForLock = isset($input['provider'])
+                    ? (string)$input['provider']
+                    : (string)($currentSession['provider_id'] ?? '');
+                lock_provider_sessions_for_update($conn, $providerForLock);
+                $pendingPutWindows = [];
+
                 $rowsAffected = 0;
                 $totalHoursChange = 0;
                 $totalAuthDelta = 0;
@@ -877,9 +1457,15 @@ try {
                             $status = $currentSession['status'];
                         }
                     }
-                    $authorizedHours = isset($input['authorizedHours']) ? floatval($input['authorizedHours']) : floatval($currentSession['authorized_hours'] ?? '0.00');
-                    $scheduledHours = isset($input['scheduledHours']) ? floatval($input['scheduledHours']) : floatval($currentSession['scheduled_hours']);
-                    $renderedHours = isset($input['renderedHours']) ? floatval($input['renderedHours']) : floatval($currentSession['rendered_hours'] ?? '0.00');
+                    $authorizedHours = isset($input['authorizedHours'])
+                        ? floatval($input['authorizedHours'])
+                        : (isset($input['authorized_hours']) ? floatval($input['authorized_hours']) : floatval($currentSession['authorized_hours'] ?? '0.00'));
+                    $scheduledHours = isset($input['scheduledHours'])
+                        ? floatval($input['scheduledHours'])
+                        : (isset($input['scheduled_hours']) ? floatval($input['scheduled_hours']) : floatval($currentSession['scheduled_hours']));
+                    $renderedHours = isset($input['renderedHours'])
+                        ? floatval($input['renderedHours'])
+                        : (isset($input['rendered_hours']) ? floatval($input['rendered_hours']) : floatval($currentSession['rendered_hours'] ?? '0.00'));
 
                     // Validate parameters
                     if ($scheduledHours === null) {
@@ -937,6 +1523,35 @@ try {
                         }
                     }
 
+                    $lockRow = array_merge($currentSession, $session);
+                    if (session_row_is_completed($lockRow)) {
+                        $clientId = (string)$currentSession['client_id'];
+                        $provider = (string)$currentSession['provider_id'];
+                        $providerName = (string)$currentSession['provider_name'];
+                        $supervisingProvider = (string)($currentSession['supervising_provider_id'] ?? '');
+                        $supervisingProviderName = (string)($currentSession['supervising_provider_name'] ?? '');
+                        $authCode = (string)$currentSession['auth_code'];
+                        $quickNote = (string)($currentSession['quick_note'] ?? '');
+                        $status = ucfirst(strtolower((string)($currentSession['status'] ?? 'Rendered')));
+                        $renderedHours = floatval($currentSession['rendered_hours'] ?? 0);
+                        $authorizedHours = floatval($currentSession['authorized_hours'] ?? 0);
+                        $targetRecurringFrequency = (string)($currentSession['recurring'] ?? 'No');
+                        $targetRecurringDays = $currentSession['recurring_days'] ?? null;
+                        $targetRecurringId = $currentSession['recurring_id'] ?? null;
+                    }
+
+                    if (!session_status_is_cancelled($status)) {
+                        ensure_provider_schedule_clear(
+                            $conn,
+                            $provider,
+                            $startUtc,
+                            $endUtc,
+                            $allExcludeSessionIds,
+                            $pendingPutWindows,
+                            $providerName
+                        );
+                    }
+
                     $hoursChange = $scheduledHours - $originalScheduledHours;
                     $totalHoursChange += $hoursChange;
 
@@ -959,6 +1574,8 @@ try {
                         $totalAuthDelta += -$scheduledHours;
                     }
 
+                    $authHoursSet = $sessionsHasAuthorizedHours ? "authorized_hours = ?,\n                    " : "";
+
                     $updateSql = "
                 UPDATE sessions SET
                     client_id = ?,
@@ -974,10 +1591,12 @@ try {
                     place_of_service = ?,
                     location_address = ?,
                     quick_note = ?,
+                    recurring = ?,
+                    recurring_days = ?,
+                    recurring_id = ?,
                     STATUS = ?,
                     " . ($includeCancelFields ? "cancelled_by = ?, cancelled_reason = ?," : "") . "
-                    authorized_hours = ?,
-                    scheduled_hours = ?,
+                    {$authHoursSet}scheduled_hours = ?,
                     rendered_hours = ?
                 WHERE session_id = ?
             ";
@@ -1003,51 +1622,111 @@ try {
                             $cancelledReason = null;
                         }
 
-                        $updateStmt->bind_param(
-                            "ssssssssssssssssdddi",
-                            $clientId,
-                            $provider,
-                            $providerName,
-                            $supervisingProvider,
-                            $supervisingProviderName,
-                            $startUtc,
-                            $endUtc,
-                            $startTz,
-                            $endTz,
-                            $authCode,
-                            $placeOfService,
-                            $locationAddress,
-                            $quickNote,
-                            $status,
-                            $cancelledBy,
-                            $cancelledReason,
-                            $authorizedHours,
-                            $scheduledHours,
-                            $renderedHours,
-                            $sessionId
-                        );
+                        if ($sessionsHasAuthorizedHours) {
+                            $updateStmt->bind_param(
+                                "ssssssssssssssssssidddi",
+                                $clientId,
+                                $provider,
+                                $providerName,
+                                $supervisingProvider,
+                                $supervisingProviderName,
+                                $startUtc,
+                                $endUtc,
+                                $startTz,
+                                $endTz,
+                                $authCode,
+                                $placeOfService,
+                                $locationAddress,
+                                $quickNote,
+                                $targetRecurringFrequency,
+                                $targetRecurringDays,
+                                $targetRecurringId,
+                                $status,
+                                $cancelledBy,
+                                $cancelledReason,
+                                $authorizedHours,
+                                $scheduledHours,
+                                $renderedHours,
+                                $sessionId
+                            );
+                        } else {
+                            $updateStmt->bind_param(
+                                "ssssssssssssssssssiddi",
+                                $clientId,
+                                $provider,
+                                $providerName,
+                                $supervisingProvider,
+                                $supervisingProviderName,
+                                $startUtc,
+                                $endUtc,
+                                $startTz,
+                                $endTz,
+                                $authCode,
+                                $placeOfService,
+                                $locationAddress,
+                                $quickNote,
+                                $targetRecurringFrequency,
+                                $targetRecurringDays,
+                                $targetRecurringId,
+                                $status,
+                                $cancelledBy,
+                                $cancelledReason,
+                                $scheduledHours,
+                                $renderedHours,
+                                $sessionId
+                            );
+                        }
                     } else {
-                        $updateStmt->bind_param(
-                            "ssssssssssssssdddi",
-                            $clientId,
-                            $provider,
-                            $providerName,
-                            $supervisingProvider,
-                            $supervisingProviderName,
-                            $startUtc,
-                            $endUtc,
-                            $startTz,
-                            $endTz,
-                            $authCode,
-                            $placeOfService,
-                            $locationAddress,
-                            $quickNote,
-                            $status,
-                            $authorizedHours,
-                            $scheduledHours,
-                            $renderedHours,
-                            $sessionId
-                        );
+                        if ($sessionsHasAuthorizedHours) {
+                            $updateStmt->bind_param(
+                                "ssssssssssssssssidddi",
+                                $clientId,
+                                $provider,
+                                $providerName,
+                                $supervisingProvider,
+                                $supervisingProviderName,
+                                $startUtc,
+                                $endUtc,
+                                $startTz,
+                                $endTz,
+                                $authCode,
+                                $placeOfService,
+                                $locationAddress,
+                                $quickNote,
+                                $targetRecurringFrequency,
+                                $targetRecurringDays,
+                                $targetRecurringId,
+                                $status,
+                                $authorizedHours,
+                                $scheduledHours,
+                                $renderedHours,
+                                $sessionId
+                            );
+                        } else {
+                            $updateStmt->bind_param(
+                                "ssssssssssssssssiddi",
+                                $clientId,
+                                $provider,
+                                $providerName,
+                                $supervisingProvider,
+                                $supervisingProviderName,
+                                $startUtc,
+                                $endUtc,
+                                $startTz,
+                                $endTz,
+                                $authCode,
+                                $placeOfService,
+                                $locationAddress,
+                                $quickNote,
+                                $targetRecurringFrequency,
+                                $targetRecurringDays,
+                                $targetRecurringId,
+                                $status,
+                                $scheduledHours,
+                                $renderedHours,
+                                $sessionId
+                            );
+                        }
                     }
 
                     if (!$updateStmt->execute()) {
@@ -1056,10 +1735,184 @@ try {
 
                     $rowsAffected += $updateStmt->affected_rows;
                     $updateStmt->close();
+                    if (!session_status_is_cancelled($status)) {
+                        $pendingPutWindows[] = [
+                            'start' => $startUtc,
+                            'end' => $endUtc,
+                        ];
+                    }
+                    if (session_is_completed_status($status)) {
+                        ensure_session_claim_ready($conn, $sessionId, $startUtc);
+                    }
                     file_put_contents('debug.log', "Successfully updated session_id: $sessionId\n", FILE_APPEND);
                 }
 
-                // Update auth balance based on active-session delta (covers cancel/uncancel and hour changes)
+                // If recurring payload is present, ensure requested occurrences exist.
+                $createdSessionIds = [];
+                if ($hasRecurringPayload && $targetRecurringFrequency !== 'No') {
+                    $baseStartUtc = isset($input['startDateTime']) ? convertToMySQLDateTime($input['startDateTime']) : $currentSession['start_utc'];
+                    $baseEndUtc = isset($input['endDateTime']) ? convertToMySQLDateTime($input['endDateTime']) : $currentSession['end_utc'];
+                    $baseStartDt = new DateTime($baseStartUtc, new DateTimeZone('UTC'));
+                    $baseEndDt = new DateTime($baseEndUtc, new DateTimeZone('UTC'));
+                    $durationSec = max(0, $baseEndDt->getTimestamp() - $baseStartDt->getTimestamp());
+
+                    $ends = is_array($incomingRecurring['ends'] ?? null) ? $incomingRecurring['ends'] : [];
+                    $endsType = (string)($ends['type'] ?? 'After');
+                    if ($endsType !== 'On' && $endsType !== 'After') {
+                        $endsType = 'After';
+                    }
+                    $endsDate = !empty($ends['date']) ? (string)$ends['date'] : null;
+                    $occurrences = (int)($ends['occurrences'] ?? 1);
+                    $weeklyDays = is_array($incomingRecurring['days'] ?? null) ? $incomingRecurring['days'] : [];
+
+                    $desiredAdditionalStarts = buildRecurringOccurrenceStarts(
+                        $baseStartDt,
+                        $targetRecurringFrequency,
+                        $weeklyDays,
+                        $endsType,
+                        $endsDate,
+                        $occurrences
+                    );
+                    $desiredStartMap = [];
+                    $desiredStartMap[$baseStartDt->format('Y-m-d H:i:s')] = true;
+                    foreach ($desiredAdditionalStarts as $d) {
+                        $desiredStartMap[$d->format('Y-m-d H:i:s')] = true;
+                    }
+
+                    $existingStartMap = [];
+                    if (!empty($targetRecurringId)) {
+                        $existStmt = $conn->prepare("SELECT start_utc FROM sessions WHERE recurring_id = ?");
+                        if ($existStmt) {
+                            $existStmt->bind_param("i", $targetRecurringId);
+                            $existStmt->execute();
+                            $existRes = $existStmt->get_result();
+                            while ($er = $existRes->fetch_assoc()) {
+                                $existingStartMap[(string)$er['start_utc']] = true;
+                            }
+                            $existStmt->close();
+                        }
+                    }
+
+                    if ($sessionsHasAuthorizedHours) {
+                        $insertStmt = $conn->prepare("
+                            INSERT INTO sessions (
+                                client_id, provider_id, provider_name, supervising_provider_id, supervising_provider_name,
+                                start_utc, end_utc, start_tz, end_tz, auth_code, recurring, recurring_days, place_of_service,
+                                location_address, quick_note, status, authorized_hours, scheduled_hours, rendered_hours,
+                                recurring_id, auth_id
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ");
+                    } else {
+                        $insertStmt = $conn->prepare("
+                            INSERT INTO sessions (
+                                client_id, provider_id, provider_name, supervising_provider_id, supervising_provider_name,
+                                start_utc, end_utc, start_tz, end_tz, auth_code, recurring, recurring_days, place_of_service,
+                                location_address, quick_note, status, scheduled_hours, rendered_hours,
+                                recurring_id, auth_id
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ");
+                    }
+                    if (!$insertStmt) {
+                        throw new Exception("Failed to prepare recurring insert statement");
+                    }
+
+                    foreach (array_keys($desiredStartMap) as $occStartUtc) {
+                        if (isset($existingStartMap[$occStartUtc])) {
+                            continue;
+                        }
+                        $occStart = new DateTime($occStartUtc, new DateTimeZone('UTC'));
+                        $occEnd = clone $occStart;
+                        $occEnd->modify("+{$durationSec} seconds");
+                        $occEndUtc = $occEnd->format('Y-m-d H:i:s');
+
+                        if (!session_status_is_cancelled($status)) {
+                            ensure_provider_schedule_clear(
+                                $conn,
+                                $provider,
+                                $occStartUtc,
+                                $occEndUtc,
+                                $allExcludeSessionIds,
+                                $pendingPutWindows,
+                                $providerName
+                            );
+                        }
+
+                        if ($sessionsHasAuthorizedHours) {
+                            $insertStmt->bind_param(
+                                "ssssssssssssssssdddii",
+                                $clientId,
+                                $provider,
+                                $providerName,
+                                $supervisingProvider,
+                                $supervisingProviderName,
+                                $occStartUtc,
+                                $occEndUtc,
+                                $startTz,
+                                $endTz,
+                                $authCode,
+                                $targetRecurringFrequency,
+                                $targetRecurringDays,
+                                $placeOfService,
+                                $locationAddress,
+                                $quickNote,
+                                $status,
+                                $authorizedHours,
+                                $scheduledHours,
+                                $renderedHours,
+                                $targetRecurringId,
+                                $authId
+                            );
+                        } else {
+                            $insertStmt->bind_param(
+                                "ssssssssssssssssddii",
+                                $clientId,
+                                $provider,
+                                $providerName,
+                                $supervisingProvider,
+                                $supervisingProviderName,
+                                $occStartUtc,
+                                $occEndUtc,
+                                $startTz,
+                                $endTz,
+                                $authCode,
+                                $targetRecurringFrequency,
+                                $targetRecurringDays,
+                                $placeOfService,
+                                $locationAddress,
+                                $quickNote,
+                                $status,
+                                $scheduledHours,
+                                $renderedHours,
+                                $targetRecurringId,
+                                $authId
+                            );
+                        }
+
+                        if (!$insertStmt->execute()) {
+                            throw new Exception("Failed creating recurring occurrence: " . $insertStmt->error);
+                        }
+                        $newSessionId = (int)$insertStmt->insert_id;
+                        $createdSessionIds[] = $newSessionId;
+                        $allExcludeSessionIds[] = $newSessionId;
+                        if (!session_status_is_cancelled($status)) {
+                            $pendingPutWindows[] = [
+                                'start' => $occStartUtc,
+                                'end' => $occEndUtc,
+                            ];
+                        }
+                        if (session_is_completed_status($status)) {
+                            ensure_session_claim_ready($conn, $newSessionId, $occStartUtc);
+                        }
+                    }
+                    $insertStmt->close();
+
+                    if (strtolower((string)$status) !== 'cancelled') {
+                        $totalAuthDelta += -(count($createdSessionIds) * (float)$scheduledHours);
+                    }
+                    file_put_contents('debug.log', "Recurring ensure created " . count($createdSessionIds) . " additional sessions.\n", FILE_APPEND);
+                }
+
+                // Update auth balance based on active-session delta (covers cancel/uncancel, hour changes, and new recurring occurrences)
                 $authId = isset($input['authId']) && $input['authId'] !== null ? (int)$input['authId'] : $currentSession['auth_id'];
                 if ($totalAuthDelta != 0 && !empty($authId)) {
                     if (!updateClientAuthUnitsScheduled($conn, $currentSession['client_id'], $authId, $totalAuthDelta)) {
@@ -1115,12 +1968,23 @@ try {
                     "rows_affected" => $rowsAffected,
                     "edit_mode" => $editMode,
                     "sessions_updated" => array_column($sessionsToUpdate, 'session_id'),
+                    "sessions_created" => $createdSessionIds,
+                    "recurring_id" => $targetRecurringId,
                     "total_hours_change" => $totalHoursChange
                 ]);
+            } catch (ProviderScheduleConflictException $e) {
+                $conn->rollback();
+                http_response_code(409);
+                echo json_encode($e->getPayload());
+                file_put_contents('debug.log', "PUT provider conflict: " . $e->getMessage() . "\n", FILE_APPEND);
+                exit();
             } catch (Exception $e) {
                 $conn->rollback();
                 http_response_code(500);
-                echo json_encode(["error" => "Failed to update sessions: " . $e->getMessage()]);
+                echo json_encode([
+                    "error" => "Failed to update sessions: " . $e->getMessage(),
+                    "success" => false,
+                ]);
                 file_put_contents('debug.log', "PUT Transaction failed: " . $e->getMessage() . "\n", FILE_APPEND);
                 exit();
             }
@@ -1139,7 +2003,7 @@ try {
 
             $conn->begin_transaction();
             try {
-                $stmt = $conn->prepare("SELECT session_id, client_id, auth_id, recurring_id, scheduled_hours, status FROM sessions WHERE session_id = ?");
+                $stmt = $conn->prepare("SELECT session_id, client_id, auth_id, recurring_id, scheduled_hours, status, provider_id FROM sessions WHERE session_id = ?");
                 $stmt->bind_param("i", $sessionId);
                 $stmt->execute();
                 $result = $stmt->get_result();
@@ -1150,6 +2014,11 @@ try {
                     http_response_code(404);
                     echo json_encode(["error" => "Session not found"]);
                     exit();
+                }
+
+                $authUserDel = getAuthenticatedUser();
+                if ($authUserDel) {
+                    rbac_enforce_session_action($authUserDel, $conn, 'delete', $currentSession['provider_id'] ?? null);
                 }
 
                 $sessionsToDelete = [];

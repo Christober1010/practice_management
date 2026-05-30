@@ -38,6 +38,10 @@ import { fetchClients } from "@/app/store/clientSlice";
 
 import AddProgramModal from "./add-program-modal";
 import DeleteConfirmModal from "./DeleteConfirmModal";
+import {
+  getDomainModuleLabel,
+  mergeCanonicalDomainModules,
+} from "@/lib/domain-module-options";
 
 export default function ProgramsList() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -135,15 +139,22 @@ export default function ProgramsList() {
     }
   }, []);
 
+  const allModules = useMemo(
+    () =>
+      mergeCanonicalDomainModules([
+        ...(programsData?.modules || []),
+        ...(clientProgramsData.modules || []),
+      ]),
+    [programsData?.modules, clientProgramsData.modules]
+  );
+
   const genericPrograms = useMemo(() => {
     if (!programsData?.programs) return [];
     return programsData.programs.map((p) => {
       const domain = programsData.domains?.find(
         (d) => String(d.id) === String(p.domain_id || p.domainId)
       );
-      const module = programsData.modules?.find(
-        (m) => String(m.id) === String(domain?.module_id || domain?.moduleId)
-      );
+      const moduleId = domain?.module_id || domain?.moduleId;
       return {
         id: `generic-${p.id}`,
         rawId: p.id,
@@ -153,11 +164,11 @@ export default function ProgramsList() {
         archived: !!p.archived,
         domainId: p.domain_id || p.domainId,
         domainName: domain?.name || domain?.NAME || "N/A",
-        moduleName: module?.name || module?.NAME || "N/A",
+        moduleName: getDomainModuleLabel(allModules, moduleId),
         type: "generic",
       };
     });
-  }, [programsData]);
+  }, [programsData, allModules]);
 
   const clientPrograms = useMemo(() => {
     if (!clientProgramsData.programs?.length) return [];
@@ -175,9 +186,7 @@ export default function ProgramsList() {
       const domain = clientProgramsData.domains?.find(
         (d) => String(d.id) === String(p.domain_id || p.domainId)
       );
-      const module = clientProgramsData.modules?.find(
-        (m) => String(m.id) === String(domain?.module_id || domain?.moduleId)
-      );
+      const moduleId = domain?.module_id || domain?.moduleId;
       const clientName = clientMap[String(p.client_id)] || "Unknown Client";
 
       return {
@@ -189,18 +198,13 @@ export default function ProgramsList() {
         archived: p.archived === 1 || p.archived === true,
         domainId: p.domain_id || p.domainId,
         domainName: domain?.NAME || domain?.name || "—",
-        moduleName: module?.NAME || module?.name || "—",
+        moduleName: getDomainModuleLabel(allModules, moduleId),
         client_name: clientName,
         client_id: p.client_id,
         type: "client",
       };
     });
-  }, [
-    clientProgramsData.programs,
-    clientProgramsData.domains,
-    clientProgramsData.modules,
-    clients,
-  ]);
+  }, [clientProgramsData.programs, clientProgramsData.domains, clients, allModules]);
 
   const clientNames = useMemo(() => {
     const names = clientPrograms.map((p) => p.client_name).filter(Boolean);
@@ -553,9 +557,9 @@ export default function ProgramsList() {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-50">
-                    <TableHead className="px-2">Module Name</TableHead>
-                    <TableHead className="px-2">Domain Name</TableHead>
                     <TableHead className="px-2">Program Name</TableHead>
+                    <TableHead className="px-2">Module</TableHead>
+                    <TableHead className="px-2">Domain</TableHead>
                     <TableHead className="px-2">Type</TableHead>
                     <TableHead className="hidden sm:table-cell">
                       Status
@@ -568,20 +572,20 @@ export default function ProgramsList() {
                   {displayedPrograms.map((program) => (
                     <TableRow key={program.id} className="hover:bg-slate-50">
                       <TableCell className="font-medium p-2">
-                        {program.moduleName}
-                      </TableCell>
-
-                      <TableCell className="font-medium p-2">
-                        {program.domainName}
-                      </TableCell>
-
-                      <TableCell className="font-medium p-2">
                         {program.name}
                         {program.archived && (
                           <Badge variant="outline" className="ml-2 text-xs">
                             Archived
                           </Badge>
                         )}
+                      </TableCell>
+
+                      <TableCell className="p-2 text-slate-700">
+                        {program.moduleName || "—"}
+                      </TableCell>
+
+                      <TableCell className="p-2 text-slate-700">
+                        {program.domainName || "—"}
                       </TableCell>
 
                       <TableCell className="p-2">

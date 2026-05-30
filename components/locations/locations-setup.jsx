@@ -104,7 +104,19 @@ export default function LocationsSetup() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(location),
       });
-      const result = await res.json();
+      const text = await res.text();
+      let result;
+      try {
+        result = text ? JSON.parse(text) : {};
+      } catch {
+        console.error("locations save: non-JSON response", res.status, text?.slice(0, 500));
+        toast.error(
+          res.ok
+            ? "Save failed (invalid server response)"
+            : `Save failed (HTTP ${res.status})`
+        );
+        return;
+      }
 
       if (result.success) {
         toast.success(editingLocation ? "Location updated!" : "Location saved!");
@@ -115,7 +127,8 @@ export default function LocationsSetup() {
         toast.error(result.message || "Save failed");
       }
     } catch (err) {
-      toast.error("Network error");
+      console.error(err);
+      toast.error(err?.message || "Network error");
     }
   };
 

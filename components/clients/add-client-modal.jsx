@@ -562,6 +562,9 @@ export default function AddClientModal({
             units_approved_per_15_min: auth.units_approved_per_15_min || "",
             units_serviced: auth.units_serviced || "",
             balance_units: auth.balance_units || "",
+            ready_to_bill_sessions: Array.isArray(auth.ready_to_bill_sessions)
+              ? auth.ready_to_bill_sessions
+              : [],
             start_date: auth.start_date?.slice(0, 10) || "",
             end_date: auth.end_date?.slice(0, 10) || "",
             status: normalizedStatus,
@@ -3277,6 +3280,15 @@ export default function AddClientModal({
                                                               {hours(auth.units_serviced)} Hour(s)
                                                             </span>
                                                           )}
+                                                          {auth.ready_to_bill_sessions?.length > 0 && (
+                                                            <div className="mt-1 space-y-0.5 text-[10px] text-slate-500">
+                                                              {auth.ready_to_bill_sessions.map((sess) => (
+                                                                <div key={sess.session_id}>
+                                                                  {sess.service_date}: {sess.units} u
+                                                                </div>
+                                                              ))}
+                                                            </div>
+                                                          )}
                                                         </div>
                                                         <div className="col-span-2 text-slate-600 pt-2">
                                                           0
@@ -3472,7 +3484,8 @@ export default function AddClientModal({
                               <>
                                 {documentTypes.length > 0 ? (
                                   documentTypes
-                                    .filter((dt) => dt.active === 1)
+                                    // Coerce active to number to avoid `"1" !== 1` causing blank option lists.
+                                    .filter((dt) => Number(dt.active) === 1)
                                     .map((dt) => (
                                       <SelectItem key={dt.id} value={dt.type_name}>
                                         {dt.type_name}
@@ -3483,6 +3496,17 @@ export default function AddClientModal({
                                     <SelectItem key={dt} value={dt}>{dt}</SelectItem>
                                   ))
                                 )}
+                                {/* If the document has an existing type that isn't in the active master list,
+                                    keep it selectable so the edit screen doesn't appear blank. */}
+                                {doc.document_type &&
+                                documentTypes.length > 0 &&
+                                !documentTypes.some(
+                                  (dt) => Number(dt.active) === 1 && dt.type_name === doc.document_type
+                                ) ? (
+                                  <SelectItem value={doc.document_type}>
+                                    {doc.document_type} (from database)
+                                  </SelectItem>
+                                ) : null}
                               </>,
                               "Select document type"
                             )}
@@ -3493,7 +3517,9 @@ export default function AddClientModal({
                             <Label className="text-sm font-semibold text-gray-700 mb-2 block">
                               Upload Document
                             </Label>
-                            {doc.document_filename || doc.document_file ? (
+                            {doc.document_file ||
+                            doc.document_path?.trim() ||
+                            doc.document_filename?.trim() ? (
                               <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
                                 <div className="flex items-center gap-3 flex-1">
                                   <File className="h-5 w-5 text-teal-600" />
@@ -3502,7 +3528,7 @@ export default function AddClientModal({
                                       {doc.document_file?.name ||
                                         doc.document_original_filename ||
                                         doc.document_filename ||
-                                        'Document'}
+                                        getDocumentDisplayName(doc, index)}
                                     </p>
                                     {doc.document_type && (
                                       <Badge variant="secondary" className="mt-1">

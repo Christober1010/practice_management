@@ -20,6 +20,15 @@ import {
 } from "@/components/ui/select";
 import { ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
+import {
+  getDomainModuleLabel,
+  mergeCanonicalDomainModules,
+} from "@/lib/domain-module-options";
+import {
+  filterMasterDataForClientScope,
+  findClientByValue,
+  resolveClientRecordId,
+} from "@/lib/master-data-client-scope";
 
 function generateId() {
   return `program_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -57,20 +66,19 @@ export default function AddProgramModal({
   const [selectedClientValue, setSelectedClientValue] = useState("generic");
   const [domainSearch, setDomainSearch] = useState("");
 
-  // Safe way to get module/domain name
-  const getModuleName = (mod) => {
-    return mod?.name || mod?.NAME || "Unnamed Module";
-  };
+  const modulesForLookup = mergeCanonicalDomainModules(modules);
 
   const getDomainName = (dom) => {
     return dom?.name || dom?.NAME || "Unnamed Domain";
   };
 
   // Find selected client
-  const selectedClientObj =
+  const selectedClientObj = findClientByValue(clients, selectedClientValue);
+
+  const selectedClientId =
     selectedClientValue === "generic"
-      ? null
-      : clients.find((c) => String(c.id) === String(selectedClientValue)) || null;
+      ? ""
+      : resolveClientRecordId(selectedClientObj) || String(selectedClientValue).trim();
 
   // Reset / fill form
   useEffect(() => {
@@ -100,7 +108,9 @@ export default function AddProgramModal({
             (c) => String(c.id) === String(clientInfo.id) || c.name === clientInfo.name
           );
           if (foundClient) {
-            setSelectedClientValue(String(foundClient.id ?? foundClient.name));
+            setSelectedClientValue(
+              resolveClientRecordId(foundClient) || String(foundClient.id ?? foundClient.name)
+            );
           } else if (clientInfo.id) {
             setSelectedClientValue(String(clientInfo.id));
           } else if (clientInfo.name) {
@@ -118,31 +128,48 @@ export default function AddProgramModal({
     }
   }, [editingProgram, isEditing, isOpen, clients]);
 
-  const selectedDomain = domains.find((d) => String(d.id) === String(domainId));
-  const selectedModule = modules.find(
-    (m) => String(m.id) === String(selectedDomain?.moduleId || selectedDomain?.module_id)
-  );
-  const selectedDomainName = selectedDomain ? getDomainName(selectedDomain) : "";
-  const selectedModuleName = selectedModule ? getModuleName(selectedModule) : "";
+  // Client selected → only that client's domains; generic → master domains only
+  const domainsForClient = filterMasterDataForClientScope(domains, {
+    clientId: selectedClientId,
+    isGeneric: selectedClientValue === "generic",
+    keepId: domainId,
+  });
 
-  // SAFE filtering + sorting
-  const filteredDomains = domains
-    .filter((d) => d.id != null && String(d.id).trim() !== "")
+  useEffect(() => {
+    if (!domainId) return;
+    const stillValid = domainsForClient.some((d) => String(d.id) === String(domainId));
+    if (!stillValid) setDomainId("");
+  }, [selectedClientValue, selectedClientId, domains, domainId]);
+
+  const selectedDomain = domainsForClient.find((d) => String(d.id) === String(domainId));
+  const selectedDomainName = selectedDomain ? getDomainName(selectedDomain) : "";
+  const selectedModuleName = selectedDomain
+    ? getDomainModuleLabel(
+        modulesForLookup,
+        selectedDomain.moduleId || selectedDomain.module_id
+      )
+    : "";
+
+  // SAFE filtering + sorting (scoped to client or generic)
+  const filteredDomains = domainsForClient
     .filter((d) => {
       const search = domainSearch.toLowerCase();
-      const moduleName = getModuleName(
-        modules.find((m) => String(m.id) === String(d.moduleId || d.module_id))
+      const moduleName = getDomainModuleLabel(
+        modulesForLookup,
+        d.moduleId || d.module_id
       ).toLowerCase();
       const domainName = getDomainName(d).toLowerCase();
       const label = `${moduleName} - ${domainName}`;
       return label.includes(search);
     })
     .sort((a, b) => {
-      const moduleA = getModuleName(
-        modules.find((m) => String(m.id) === String(a.moduleId || a.module_id))
+      const moduleA = getDomainModuleLabel(
+        modulesForLookup,
+        a.moduleId || a.module_id
       );
-      const moduleB = getModuleName(
-        modules.find((m) => String(m.id) === String(b.moduleId || b.module_id))
+      const moduleB = getDomainModuleLabel(
+        modulesForLookup,
+        b.moduleId || b.module_id
       );
       const moduleCompare = moduleA.localeCompare(moduleB);
       if (moduleCompare !== 0) return moduleCompare;
@@ -169,7 +196,10 @@ export default function AddProgramModal({
       status: status,
       archived: 0,
       ...(selectedClientValue !== "generic"
-        ? { client_id: selectedClientObj?.id || selectedClientValue }
+        ? {
+            client_id:
+              resolveClientRecordId(selectedClientObj) || selectedClientValue,
+          }
         : {}),
     };
 
@@ -194,7 +224,7 @@ export default function AddProgramModal({
             <div className="text-lg font-semibold">
               {isEditing ? "Edit Program" : "Add New Program"}
             </div>
-            {selectedModule && selectedDomain && (
+            {selectedDomain && selectedModuleName !== "—" && (
               <div className="flex items-center justify-center gap-2 mt-3 text-sm text-muted-foreground">
                 <span className="font-medium">{selectedModuleName}</span>
                 <ChevronRight className="h-4 w-4" />
@@ -218,7 +248,10 @@ export default function AddProgramModal({
             <Label>Assign to Client</Label>
             <Select
               value={selectedClientValue === "generic" ? "generic" : selectedClientValue}
-              onValueChange={(val) => setSelectedClientValue(val === "generic" ? "generic" : val)}
+              onValueChange={(val) => {
+                setSelectedClientValue(val === "generic" ? "generic" : val);
+                setDomainSearch("");
+              }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Generic (no client)" />
@@ -226,18 +259,21 @@ export default function AddProgramModal({
               <SelectContent>
                 <SelectItem value="generic">Generic (no client)</SelectItem>
                 {clients
-                  .filter((client) => client.id != null && String(client.id).trim() !== "")
                   .map((client) => {
+                    const cid = resolveClientRecordId(client);
+                    if (!cid) return null;
                     const displayName =
                       `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
                       client.name ||
+                      client.NAME ||
                       "Unnamed Client";
                     return (
-                      <SelectItem key={client.id} value={String(client.id)}>
+                      <SelectItem key={cid} value={cid}>
                         {displayName}
                       </SelectItem>
                     );
-                  })}
+                  })
+                  .filter(Boolean)}
               </SelectContent>
             </Select>
 
@@ -256,6 +292,15 @@ export default function AddProgramModal({
           {/* Domain Selector */}
           <div className="space-y-2">
             <Label>Domain *</Label>
+            {selectedClientId ? (
+              <p className="text-xs text-slate-500">
+                Showing domains assigned to this client only.
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500">
+                Showing generic (master) domains only.
+              </p>
+            )}
             <Select value={domainId} onValueChange={setDomainId} disabled={loading}>
               <SelectTrigger>
                 <SelectValue placeholder="Choose a domain">
@@ -276,16 +321,20 @@ export default function AddProgramModal({
                 </div>
 
                 {filteredDomains.length === 0 ? (
-                  <div className="p-4 text-center text-muted-foreground">
-                    No domains found
+                  <div className="p-4 text-center text-muted-foreground text-sm">
+                    {selectedClientId
+                      ? "No domains for this client. Add a domain under Domains with this client selected."
+                      : "No generic domains found. Add a master domain or assign a client."}
                   </div>
                 ) : (
                   filteredDomains
                     .filter((dom) => dom.id != null && String(dom.id).trim() !== "")
                     .map((dom) => {
-                      const mod = modules.find((m) => String(m.id) === String(dom.moduleId || dom.module_id));
-                      const modName = mod ? getModuleName(mod) : "";
-                      const label = `${modName} - ${getDomainName(dom)}`;
+                      const modName = getDomainModuleLabel(
+                        modulesForLookup,
+                        dom.moduleId || dom.module_id
+                      );
+                      const label = `${modName !== "—" ? modName : "—"} - ${getDomainName(dom)}`;
                       return (
                         <SelectItem key={dom.id} value={String(dom.id)}>
                           {label}

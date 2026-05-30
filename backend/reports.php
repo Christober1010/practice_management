@@ -48,9 +48,310 @@ function excelSerialToDateTimeString($serial, $dateOnly = false) {
     return gmdate($format, (int)$seconds);
 }
 
+/**
+ * Excel time-only cells often become 1899-12-30, 1900-01-00, or 1900-01-01 plus time.
+ * Merge the row's DOS calendar date with that time so MySQL stores a real datetime.
+ */
+function reports_merge_dos_into_apt_start($dos, $aptStart) {
+    if ($dos === null || $dos === '' || $aptStart === null || $aptStart === '') {
+        return $aptStart;
+    }
+    $dosTs = strtotime((string)$dos);
+    if ($dosTs === false) {
+        return $aptStart;
+    }
+    $dosDate = date('Y-m-d', $dosTs);
+    $s = trim((string)$aptStart);
+    if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})[\sT]+(\d{1,2}:\d{2}(?::\d{2})?)/', $s, $m)) {
+        return $aptStart;
+    }
+    $yy = (int)$m[1];
+    $mm = (int)$m[2];
+    $dd = (int)$m[3];
+    $timePart = $m[4];
+    if (strlen($timePart) === 5) {
+        $timePart .= ':00';
+    }
+    $isExcelTimeOnly =
+        ($yy === 1899 && $mm === 12 && $dd === 30) ||
+        ($yy === 1900 && $mm === 1 && ($dd === 0 || $dd === 1));
+    if ($isExcelTimeOnly) {
+        return $dosDate . ' ' . $timePart;
+    }
+    return $aptStart;
+}
+
 function sqlValue($conn, $value) {
     if ($value === null || $value === '') return "NULL";
     return "'" . $conn->real_escape_string($value) . "'";
+}
+
+/** Normalize for duplicate fingerprint: trim, collapse spaces, lowercase. */
+function reports_normalize_token($s) {
+    $s = trim(preg_replace('/\s+/', ' ', (string)$s));
+    return strtolower($s);
+}
+
+/** Stable time fragment for DOS+time duplicate key (apt_start_time may be time or datetime string). */
+function reports_time_token($apt) {
+    if ($apt === null || $apt === '') {
+        return '';
+    }
+    $ts = strtotime((string)$apt);
+    if ($ts !== false) {
+        return date('H:i:s', $ts);
+    }
+    if (preg_match('/(\d{1,2}:\d{2}(:\d{2})?)/', (string)$apt, $m)) {
+        return strlen($m[1]) === 5 ? $m[1] . ':00' : $m[1];
+    }
+    return reports_normalize_token($apt);
+}
+
+/**
+ * Duplicate fingerprint: same client + staff + service code + DOS (date) + apt start time.
+ * Documented for Schedule Tracker imports — keep in sync with client-side checks if any.
+ */
+function reports_dup_fingerprint_from_values($cf, $cl, $sf, $sl, $svc, $dos, $aptStart) {
+    $dosKey = '';
+    if ($dos !== null && $dos !== '') {
+        $t = strtotime((string)$dos);
+        $dosKey = $t !== false ? date('Y-m-d', $t) : reports_normalize_token($dos);
+    }
+    $parts = [
+        reports_normalize_token($cf),
+        reports_normalize_token($cl),
+        reports_normalize_token($sf),
+        reports_normalize_token($sl),
+        reports_normalize_token($svc),
+        $dosKey,
+        reports_time_token($aptStart),
+    ];
+    return implode('|', $parts);
+}
+
+function reports_row_linked_id($row, $isExcelFormat, $snakeKey, $excelLabel)
+{
+    if ($isExcelFormat) {
+        $v = $row[$excelLabel] ?? $row[$snakeKey] ?? null;
+    } else {
+        $v = $row[$snakeKey] ?? null;
+    }
+    if ($v === null || $v === '') {
+        return null;
+    }
+    return trim((string)$v);
+}
+
+/**
+ * When Client ID is omitted, match one non-archived row in clients by first + last name
+ * (case-insensitive, trimmed). Skips if zero or multiple matches.
+ */
+function reports_resolve_client_id_by_name(mysqli $conn, $firstName, $lastName)
+{
+    static $cache = [];
+    $fn = reports_normalize_token($firstName);
+    $ln = reports_normalize_token($lastName);
+    if ($fn === '' || $ln === '') {
+        return null;
+    }
+    $key = 'c:' . $fn . '|' . $ln;
+    if (array_key_exists($key, $cache)) {
+        return $cache[$key];
+    }
+    $stmt = $conn->prepare(
+        'SELECT client_id FROM clients WHERE archived = 0
+         AND LOWER(TRIM(COALESCE(first_name, \'\'))) = ?
+         AND LOWER(TRIM(COALESCE(last_name, \'\'))) = ?
+         LIMIT 2'
+    );
+    if (!$stmt) {
+        $cache[$key] = null;
+        return null;
+    }
+    $stmt->bind_param('ss', $fn, $ln);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $ids = [];
+    while ($row = $res->fetch_assoc()) {
+        $ids[] = (string)$row['client_id'];
+    }
+    $stmt->close();
+    $out = count($ids) === 1 ? $ids[0] : null;
+    $cache[$key] = $out;
+    return $out;
+}
+
+/**
+ * When Provider ID / Staff ID is omitted, match one non-archived staff row by first + last name.
+ */
+function reports_resolve_staff_id_by_name(mysqli $conn, $firstName, $lastName)
+{
+    static $cache = [];
+    $fn = reports_normalize_token($firstName);
+    $ln = reports_normalize_token($lastName);
+    if ($fn === '' || $ln === '') {
+        return null;
+    }
+    $key = 's:' . $fn . '|' . $ln;
+    if (array_key_exists($key, $cache)) {
+        return $cache[$key];
+    }
+    $stmt = $conn->prepare(
+        'SELECT id FROM staff WHERE COALESCE(archived, 0) = 0
+         AND LOWER(TRIM(COALESCE(firstName, \'\'))) = ?
+         AND LOWER(TRIM(COALESCE(lastName, \'\'))) = ?
+         LIMIT 2'
+    );
+    if (!$stmt) {
+        $cache[$key] = null;
+        return null;
+    }
+    $stmt->bind_param('ss', $fn, $ln);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $ids = [];
+    while ($row = $res->fetch_assoc()) {
+        $ids[] = (string)$row['id'];
+    }
+    $stmt->close();
+    $out = count($ids) === 1 ? $ids[0] : null;
+    $cache[$key] = $out;
+    return $out;
+}
+
+/**
+ * For schedule_tracker list: if report row is missing linked IDs, resolve from client/staff names
+ * (unique match only), UPDATE the row, and set values on $row for this response.
+ */
+function reports_backfill_row_linked_ids_if_empty(mysqli $conn, array &$row)
+{
+    $rid = isset($row['id']) ? (int)$row['id'] : 0;
+    if ($rid <= 0) {
+        return;
+    }
+    $cid = isset($row['client_id']) ? trim((string)$row['client_id']) : '';
+    if ($cid === '') {
+        $resolved = reports_resolve_client_id_by_name(
+            $conn,
+            $row['client_first_name'] ?? '',
+            $row['client_last_name'] ?? ''
+        );
+        if ($resolved !== null) {
+            $st = $conn->prepare(
+                'UPDATE reports SET client_id = ? WHERE id = ? AND (client_id IS NULL OR TRIM(COALESCE(client_id, \'\')) = \'\')'
+            );
+            if ($st) {
+                $st->bind_param('si', $resolved, $rid);
+                $st->execute();
+                $st->close();
+            }
+            $row['client_id'] = $resolved;
+        }
+    }
+    $pid = isset($row['provider_id']) ? trim((string)$row['provider_id']) : '';
+    if ($pid === '') {
+        $resolved = reports_resolve_staff_id_by_name(
+            $conn,
+            $row['staff_first_name'] ?? '',
+            $row['staff_last_name'] ?? ''
+        );
+        if ($resolved !== null) {
+            $st = $conn->prepare(
+                'UPDATE reports SET provider_id = ? WHERE id = ? AND (provider_id IS NULL OR TRIM(COALESCE(provider_id, \'\')) = \'\')'
+            );
+            if ($st) {
+                $st->bind_param('si', $resolved, $rid);
+                $st->execute();
+                $st->close();
+            }
+            $row['provider_id'] = $resolved;
+        }
+    }
+}
+
+/** Find existing report ids that match the fingerprint (archived = 0). Max 5 ids. */
+function reports_find_db_duplicate_ids(mysqli $conn, $cf, $cl, $sf, $sl, $svc, $dos, $aptStart) {
+    $dosKey = null;
+    if ($dos !== null && $dos !== '') {
+        $t = strtotime((string)$dos);
+        $dosKey = $t !== false ? date('Y-m-d', $t) : null;
+    }
+    if ($dosKey === null) {
+        return [];
+    }
+    $cfn = $conn->real_escape_string(reports_normalize_token($cf));
+    $cln = $conn->real_escape_string(reports_normalize_token($cl));
+    $sfn = $conn->real_escape_string(reports_normalize_token($sf));
+    $sln = $conn->real_escape_string(reports_normalize_token($sl));
+    $scn = $conn->real_escape_string(reports_normalize_token($svc));
+    $dosEsc = $conn->real_escape_string($dosKey);
+    $aptForTime = ($aptStart !== null && $aptStart !== '') ? (string)$aptStart : '00:00:00';
+    $aptEsc = $conn->real_escape_string($aptForTime);
+
+    // Same matching rules as fingerprint. Use escaped query (not mysqli prepare) so duplicate
+    // detection works on hosts where get_result/bind_result for prepared SELECT fails or returns nothing.
+    $sql = "
+        SELECT id FROM reports WHERE archived = 0
+        AND LOWER(TRIM(COALESCE(client_first_name,''))) = '{$cfn}'
+        AND LOWER(TRIM(COALESCE(client_last_name,''))) = '{$cln}'
+        AND LOWER(TRIM(COALESCE(staff_first_name,''))) = '{$sfn}'
+        AND LOWER(TRIM(COALESCE(staff_last_name,''))) = '{$sln}'
+        AND LOWER(TRIM(COALESCE(service_code_with_modifiers,''))) = '{$scn}'
+        AND DATE(dos) = '{$dosEsc}'
+        AND COALESCE(TIME(apt_start_time), '00:00:00') = COALESCE(TIME('{$aptEsc}'), '00:00:00')
+        LIMIT 5
+    ";
+    $res = $conn->query($sql);
+    if (!$res) {
+        return [];
+    }
+    $ids = [];
+    while ($row = $res->fetch_assoc()) {
+        $ids[] = (int)$row['id'];
+    }
+    $res->free();
+    return $ids;
+}
+
+/** Omit billing-style columns from API responses (GET). */
+function reports_strip_excluded_fields(array $row): array
+{
+    static $omit = [
+        'duration_render_in_hrs',
+        'coinsurance',
+        'copay',
+        'deductible',
+        'insurance_actual_paid',
+        'insurance_acutal_paid',
+        'check_num',
+        'cube_payment_date',
+        'cube_invoice_ref',
+        'session_hrs',
+    ];
+    foreach ($omit as $k) {
+        unset($row[$k]);
+    }
+    return $row;
+}
+
+/** Schedule Tracker GET: keep duration_render_in_hrs + misc_hrs; still omit other billing columns. */
+function reports_strip_excluded_fields_schedule_tracker(array $row): array
+{
+    static $omit = [
+        'coinsurance',
+        'copay',
+        'deductible',
+        'insurance_actual_paid',
+        'insurance_acutal_paid',
+        'check_num',
+        'cube_payment_date',
+        'cube_invoice_ref',
+        'session_hrs',
+    ];
+    foreach ($omit as $k) {
+        unset($row[$k]);
+    }
+    return $row;
 }
 
 // ---------- Routing ----------
@@ -84,25 +385,78 @@ function handleGet($conn)
 {
     $id = isset($_GET['id']) ? (int)$_GET['id'] : null;
     $archived = isset($_GET['archived']) ? (int)$_GET['archived'] : 0;
+    $context = isset($_GET['context']) ? trim((string)$_GET['context']) : '';
+    $scheduleTracker = ($context === 'schedule_tracker');
 
     if ($id) {
-        $stmt = $conn->prepare("SELECT * FROM reports WHERE id = ?");
-        $stmt->bind_param("i", $id);
+        $stmt = $conn->prepare('SELECT * FROM reports WHERE id = ?');
+        $stmt->bind_param('i', $id);
+    } elseif ($scheduleTracker) {
+        $where = ['archived = ?'];
+        $types = 'i';
+        $params = [$archived];
+
+        $cid = isset($_GET['client_id']) ? trim((string)$_GET['client_id']) : '';
+        if ($cid !== '') {
+            $cn = isset($_GET['or_client_name']) ? trim((string)$_GET['or_client_name']) : '';
+            if ($cn !== '') {
+                $likeN = '%' . $cn . '%';
+                $where[] = "(client_id = ? OR ((client_id IS NULL OR client_id = '') AND CONCAT(TRIM(IFNULL(client_first_name,'')),' ',TRIM(IFNULL(client_last_name,''))) LIKE ?))";
+                $types .= 'ss';
+                $params[] = $cid;
+                $params[] = $likeN;
+            } else {
+                $where[] = 'client_id = ?';
+                $types .= 's';
+                $params[] = $cid;
+            }
+        }
+        $fc = isset($_GET['filter_client']) ? trim((string)$_GET['filter_client']) : '';
+        if ($fc !== '') {
+            $like = '%' . $fc . '%';
+            $where[] = "(CONCAT(TRIM(IFNULL(client_first_name,'')),' ',TRIM(IFNULL(client_last_name,''))) LIKE ? OR CONCAT(TRIM(IFNULL(client_last_name,'')),' ',TRIM(IFNULL(client_first_name,''))) LIKE ?)";
+            $types .= 'ss';
+            $params[] = $like;
+            $params[] = $like;
+        }
+        $fsc = isset($_GET['filter_service_code']) ? trim((string)$_GET['filter_service_code']) : '';
+        if ($fsc !== '') {
+            $where[] = 'service_code_with_modifiers LIKE ?';
+            $types .= 's';
+            $params[] = '%' . $fsc . '%';
+        }
+        $fdos = isset($_GET['filter_dos']) ? trim((string)$_GET['filter_dos']) : '';
+        if ($fdos !== '') {
+            $where[] = 'DATE(dos) = ?';
+            $types .= 's';
+            $params[] = $fdos;
+        }
+
+        $sql = 'SELECT * FROM reports WHERE ' . implode(' AND ', $where) . ' ORDER BY dos DESC, id DESC';
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'message' => $conn->error]);
+            return;
+        }
+        $stmt->bind_param($types, ...$params);
     } else {
-        // Filter by archived status
-        $stmt = $conn->prepare("SELECT * FROM reports WHERE archived = ? ORDER BY id DESC");
-        $stmt->bind_param("i", $archived);
+        $stmt = $conn->prepare('SELECT * FROM reports WHERE archived = ? ORDER BY id DESC');
+        $stmt->bind_param('i', $archived);
     }
 
     if (!$stmt->execute()) {
         http_response_code(500);
-        echo json_encode(['success' => false, 'message' => $conn->error]);
+        echo json_encode(['success' => false, 'message' => $stmt->error]);
         return;
     }
 
     $result = $stmt->get_result();
     $rows = [];
     while ($row = $result->fetch_assoc()) {
+        if ($scheduleTracker) {
+            reports_backfill_row_linked_ids_if_empty($conn, $row);
+        }
         $row['billable']                    = (bool)$row['billable'];
         $row['staff_signature_on_file']     = (bool)$row['staff_signature_on_file'];
         $row['guardian_signature_on_file']  = (bool)$row['guardian_signature_on_file'];
@@ -110,67 +464,117 @@ function handleGet($conn)
         $row['exclude_from_payroll']        = (bool)$row['exclude_from_payroll'];
         $row['exclude_from_mileage']        = (bool)$row['exclude_from_mileage'];
         $row['archived']                    = isset($row['archived']) ? (bool)$row['archived'] : false;
-        $rows[] = $row;
+        if (isset($row['misc_hrs']) && $row['misc_hrs'] !== null) {
+            $row['misc_hrs'] = (float)$row['misc_hrs'];
+        }
+        if (isset($row['duration_render_in_hrs']) && $row['duration_render_in_hrs'] !== null) {
+            $row['duration_render_in_hrs'] = (float)$row['duration_render_in_hrs'];
+        }
+        $rows[] = $scheduleTracker
+            ? reports_strip_excluded_fields_schedule_tracker($row)
+            : reports_strip_excluded_fields($row);
     }
 
     echo json_encode(['success' => true, 'data' => $id ? ($rows[0] ?? null) : $rows]);
 }
 
-// ---------- POST (create single report or bulk from Excel) ----------
 function handlePost($conn, $input)
 {
-    // Check if this is a single report (has 'id' field) or bulk Excel import
     $isSingleReport = isset($input['id']) || (isset($input['client_first_name']) && !isset($input[0]));
     $items = $isSingleReport ? [$input] : (isset($input[0]) ? $input : [$input]);
+    // Bulk = JSON array of row objects (not mysqlnd-dependent duplicate check must still run).
+    $isBulk = is_array($input) && isset($input[0]) && is_array($input[0]);
 
-    $conn->begin_transaction();
-    try {
-        foreach ($items as $row) {
-            // Check if this is Excel format (has capitalized keys) or form format (snake_case)
-            $isExcelFormat = isset($row['Client First Name']) || isset($row['Billable']);
-            
-            // Handle booleans - support both Excel text format and boolean values
-            if ($isExcelFormat) {
-                $billable       = !empty($row['Billable']) && strtolower($row['Billable']) !== 'no' ? 1 : 0;
-                $staffSig       = !empty($row['Staff Signature On File']) ? 1 : 0;
-                $guardianSig    = !empty($row['Guardian Signature On File']) ? 1 : 0;
-                $makeUp         = !empty($row['Make-Up Session']) && strtolower($row['Make-Up Session']) !== 'no' ? 1 : 0;
-                $excludePayroll = !empty($row['Exclude From Payroll']) && strtolower($row['Exclude From Payroll']) !== 'no' ? 1 : 0;
-                $excludeMileage = !empty($row['Exclude From Mileage']) && strtolower($row['Exclude From Mileage']) !== 'no' ? 1 : 0;
-            } else {
-                $billable       = !empty($row['billable']) ? (is_bool($row['billable']) ? ($row['billable'] ? 1 : 0) : (int)$row['billable']) : 0;
-                $staffSig       = !empty($row['staff_signature_on_file']) ? (is_bool($row['staff_signature_on_file']) ? ($row['staff_signature_on_file'] ? 1 : 0) : (int)$row['staff_signature_on_file']) : 0;
-                $guardianSig    = !empty($row['guardian_signature_on_file']) ? (is_bool($row['guardian_signature_on_file']) ? ($row['guardian_signature_on_file'] ? 1 : 0) : (int)$row['guardian_signature_on_file']) : 0;
-                $makeUp         = !empty($row['make_up_session']) ? (is_bool($row['make_up_session']) ? ($row['make_up_session'] ? 1 : 0) : (int)$row['make_up_session']) : 0;
-                $excludePayroll = !empty($row['exclude_from_payroll']) ? (is_bool($row['exclude_from_payroll']) ? ($row['exclude_from_payroll'] ? 1 : 0) : (int)$row['exclude_from_payroll']) : 0;
-                $excludeMileage = !empty($row['exclude_from_mileage']) ? (is_bool($row['exclude_from_mileage']) ? ($row['exclude_from_mileage'] ? 1 : 0) : (int)$row['exclude_from_mileage']) : 0;
+    $pending = [];
+    $lineNo = 0;
+    foreach ($items as $row) {
+        $lineNo++;
+        $isExcelFormat = isset($row['Client First Name']) || isset($row['Billable']);
+
+        if ($isExcelFormat) {
+            $billable       = !empty($row['Billable']) && strtolower($row['Billable']) !== 'no' ? 1 : 0;
+            $staffSig       = !empty($row['Staff Signature On File']) ? 1 : 0;
+            $guardianSig    = !empty($row['Guardian Signature On File']) ? 1 : 0;
+            $makeUp         = !empty($row['Make-Up Session']) && strtolower($row['Make-Up Session']) !== 'no' ? 1 : 0;
+            $excludePayroll = !empty($row['Exclude From Payroll']) && strtolower($row['Exclude From Payroll']) !== 'no' ? 1 : 0;
+            $excludeMileage = !empty($row['Exclude From Mileage']) && strtolower($row['Exclude From Mileage']) !== 'no' ? 1 : 0;
+        } else {
+            $billable       = !empty($row['billable']) ? (is_bool($row['billable']) ? ($row['billable'] ? 1 : 0) : (int)$row['billable']) : 0;
+            $staffSig       = !empty($row['staff_signature_on_file']) ? (is_bool($row['staff_signature_on_file']) ? ($row['staff_signature_on_file'] ? 1 : 0) : (int)$row['staff_signature_on_file']) : 0;
+            $guardianSig    = !empty($row['guardian_signature_on_file']) ? (is_bool($row['guardian_signature_on_file']) ? ($row['guardian_signature_on_file'] ? 1 : 0) : (int)$row['guardian_signature_on_file']) : 0;
+            $makeUp         = !empty($row['make_up_session']) ? (is_bool($row['make_up_session']) ? ($row['make_up_session'] ? 1 : 0) : (int)$row['make_up_session']) : 0;
+            $excludePayroll = !empty($row['exclude_from_payroll']) ? (is_bool($row['exclude_from_payroll']) ? ($row['exclude_from_payroll'] ? 1 : 0) : (int)$row['exclude_from_payroll']) : 0;
+            $excludeMileage = !empty($row['exclude_from_mileage']) ? (is_bool($row['exclude_from_mileage']) ? ($row['exclude_from_mileage'] ? 1 : 0) : (int)$row['exclude_from_mileage']) : 0;
+        }
+
+        if ($isExcelFormat) {
+            $dos              = excelSerialToDateTimeString($row['DOS'] ?? null, true);
+            $aptStart         = excelSerialToDateTimeString($row['Apt Start Time'] ?? null, false);
+            $aptStart         = reports_merge_dos_into_apt_start($dos, $aptStart);
+            $aptEnd           = excelSerialToDateTimeString($row['Apt End Time'] ?? null, false);
+            $renderedDate     = excelSerialToDateTimeString($row['Rendered Date'] ?? null, true);
+            $renderedStart    = excelSerialToDateTimeString($row['Rendered Start Time'] ?? null, false);
+            $renderedEnd      = excelSerialToDateTimeString($row['Rendered End Time'] ?? null, false);
+            $createdDate      = excelSerialToDateTimeString($row['Created Date'] ?? null, false);
+            $staffSignDate    = excelSerialToDateTimeString($row['Staff Sign Date'] ?? null, false);
+            $guardianSignDate = excelSerialToDateTimeString($row['Guardian Sign Date'] ?? null, false);
+            $miscRaw          = $row['Misc Hrs'] ?? $row['Misc hrs'] ?? null;
+            $cf               = $row['Client First Name'] ?? '';
+            $cl               = $row['Client Last Name'] ?? '';
+            $sf               = $row['Staff First Name'] ?? '';
+            $sl               = $row['Staff Last Name'] ?? '';
+            $svc              = $row['Service Code With Modifiers'] ?? '';
+        } else {
+            $dos              = $row['dos'] ?? null;
+            $aptStart         = $row['apt_start_time'] ?? null;
+            $aptEnd           = $row['apt_end_time'] ?? null;
+            $renderedDate     = $row['rendered_date'] ?? null;
+            $renderedStart    = $row['rendered_start_time'] ?? null;
+            $renderedEnd      = $row['rendered_end_time'] ?? null;
+            $createdDate      = $row['created_date'] ?? null;
+            $staffSignDate    = $row['staff_sign_date'] ?? null;
+            $guardianSignDate = $row['guardian_sign_date'] ?? null;
+            $miscRaw          = $row['misc_hrs'] ?? null;
+            $cf               = $row['client_first_name'] ?? '';
+            $cl               = $row['client_last_name'] ?? '';
+            $sf               = $row['staff_first_name'] ?? '';
+            $sl               = $row['staff_last_name'] ?? '';
+            $svc              = $row['service_code_with_modifiers'] ?? '';
+        }
+        $miscHrs = ($miscRaw === '' || $miscRaw === null) ? null : $miscRaw;
+
+        $linkClientId = reports_row_linked_id($row, $isExcelFormat, 'client_id', 'Client ID');
+        $linkProviderId = reports_row_linked_id($row, $isExcelFormat, 'provider_id', 'Provider ID');
+        if (($linkProviderId === null || $linkProviderId === '') && $isExcelFormat) {
+            $rawSid = $row['Staff ID'] ?? $row['staff_id'] ?? '';
+            if ($rawSid !== '' && $rawSid !== null) {
+                $linkProviderId = trim((string)$rawSid);
             }
-
-            // Handle dates - convert Excel serials or use direct values
-            if ($isExcelFormat) {
-                $dos              = excelSerialToDateTimeString($row['DOS'] ?? null, true);
-                $aptStart         = excelSerialToDateTimeString($row['Apt Start Time'] ?? null, false);
-                $aptEnd           = excelSerialToDateTimeString($row['Apt End Time'] ?? null, false);
-                $renderedDate     = excelSerialToDateTimeString($row['Rendered Date'] ?? null, true);
-                $renderedStart    = excelSerialToDateTimeString($row['Rendered Start Time'] ?? null, false);
-                $renderedEnd      = excelSerialToDateTimeString($row['Rendered End Time'] ?? null, false);
-                $createdDate      = excelSerialToDateTimeString($row['Created Date'] ?? null, false);
-                $staffSignDate    = excelSerialToDateTimeString($row['Staff Sign Date'] ?? null, false);
-                $guardianSignDate = excelSerialToDateTimeString($row['Guardian Sign Date'] ?? null, false);
-            } else {
-                $dos              = $row['dos'] ?? null;
-                $aptStart         = $row['apt_start_time'] ?? null;
-                $aptEnd           = $row['apt_end_time'] ?? null;
-                $renderedDate     = $row['rendered_date'] ?? null;
-                $renderedStart    = $row['rendered_start_time'] ?? null;
-                $renderedEnd      = $row['rendered_end_time'] ?? null;
-                $createdDate      = $row['created_date'] ?? null;
-                $staffSignDate    = $row['staff_sign_date'] ?? null;
-                $guardianSignDate = $row['guardian_sign_date'] ?? null;
+        }
+        if (($linkProviderId === null || $linkProviderId === '') && !$isExcelFormat) {
+            $rawSid = $row['staff_id'] ?? '';
+            if ($rawSid !== '' && $rawSid !== null) {
+                $linkProviderId = trim((string)$rawSid);
             }
+        }
+        if ($linkClientId === null || $linkClientId === '') {
+            $resolved = reports_resolve_client_id_by_name($conn, $cf, $cl);
+            if ($resolved !== null) {
+                $linkClientId = $resolved;
+            }
+        }
+        if ($linkProviderId === null || $linkProviderId === '') {
+            $resolved = reports_resolve_staff_id_by_name($conn, $sf, $sl);
+            if ($resolved !== null) {
+                $linkProviderId = $resolved;
+            }
+        }
 
-            $sql = "
+        $fp = reports_dup_fingerprint_from_values($cf, $cl, $sf, $sl, $svc, $dos, $aptStart);
+
+        $sql = "
                 INSERT INTO reports (
+                    client_id, provider_id,
                     client_first_name, client_last_name, client_middle_name,
                     staff_first_name, staff_last_name, staff_middle_name,
                     name_of_rbt_supervised,
@@ -192,8 +596,11 @@ function handlePost($conn, $input)
                     direct_or_indirect_service,
                     make_up_session, make_up_session_hours,
                     exclude_from_payroll, exclude_from_mileage,
+                    misc_hrs,
                     archived
                 ) VALUES (
+                    " . sqlValue($conn, $linkClientId) . ",
+                    " . sqlValue($conn, $linkProviderId) . ",
                     " . sqlValue($conn, $isExcelFormat ? ($row['Client First Name'] ?? null) : ($row['client_first_name'] ?? null)) . ",
                     " . sqlValue($conn, $isExcelFormat ? ($row['Client Last Name'] ?? null) : ($row['client_last_name'] ?? null)) . ",
                     " . sqlValue($conn, $isExcelFormat ? ($row['Client Middle Name'] ?? null) : ($row['client_middle_name'] ?? null)) . ",
@@ -255,17 +662,73 @@ function handlePost($conn, $input)
 
                     $excludePayroll,
                     $excludeMileage,
+                    " . sqlValue($conn, $miscHrs) . ",
                     0
                 )
             ";
 
-            if (!$conn->query($sql)) {
+        $pending[] = [
+            'line' => $lineNo,
+            'sql' => $sql,
+            'fp' => $fp,
+            'cf' => $cf,
+            'cl' => $cl,
+            'sf' => $sf,
+            'sl' => $sl,
+            'svc' => $svc,
+            'dos' => $dos,
+            'apt' => $aptStart,
+        ];
+    }
+
+    $warnings = ['duplicatesWithinFile' => [], 'duplicatesInDb' => []];
+    $fpToLines = [];
+    foreach ($pending as $p) {
+        if (!isset($fpToLines[$p['fp']])) {
+            $fpToLines[$p['fp']] = [];
+        }
+        $fpToLines[$p['fp']][] = $p['line'];
+    }
+    foreach ($fpToLines as $fp => $lines) {
+        if (count($lines) > 1) {
+            $warnings['duplicatesWithinFile'][] = ['fingerprint' => $fp, 'rowIndexes' => $lines];
+        }
+    }
+    if ($isBulk && count($pending) <= 200) {
+        foreach ($pending as $p) {
+            $ids = reports_find_db_duplicate_ids(
+                $conn,
+                $p['cf'],
+                $p['cl'],
+                $p['sf'],
+                $p['sl'],
+                $p['svc'],
+                $p['dos'],
+                $p['apt']
+            );
+            if (!empty($ids)) {
+                $warnings['duplicatesInDb'][] = [
+                    'fingerprint' => $p['fp'],
+                    'rowIndexes' => [$p['line']],
+                    'existingIds' => $ids,
+                ];
+            }
+        }
+    }
+
+    $conn->begin_transaction();
+    try {
+        foreach ($pending as $p) {
+            if (!$conn->query($p['sql'])) {
                 throw new Exception($conn->error);
             }
         }
-
         $conn->commit();
-        echo json_encode(['success' => true, 'message' => 'Reports created']);
+        $out = ['success' => true, 'message' => 'Reports created'];
+        if (!empty($warnings['duplicatesWithinFile']) || !empty($warnings['duplicatesInDb'])) {
+            $out['warnings'] = $warnings;
+        }
+        echo json_encode($out);
     } catch (Exception $e) {
         $conn->rollback();
         http_response_code(500);
@@ -284,6 +747,7 @@ function handlePut($conn, $input)
     $id = (int)$input['id'];
 
     $allowed = [
+        "client_id","provider_id",
         "client_first_name","client_last_name","client_middle_name",
         "staff_first_name","staff_last_name","staff_middle_name",
         "name_of_rbt_supervised",
@@ -292,7 +756,7 @@ function handlePut($conn, $input)
         "dos","apt_start_time","apt_end_time",
         "duration_schedule_in_min","duration_schedule_in_hrs",
         "rendered_date","rendered_start_time","rendered_end_time",
-        "duration_render_in_min","duration_render_in_hrs",
+        "duration_render_in_min",
         "session_completion_latency_hrs",
         "address","status","non_billable_notes","billable",
         "office",
@@ -305,7 +769,8 @@ function handlePut($conn, $input)
         "direct_or_indirect_service",
         "make_up_session","make_up_session_hours",
         "exclude_from_payroll","exclude_from_mileage",
-        "archived"
+        "archived",
+        "misc_hrs"
     ];
 
     $fields = [];

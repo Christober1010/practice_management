@@ -40,25 +40,31 @@ if (!isset($input['email']) || !isset($input['password'])) {
     exit();
 }
 
-$email = filter_var($input['email'], FILTER_SANITIZE_EMAIL);
-$password = $input['password'];
+$emailRaw = isset($input['email']) ? trim((string) $input['email']) : '';
+$password = isset($input['password']) ? (string) $input['password'] : '';
 
-// Validate email format
-if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+// Validate email format (avoid FILTER_SANITIZE_EMAIL — it can alter valid addresses in PHP 8+)
+if ($emailRaw === '' || !filter_var($emailRaw, FILTER_VALIDATE_EMAIL)) {
     http_response_code(400);
     echo json_encode(['error' => 'Invalid email format']);
     exit();
 }
 
 try {
-    // Find user by email
-    $stmt = $pdo->prepare("SELECT id, email, password, role, first_name, last_name, is_active FROM users WHERE email = ? AND is_active = 1");
-    $stmt->execute([$email]);
+    // Case-insensitive match; do not require is_active here so we can return a clear inactive message
+    $stmt = $pdo->prepare("SELECT id, email, password, role, first_name, last_name, is_active FROM users WHERE LOWER(TRIM(email)) = LOWER(?)");
+    $stmt->execute([$emailRaw]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$user) {
         http_response_code(401);
         echo json_encode(['error' => 'Invalid email or password']);
+        exit();
+    }
+
+    if (empty($user['is_active']) || (int) $user['is_active'] !== 1) {
+        http_response_code(403);
+        echo json_encode(['error' => 'This account is inactive. Ask an administrator to activate it.']);
         exit();
     }
 

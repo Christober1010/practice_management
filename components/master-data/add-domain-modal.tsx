@@ -18,8 +18,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ChevronRight } from "lucide-react";
 import toast from "react-hot-toast";
+import {
+  DEFAULT_DOMAIN_MODULE_KEY,
+  DOMAIN_MODULE_OPTIONS,
+  inferDomainModuleKey,
+  resolveModuleIdForDomain,
+} from "@/lib/domain-module-options";
 
 function generateId() {
   return `domain_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -40,6 +45,7 @@ export default function AddDomainModal({
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("Active");
   const [selectedClientValue, setSelectedClientValue] = useState("generic");
+  const [moduleKey, setModuleKey] = useState(DEFAULT_DOMAIN_MODULE_KEY);
 
   // Find selected client
   const selectedClientObj =
@@ -53,12 +59,19 @@ export default function AddDomainModal({
       setName(editingDomain.name || "");
       setDescription(editingDomain.description || "");
       setStatus(editingDomain.status || "Active");
+      setModuleKey(
+        inferDomainModuleKey(
+          modules,
+          editingDomain.moduleId || editingDomain.module_id
+        )
+      );
 
       setSelectedClientValue(editingDomain.client_id ? String(editingDomain.client_id) : "generic");
     } else {
       setName("");
       setDescription("");
       setStatus("Active");
+      setModuleKey(DEFAULT_DOMAIN_MODULE_KEY);
       
       // Check for pending client from client view navigation
       const pendingClient = localStorage.getItem("pendingClientForMasterData");
@@ -86,7 +99,7 @@ export default function AddDomainModal({
         setSelectedClientValue("generic");
       }
     }
-  }, [editingDomain, isEditing, isOpen, clients]);
+  }, [editingDomain, isEditing, isOpen, clients, modules]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -96,12 +109,20 @@ export default function AddDomainModal({
       return;
     }
 
+    const moduleId = resolveModuleIdForDomain(modules, moduleKey);
+    if (!moduleId) {
+      toast.error("Please select a module");
+      return;
+    }
+
     const payload = {
-      id: editingDomain?.id || generateId(),
+      id: editingDomain?.rawId || editingDomain?.id || generateId(),
       name: name.trim(),
       description: description.trim(),
       status: status,
       archived: 0,
+      moduleId,
+      module_id: moduleId,
       ...(selectedClientValue !== "generic"
         ? { client_id: selectedClientObj?.id || selectedClientValue }
         : {}),
@@ -128,6 +149,23 @@ export default function AddDomainModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Module (parent of domain) */}
+          <div className="space-y-2">
+            <Label>Module *</Label>
+            <Select value={moduleKey} onValueChange={setModuleKey} disabled={loading}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select module" />
+              </SelectTrigger>
+              <SelectContent>
+                {DOMAIN_MODULE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.key} value={opt.key}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Client Selector */}
           <div className="space-y-2">
             <Label>Assign to Client</Label>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +31,6 @@ import {
   Users,
   Plus,
   Search,
-  Calendar,
   Edit,
   Archive,
   ArchiveRestore,
@@ -49,8 +48,37 @@ import DocumentViewerModal from "@/components/clients/DocumentViewerModal";
 import toast, { Toaster } from "react-hot-toast";
 import { fetchClients } from "@/app/store/clientSlice";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
+import { usePermissions } from "@/hooks/usePermissions";
+import { getMahaverseAuthHeaders } from "@/lib/api-auth";
+import {
+  allowsStaffArchive,
+  allowsStaffRead,
+  allowsStaffWrite,
+} from "@/lib/staff-rbac-ui";
 
-const API_BASE_URL = `${process.env.NEXT_PUBLIC_BASE_URL}/staff.php`;
+const jsonAuthHeaders = () =>
+  getMahaverseAuthHeaders({ "Content-Type": "application/json" });
+
+const uploadAuthFetchInit = () => ({
+  credentials: "omit",
+  headers: getMahaverseAuthHeaders(),
+});
+
+/** MySQL may send 0/1 tinyint as string — fix counts and filters */
+function staffRowArchived(member) {
+  const a = member?.archived;
+  return a === true || a === 1 || a === "1";
+}
+
+function normalizeStaffRecord(row) {
+  if (!row || typeof row !== "object") return row;
+  return {
+    ...row,
+    archived: staffRowArchived(row),
+  };
+}
+
+const API_URL = `${process.env.NEXT_PUBLIC_BASE_URL}/staff.php`;
 
 const formatUSPhone = (value) => {
   if (!value) return "";
@@ -70,7 +98,12 @@ const formatDate = (dateStr) => {
   return `${month}/${day}/${year}`; // Outputs MM/DD/YYYY - customize as needed
 };
 
-export default function StaffView() {
+export default function StaffView({ userRole }) {
+  const { canAny } = usePermissions(userRole ?? {});
+  const allowStaffRead = allowsStaffRead(canAny);
+  const allowStaffWrite = allowsStaffWrite(canAny);
+  const allowStaffArchive = allowsStaffArchive(canAny);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -82,26 +115,31 @@ export default function StaffView() {
   const [expandedStaff, setExpandedStaff] = useState(null);
   const [viewingDocument, setViewingDocument] = useState(null);
 
-  const activeStaffCount = staff?.filter((member) => !member.archived).length;
-  const archivedStaffCount = staff?.filter((member) => member.archived).length;
+  const activeStaffCount = staff?.filter((m) => !staffRowArchived(m)).length;
+  const archivedStaffCount = staff?.filter((m) => staffRowArchived(m)).length;
   const fetchStaff = useCallback(async () => {
     setIsLoading(true);
     try {
       const response = await fetch(
-        `${API_BASE_URL}?showArchived=${showArchived}`
+        `${API_URL}?showArchived=${showArchived}`,
+        { headers: getMahaverseAuthHeaders() },
       );
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.message || `HTTP ${response.status}`);
       }
       const result = await response.json();
       if (result.success) {
-        setStaff(result.staff_records);
+        const rows = Array.isArray(result.staff_records)
+          ? result.staff_records.map(normalizeStaffRecord)
+          : [];
+        setStaff(rows);
       } else {
         toast.error(`Failed to fetch staff: ${result.message}`);
       }
     } catch (error) {
       console.error("Error fetching staff:", error);
-      toast.error("Failed to load staff data.");
+      toast.error(error?.message || "Failed to load staff data.");
     } finally {
       setIsLoading(false);
     }
@@ -112,14 +150,22 @@ export default function StaffView() {
   useEffect(() => {
     dispatch(fetchClients());
   }, []);
+
   useEffect(() => {
+    if (!allowStaffRead) {
+      setStaff([]);
+      setIsLoading(false);
+      return;
+    }
     fetchStaff();
-  }, [fetchStaff]);
+  }, [fetchStaff, allowStaffRead]);
 
   const filteredStaff = staff?.filter((member) => {
+    const nm = String(member.fullName ?? "").toLowerCase();
+    const sid = String(member.id ?? "").toLowerCase();
     const matchesSearch =
-      member.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      member.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      nm.includes(searchTerm.toLowerCase()) ||
+      sid.includes(searchTerm.toLowerCase()) ||
       (member.certificationNumber || "")
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
@@ -129,10 +175,20 @@ export default function StaffView() {
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
+  const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL || "").replace(/\/$/, "");
 
   const uploadStaffDocuments = async (docs, staffId) => {
     if (!Array.isArray(docs) || docs.length === 0) return docs;
+    const needsUpload = docs.some((d) => d?.document_file);
+    if (!needsUpload) return docs.map(({ document_file, ...rest }) => rest);
+
+    if (!baseUrl) {
+      throw new Error(
+        "NEXT_PUBLIC_BASE_URL is not set; cannot upload staff documents.",
+      );
+    }
+
+    const uploadUrl = `${baseUrl}/upload-staff-document.php`;
     const uploaded = await Promise.all(
       docs.map(async (doc) => {
         const file = doc?.document_file;
@@ -141,77 +197,116 @@ export default function StaffView() {
         fd.append("file", file);
         fd.append("doc_uuid", doc.doc_uuid || "");
         fd.append("staff_id", staffId);
-        const res = await fetch(`${baseUrl}/upload-staff-document.php`, { method: "POST", body: fd });
+        const res = await fetch(uploadUrl, {
+          method: "POST",
+          body: fd,
+          ...uploadAuthFetchInit(),
+        });
+        if (res.status === 404) {
+          throw new Error(
+            "upload-staff-document.php returned 404. Deploy it next to staff.php in mahaverse-backend-logics (same folder as upload-client-document.php).",
+          );
+        }
         const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json?.success) throw new Error(json?.message || "Failed to upload document");
-        return { ...doc, document_path: json.document_path || "", document_filename: json.document_filename || "", document_original_filename: doc.document_original_filename || json.filename || "", document_file: null };
-      })
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.message || "Failed to upload document");
+        }
+        return {
+          ...doc,
+          document_path: json.document_path || "",
+          document_filename: json.document_filename || "",
+          document_original_filename:
+            doc.document_original_filename || json.filename || "",
+          document_file: null,
+        };
+      }),
     );
     return uploaded.map(({ document_file, ...rest }) => rest);
   };
 
   const handleAddStaff = async (staffData) => {
+    if (!allowStaffWrite) {
+      toast.error("You don’t have permission to add staff.");
+      return false;
+    }
     try {
       const staffId = staffData.id;
       const docsUploaded = await uploadStaffDocuments(staffData.documents || [], staffId);
       const docsToSave = docsUploaded.filter((d) => d.document_path || d.document_filename);
       const toSend = { ...staffData, documents: docsToSave };
-      const response = await fetch(API_BASE_URL, {
+      const response = await fetch(API_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify(toSend),
       });
       const result = await response.json();
       if (result.success) {
         toast.success("Staff added successfully!");
         fetchStaff();
-        setIsAddModalOpen(false);
-      } else {
-        toast.error(`Failed to add staff: ${result.message}`);
+        return true;
       }
+      toast.error(`Failed to add staff: ${result.message}`);
+      return false;
     } catch (error) {
       console.error("Error adding staff:", error);
-      toast.error("Failed to add staff member.");
+      toast.error(error?.message || "Failed to add staff member.");
+      return false;
     }
   };
 
   const handleEditStaff = async (staffData) => {
+    if (!allowStaffWrite) {
+      toast.error("You don’t have permission to edit staff.");
+      return false;
+    }
     try {
       const staffId = staffData.id;
       const docsUploaded = await uploadStaffDocuments(staffData.documents || [], staffId);
       const docsToSave = docsUploaded.filter((d) => d.document_path || d.document_filename);
       const toSend = { ...staffData, documents: docsToSave };
-      const response = await fetch(API_BASE_URL, {
+      const response = await fetch(API_URL, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify(toSend),
       });
       const result = await response.json();
       if (result.success) {
         toast.success("Staff updated successfully!");
         fetchStaff();
-        setEditingStaff(null);
-        setIsAddModalOpen(false);
-      } else {
-        toast.error(`Failed to update staff: ${result.message}`);
+        return true;
       }
+      toast.error(`Failed to update staff: ${result.message}`);
+      return false;
     } catch (error) {
       console.error("Error updating staff:", error);
-      toast.error("Failed to update staff member.");
-    } finally {
-      setEditingStaff(null);
+      toast.error(error?.message || "Failed to update staff member.");
+      return false;
     }
   };
 
   const handleOpenEditModal = (member) => {
+    if (!allowStaffWrite) {
+      toast.error("You don’t have permission to edit staff.");
+      return;
+    }
     const staffCopy = {
       ...member,
+      documents: Array.isArray(member.documents)
+        ? member.documents.map((d) => ({ ...d }))
+        : [],
       firstName: member.firstName || "",
       lastName: member.lastName || "",
       staffType: member.staffType || "RBT",
       certificationNumber: member.certificationNumber || "",
       npiNumber: member.npiNumber || "",
       address: member.address || "",
+      address_line_1: member.address_line_1 ?? "",
+      address_line_2: member.address_line_2 ?? "",
+      city: member.city ?? "",
+      state: member.state ?? "",
+      zipcode: member.zipcode ?? "",
+      country: member.country ?? "",
+      location: member.location ?? "",
       email: member.email || "",
       phone: member.phone || "",
       dateOfJoining: member.dateOfJoining?.slice(0, 10) || "",
@@ -227,22 +322,24 @@ export default function StaffView() {
   };
 
   const handleArchiveStaff = async (staffId) => {
+    if (!allowStaffArchive) {
+      toast.error("You don’t have permission to archive or restore staff.");
+      return;
+    }
     const member = staff.find((s) => s.id === staffId);
     if (!member) {
       toast.error("Staff member not found");
       return;
     }
 
-    const newArchivedStatus = !member.archived;
+    const newArchivedStatus = !staffRowArchived(member);
     const newStatus = newArchivedStatus ? "Inactive" : "Active";
     const action = newArchivedStatus ? "archived" : "restored";
 
     try {
-      const response = await fetch(API_BASE_URL, {
+      const response = await fetch(API_URL, {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify({
           id: staffId,
           archived: newArchivedStatus,
@@ -334,35 +431,50 @@ export default function StaffView() {
           </p>
         </div>
         <div className="flex flex-row flex-wrap gap-2 sm:items-center sm:space-x-3 sm:justify-end">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowArchived(!showArchived)}
-            className="border-slate-300"
-          >
-            {showArchived ? (
-              <>
-                <ArchiveRestore className="h-4 w-4 mr-2" /> Show Active (
-                {activeStaffCount})
-              </>
-            ) : (
-              <>
-                <Archive className="h-4 w-4 mr-2" /> Show Archived (
-                {archivedStaffCount})
-              </>
-            )}
-          </Button>
-          <Button
-            onClick={() => setIsAddModalOpen(true)}
-            size="sm"
-            className="bg-teal-600 hover:bg-teal-700 shadow-lg"
-          >
-            <Plus className="h-4 w-4 mr-2" /> Add Staff
-          </Button>
+          {allowStaffRead && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowArchived(!showArchived)}
+              className="border-slate-300"
+            >
+              {showArchived ? (
+                <>
+                  <ArchiveRestore className="h-4 w-4 mr-2" /> Show Active (
+                  {activeStaffCount})
+                </>
+              ) : (
+                <>
+                  <Archive className="h-4 w-4 mr-2" /> Show Archived (
+                  {archivedStaffCount})
+                </>
+              )}
+            </Button>
+          )}
+          {allowStaffWrite && (
+            <Button
+              onClick={() => setIsAddModalOpen(true)}
+              size="sm"
+              className="bg-teal-600 hover:bg-teal-700 shadow-lg"
+            >
+              <Plus className="h-4 w-4 mr-2" /> Add Staff
+            </Button>
+          )}
         </div>
       </div>
 
-      {/* Search and Filters */}
+      {!allowStaffRead && (
+        <Card className="shadow-lg border-amber-200 bg-amber-50">
+          <CardContent className="py-6 text-sm text-slate-700">
+            You don&apos;t have permission to view staff records (requires
+            staff.read).
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Search and Filters + Table */}
+      {allowStaffRead && (
+      <>
       <Card className="shadow-lg border-0">
         <CardContent className="p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:space-x-4">
@@ -384,6 +496,7 @@ export default function StaffView() {
                 <SelectItem value="BCBA">BCBA</SelectItem>
                 <SelectItem value="BCaBA">BCaBA</SelectItem>
                 <SelectItem value="RBT">RBT</SelectItem>
+                <SelectItem value="BT">BT</SelectItem>
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -501,11 +614,13 @@ export default function StaffView() {
                     ?.sort((a, b) => a.fullName.localeCompare(b.fullName))
                     .map((member) => {
                       const isExpanded = expandedStaff === member.id;
+                      const memberDocuments = Array.isArray(member.documents)
+                        ? member.documents
+                        : [];
                       return (
-                        <>
+                        <Fragment key={member.id}>
                           {/* Main Row */}
                           <TableRow
-                            key={member.id}
                             className="hover:bg-slate-50 transition-colors border-b"
                           >
                             <TableCell className="lg:px-4 sm:px-2 py-4">
@@ -530,7 +645,7 @@ export default function StaffView() {
                                     >
                                       {member.status}
                                     </Badge>
-                                    {member.archived && (
+                                    {staffRowArchived(member) && (
                                       <Badge
                                         variant="outline"
                                         className="border-amber-300 text-amber-700 text-xs"
@@ -605,60 +720,61 @@ export default function StaffView() {
                                     </span>
                                   )}
                                 </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handleOpenEditModal(member)}
-                                  className="border-slate-300"
-                                >
-                                  <span title="Edit">
-                                    <Edit className="h-4 w-4 mr-2" />
-                                  </span>
-                                </Button>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button
-                                      title="Options"
-                                      variant="outline"
-                                      size="sm"
-                                      className="border-slate-300 bg-transparent"
-                                    >
-                                      <MoreVertical className="h-3 w-3" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent
-                                    align="end"
-                                    className="w-48"
+                                {allowStaffWrite && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      handleOpenEditModal(member)
+                                    }
+                                    className="border-slate-300"
                                   >
-                                    <DropdownMenuItem>
-                                      <Calendar className="h-4 w-4 mr-2" />{" "}
-                                      Schedule
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                      onClick={() =>
-                                        handleArchiveStaff(member.id || "")
-                                      }
-                                      className={
-                                        member.archived
-                                          ? "text-green-600"
-                                          : "text-amber-600"
-                                      }
+                                    <span title="Edit">
+                                      <Edit className="h-4 w-4 mr-2" />
+                                    </span>
+                                  </Button>
+                                )}
+                                {allowStaffArchive && (
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button
+                                        title="Archive options"
+                                        variant="outline"
+                                        size="sm"
+                                        className="border-slate-300 bg-transparent"
+                                      >
+                                        <MoreVertical className="h-3 w-3" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent
+                                      align="end"
+                                      className="w-48"
                                     >
-                                      {member.archived ? (
-                                        <>
-                                          <ArchiveRestore className="h-4 w-4 mr-2" />{" "}
-                                          Restore Staff
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Archive className="h-4 w-4 mr-2" />{" "}
-                                          Archive Staff
-                                        </>
-                                      )}
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                      <DropdownMenuItem
+                                        onClick={() =>
+                                          handleArchiveStaff(member.id || "")
+                                        }
+                                        className={
+                                          staffRowArchived(member)
+                                            ? "text-green-600"
+                                            : "text-amber-600"
+                                        }
+                                      >
+                                        {staffRowArchived(member) ? (
+                                          <>
+                                            <ArchiveRestore className="h-4 w-4 mr-2" />{" "}
+                                            Restore Staff
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Archive className="h-4 w-4 mr-2" />{" "}
+                                            Archive Staff
+                                          </>
+                                        )}
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                )}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -1053,9 +1169,9 @@ export default function StaffView() {
                                       </CardTitle>
                                     </CardHeader>
                                     <CardContent>
-                                      {member.documents && member.documents.length > 0 ? (
+                                      {memberDocuments.length > 0 ? (
                                         <div className="space-y-4">
-                                          {member.documents.map((doc, index) => (
+                                          {memberDocuments.map((doc, index) => (
                                             <div key={doc.doc_uuid || index} className="border rounded-lg p-4 bg-slate-50">
                                               <div className="flex items-center justify-between flex-wrap gap-3">
                                                 <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -1109,7 +1225,10 @@ export default function StaffView() {
                                                             alert("Backend URL (NEXT_PUBLIC_BASE_URL) is not configured.");
                                                             return;
                                                           }
-                                                          const res = await fetch(url, { credentials: "omit" });
+                                                          const res = await fetch(url, {
+                                                            credentials: "omit",
+                                                            headers: getMahaverseAuthHeaders(),
+                                                          });
                                                           if (!res.ok) throw new Error("Download failed");
                                                           const blob = await res.blob();
                                                           const a = document.createElement("a");
@@ -1140,7 +1259,7 @@ export default function StaffView() {
                               </TableCell>
                             </TableRow>
                           )}
-                        </>
+                        </Fragment>
                       );
                     })}
                 </TableBody>
@@ -1158,6 +1277,8 @@ export default function StaffView() {
             </div>
           </CardContent>
         </Card>
+      )}
+      </>
       )}
 
       {/* Add/Edit Staff Modal */}

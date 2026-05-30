@@ -8,7 +8,15 @@ import { useEffect, useState } from "react"
 
 
 
-export default function ViewSessionModal({ isOpen, onClose, session, onEdit, onDelete }) {
+export default function ViewSessionModal({
+  isOpen,
+  onClose,
+  session,
+  onEdit,
+  onDelete,
+  canEdit = true,
+  canDelete = true,
+}) {
   const [userTimezone, setUserTimezone] = useState("UTC")
 
   useEffect(() => {
@@ -66,7 +74,7 @@ export default function ViewSessionModal({ isOpen, onClose, session, onEdit, onD
 
           {session.authCode && (
             <div>
-              <p className="text-sm font-medium text-gray-600">Auth Code</p>
+              <p className="text-sm font-medium text-gray-600">Billing code</p>
               <p className="text-base">{session.authCode}</p>
             </div>
           )}
@@ -79,6 +87,7 @@ export default function ViewSessionModal({ isOpen, onClose, session, onEdit, onD
           )}
 
           <div className="flex gap-2 justify-end pt-4">
+            {canEdit && (
             <Button
               type="button"
               variant="outline"
@@ -91,18 +100,21 @@ export default function ViewSessionModal({ isOpen, onClose, session, onEdit, onD
               <Edit className="h-4 w-4" />
               Edit
             </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              onClick={() => {
-                onDelete(session)
-                onClose()
-              }}
-              className="gap-2 bg-red-600 hover:bg-red-700"
-            >
-              <Trash2 className="h-4 w-4" />
-              Delete
-            </Button>
+            )}
+            {canDelete && (
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => {
+                  onDelete(session)
+                  onClose()
+                }}
+                className="gap-2 bg-red-600 hover:bg-red-700"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </Button>
+            )}
             <Button type="button" variant="outline" onClick={onClose}>
               Close
             </Button>

@@ -19,8 +19,20 @@ export default function Header({ userRole, onLogout }) {
         return { title: "Parent Portal", subtitle: "Child Progress Tracking" };
       case "biller":
         return { title: "Biller", subtitle: "Billing & Claims Management" };
-      default:
-        return { title: "User", subtitle: "Dashboard" };
+      case "planner":
+        return { title: "Planner", subtitle: "Scheduling" };
+      case "client":
+        return { title: "Client Portal", subtitle: "Your profile" };
+      default: {
+        const slug = String(userRole.role ?? "unknown");
+        const title =
+          slug.charAt(0).toUpperCase() +
+          slug.slice(1).toLowerCase().replace(/_/g, " ");
+        return {
+          title,
+          subtitle: `Role key: ${slug}`,
+        };
+      }
     }
   };
 

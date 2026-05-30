@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ListChecks, Target, Trash2 } from "lucide-react";
+import { parseTargetInstructions } from "@/lib/target-instructions-format";
 
 const TRIAL_OUTCOMES = [
   { value: "Correct", label: "Correct" },
@@ -85,12 +86,17 @@ export default function TrialsPanel({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {selectedTargetData.goal_description && (
+            {(() => {
+              const parsed = parseTargetInstructions(selectedTargetData.instructions || "");
+              const sdText = parsed.sd || selectedTargetData.goal_description;
+              if (!sdText) return null;
+              return (
               <div>
                 <Label className="text-sm font-semibold">SD (Stimulus Discriminative):</Label>
-                <p className="text-sm text-slate-600 mt-1">{selectedTargetData.goal_description}</p>
+                <p className="text-sm text-slate-600 mt-1">{sdText}</p>
               </div>
-            )}
+              );
+            })()}
 
             {selectedTargetData.instructions && (
               <div>

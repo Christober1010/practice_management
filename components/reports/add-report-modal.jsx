@@ -32,54 +32,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { User, Calendar, FileText, DollarSign, Upload, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import toast from "react-hot-toast";
-
-const REQUIRED_COLUMNS = [
-  "Client First Name",
-  "Client Last Name",
-  "Client Middle Name",
-  "Staff First Name",
-  "Staff Last Name",
-  "Staff Middle Name",
-  "Name of RBT Supervised",
-  "Payer",
-  "Activity Type",
-  "Location Code",
-  "Authorization Number",
-  "Service Code With Modifiers",
-  "DOS",
-  "Apt Start Time",
-  "Apt End Time",
-  "Duration Schedule In Min",
-  "Duration Schedule In Hrs",
-  "Rendered Date",
-  "Rendered Start Time",
-  "Rendered End Time",
-  "Duration Render in Min",
-  "Duration Render in Hrs",
-  "Session Completion Latency in Hrs",
-  "Address",
-  "Status",
-  "Non-Billable Notes",
-  "Billable",
-  "Office",
-  "Rendering Provider First Name",
-  "Rendering Provider Last Name",
-  "Rendering Provider MiddleName",
-  "Created By",
-  "Created Date",
-  "Notes",
-  "Staff Signature On File",
-  "Staff Sign Date",
-  "Approx. location of Staff Sign",
-  "Guardian Signature On File",
-  "Guardian Sign Date",
-  "Approx. location of Guardian Sign",
-  "DIRECT or INDIRECT Service",
-  "Make-Up Session",
-  "Make-Up Session Hours",
-  "Exclude From Payroll",
-  "Exclude From Mileage",
-];
+import { REQUIRED_COLUMNS } from "./report-column-exclusions";
 
 export default function AddReportModal({
   isOpen,
@@ -117,7 +70,6 @@ export default function AddReportModal({
     rendered_start_time: "",
     rendered_end_time: "",
     duration_render_in_min: "",
-    duration_render_in_hrs: "",
     session_completion_latency_hrs: "",
     address: "",
     status: "Scheduled",
@@ -171,7 +123,6 @@ export default function AddReportModal({
         rendered_start_time: editingReport.rendered_start_time || "",
         rendered_end_time: editingReport.rendered_end_time || "",
         duration_render_in_min: editingReport.duration_render_in_min || "",
-        duration_render_in_hrs: editingReport.duration_render_in_hrs || "",
         session_completion_latency_hrs:
           editingReport.session_completion_latency_hrs || "",
         address: editingReport.address || "",
@@ -229,7 +180,6 @@ export default function AddReportModal({
         rendered_start_time: "",
         rendered_end_time: "",
         duration_render_in_min: "",
-        duration_render_in_hrs: "",
         session_completion_latency_hrs: "",
         address: "",
         status: "Scheduled",
@@ -1276,17 +1226,6 @@ export default function AddReportModal({
                     value={formData.duration_render_in_min}
                     onChange={(e) =>
                       handleChange("duration_render_in_min", e.target.value)
-                    }
-                  />
-                </div>
-                <div>
-                  <Label>Duration Rendered (Hours)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={formData.duration_render_in_hrs}
-                    onChange={(e) =>
-                      handleChange("duration_render_in_hrs", e.target.value)
                     }
                   />
                 </div>

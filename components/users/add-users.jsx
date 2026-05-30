@@ -26,7 +26,8 @@ export default function AddUserModal({ isOpen, onClose, onSave, editingUser }) {
   const [saving, setSaving] = useState(false);
   const [passwordKey, setPasswordKey] = useState(0); // To force remount password input
 
-  const emptyUser = {
+  /** Fresh object each time — the old shared `emptyUser` was mutated by the form because `setFormData(emptyUser)` reused one reference. */
+  const createEmptyUser = () => ({
     id: uuidv4(),
     email: "",
     PASSWORD: "",
@@ -34,7 +35,7 @@ export default function AddUserModal({ isOpen, onClose, onSave, editingUser }) {
     first_name: "",
     last_name: "",
     is_active: 1,
-  };
+  });
 
   useEffect(() => {
     if (isOpen) {
@@ -50,7 +51,7 @@ export default function AddUserModal({ isOpen, onClose, onSave, editingUser }) {
             editingUser.is_active !== undefined ? editingUser.is_active : 1,
         });
       } else {
-        setFormData(emptyUser);
+        setFormData(createEmptyUser());
       }
       setErrors({});
       setPasswordKey((prev) => prev + 1); // Force password input remount to clear autofill
@@ -111,13 +112,15 @@ export default function AddUserModal({ isOpen, onClose, onSave, editingUser }) {
       delete dataToSave.PASSWORD;
     }
 
-    await onSave(dataToSave);
+    const ok = await onSave(dataToSave);
     setSaving(false);
-    handleClose();
+    if (ok === true) {
+      handleClose();
+    }
   };
 
   const handleClose = () => {
-    setFormData(emptyUser);
+    setFormData(createEmptyUser());
     setErrors({});
     onClose();
   };
@@ -223,6 +226,8 @@ export default function AddUserModal({ isOpen, onClose, onSave, editingUser }) {
                 <SelectItem value="rbt">RBT</SelectItem>
                 <SelectItem value="biller">Biller</SelectItem>
                 <SelectItem value="parent">Parent</SelectItem>
+                <SelectItem value="planner">Planner</SelectItem>
+                <SelectItem value="client">Client</SelectItem>
               </>,
               "Select role"
             )}

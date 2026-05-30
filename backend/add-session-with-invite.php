@@ -204,53 +204,11 @@ function getEmailRecipients($conn, $clientId, $providerId = null, $supervisingPr
     }
 
     if ($providerId) {
-        file_put_contents('debug.log', "Looking up provider staffType for ID: $providerId\n", FILE_APPEND);
-
-        $staffStmt = $conn->prepare("SELECT email, staffType, firstName, lastName FROM staff WHERE id = ?");
-        $staffStmt->bind_param("s", $providerId);
-        $staffStmt->execute();
-        $staffResult = $staffStmt->get_result();
-        $staffData = $staffResult->fetch_assoc();
-        $staffStmt->close();
-
-        if ($staffData) {
-            $providerName = trim(($staffData['firstName'] ?? '') . ' ' . ($staffData['lastName'] ?? ''));
-            file_put_contents('debug.log', "Staff found: $providerName with staffType: " . ($staffData['staffType'] ?? 'null') . "\n", FILE_APPEND);
-
-            if (strtoupper($staffData['staffType'] ?? '') === 'RBT' && $supervisingProviderId) {
-                file_put_contents('debug.log', "RBT detected, looking up supervisor: $supervisingProviderId\n", FILE_APPEND);
-
-                $supervisorStmt = $conn->prepare("SELECT email, firstName, lastName FROM staff WHERE id = ?");
-                $supervisorStmt->bind_param("s", $supervisingProviderId);
-                $supervisorStmt->execute();
-                $supervisorResult = $supervisorStmt->get_result();
-                $supervisorData = $supervisorResult->fetch_assoc();
-                $supervisorStmt->close();
-
-                if ($supervisorData && $supervisorData['email']) {
-                    $supervisorName = trim(($supervisorData['firstName'] ?? '') . ' ' . ($supervisorData['lastName'] ?? ''));
-                    $recipients[] = [
-                        'email' => $supervisorData['email'],
-                        'name' => $supervisorName,
-                        'type' => 'supervisor'
-                    ];
-                    file_put_contents('debug.log', "RBT session detected (Provider: $providerId) - sending email to supervisor: {$supervisorData['email']}\n", FILE_APPEND);
-                } else {
-                    file_put_contents('debug.log', "RBT session detected but supervisor email not found for supervisor ID: $supervisingProviderId\n", FILE_APPEND);
-                }
-            } else {
-                if ($staffData['email']) {
-                    $recipients[] = [
-                        'email' => $staffData['email'],
-                        'name' => $providerName,
-                        'type' => 'provider'
-                    ];
-                    file_put_contents('debug.log', "Provider staffType: " . ($staffData['staffType'] ?? 'unknown') . " - sending to provider email: {$staffData['email']}\n", FILE_APPEND);
-                }
-            }
-        } else {
-            file_put_contents('debug.log', "Provider not found in staff table\n", FILE_APPEND);
-        }
+        file_put_contents(
+            'debug.log',
+            "Provider/supervisor email notifications are disabled for scheduling.\n",
+            FILE_APPEND
+        );
     }
 
     return [

@@ -15,6 +15,11 @@ $user = "dbu3321929";
 $password = "M@h@B3h@v1or@lH3@lth4@ut1sm";
 $database = "dbs14484433";
 
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+require_once __DIR__ . '/client_auth_units_helpers.php';
+require_once __DIR__ . '/behavior_helpers.php';
+
 function generateId() {
     return sprintf(
         '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
@@ -112,17 +117,61 @@ function handleGetSessionEntry($conn, $clientId, $sessionDate) {
         return;
     }
 
-    $decoded = json_decode($row['payload'], true);
+    $entryRow = $row;
+    $decoded = json_decode($entryRow['payload'], true);
+    $sessionNotes = is_array($decoded) ? $decoded : [];
+    $sessionIdInt = !empty($entryRow['session_id']) && is_numeric($entryRow['session_id'])
+        ? (int)$entryRow['session_id']
+        : null;
+
+    $clientBehaviors = br_fetch_client_behaviors($conn, $clientId);
+    $behaviorDataRows = br_fetch_session_behavior_data($conn, $clientId, $sessionDate, $sessionIdInt);
+    $abcDataRows = br_fetch_session_abc_data($conn, $clientId, $sessionDate, $sessionIdInt);
+
+    if (!empty($clientBehaviors) && function_exists('br_merge_behavior_data_into_rows')) {
+        $mergedBehaviors = br_merge_behavior_data_into_rows($clientBehaviors, $behaviorDataRows);
+        $payloadRows = $sessionNotes['behaviorReductionData'] ?? [];
+        if (!empty($payloadRows) && is_array($payloadRows)) {
+            $byId = [];
+            foreach ($payloadRows as $payloadRow) {
+                if (is_array($payloadRow) && !empty($payloadRow['id'])) {
+                    $byId[$payloadRow['id']] = $payloadRow;
+                }
+            }
+            $mergedBehaviors = array_map(function ($behaviorRow) use ($byId) {
+                $saved = $byId[$behaviorRow['id']] ?? null;
+                return $saved ? array_merge($behaviorRow, $saved) : $behaviorRow;
+            }, $mergedBehaviors);
+        }
+        $sessionNotes['behaviorReductionData'] = $mergedBehaviors;
+    }
+
+    if (!empty($abcDataRows)) {
+        $sessionNotes['abcData'] = array_map(function ($abcRow) {
+            return [
+                'id' => $abcRow['id'],
+                'antecedent_id' => $abcRow['antecedent_id'],
+                'behavior_id' => $abcRow['behavior_id'],
+                'consequence_id' => $abcRow['consequence_id'],
+                'location_id' => $abcRow['location_id'],
+                'notes' => $abcRow['notes'] ?? '',
+                'created_at' => $abcRow['created_at'] ?? null,
+            ];
+        }, $abcDataRows);
+    } elseif (!isset($sessionNotes['abcData'])) {
+        $sessionNotes['abcData'] = [];
+    }
+
     echo json_encode([
         'success' => true,
         'data' => [
-            'id' => $row['id'],
-            'client_id' => $row['client_id'],
-            'session_date' => $row['session_date'],
-            'session_id' => $row['session_id'],
-            'session_notes' => is_array($decoded) ? $decoded : [],
-            'created_at' => $row['created_at'],
-            'updated_at' => $row['updated_at'],
+            'id' => $entryRow['id'],
+            'client_id' => $entryRow['client_id'],
+            'session_date' => $entryRow['session_date'],
+            'session_id' => $entryRow['session_id'],
+            'session_notes' => $sessionNotes,
+            'created_at' => $entryRow['created_at'],
+            'updated_at' => $entryRow['updated_at'],
         ]
     ]);
 }
@@ -131,6 +180,13 @@ function handleGet($conn) {
     $clientId = $_GET['client_id'] ?? null;
     $targetId = $_GET['target_id'] ?? null;
     $sessionDate = $_GET['session_date'] ?? date('Y-m-d');
+
+    $authU = getAuthenticatedUser();
+    if ($authU && $clientId && !rbac_user_may_access_client_row($authU, $conn, (string) $clientId)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Permission denied']);
+        return;
+    }
 
     if (!$clientId) {
         http_response_code(400);
@@ -146,6 +202,383 @@ function handleGet($conn) {
     handleGetSessionEntry($conn, $clientId, $sessionDate);
 }
 
+/**
+ * Claim columns on sessions (optional migration).
+ *
+ * @return array{claim_id: bool, claim_status: bool}
+ */
+function sessions_has_claim_columns_notes(mysqli $conn): array
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $cached = ['claim_id' => false, 'claim_status' => false];
+    $r = @$conn->query('SHOW COLUMNS FROM `sessions`');
+    if ($r) {
+        while ($row = $r->fetch_assoc()) {
+            $f = $row['Field'] ?? '';
+            if ($f === 'claim_id') {
+                $cached['claim_id'] = true;
+            }
+            if ($f === 'claim_status') {
+                $cached['claim_status'] = true;
+            }
+        }
+        $r->free();
+    }
+
+    return $cached;
+}
+
+/**
+ * Hours covered by appointment window (sessions.start_utc → end_utc).
+ */
+function session_duration_hours_from_bounds($startUtc, $endUtc): float
+{
+    if ($startUtc === null || $startUtc === '' || $endUtc === null || $endUtc === '') {
+        return 0.0;
+    }
+    $s = strtotime((string)$startUtc);
+    $e = strtotime((string)$endUtc);
+    if ($s === false || $e === false || $e <= $s) {
+        return 0.0;
+    }
+    return round(($e - $s) / 3600.0, 4);
+}
+
+function sessions_has_authorized_hours_column_notes(mysqli $conn): bool
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $cached = false;
+    $r = @$conn->query("SHOW COLUMNS FROM `sessions` LIKE 'authorized_hours'");
+    if ($r && $r->num_rows > 0) {
+        $cached = true;
+    }
+    if ($r) {
+        $r->free();
+    }
+
+    return $cached;
+}
+
+function build_claim_id_notes(int $sessionId, $startUtc = null): string
+{
+    $datePart = date('Ymd');
+    if (!empty($startUtc)) {
+        $ts = strtotime((string)$startUtc);
+        if ($ts !== false) {
+            $datePart = gmdate('Ymd', $ts);
+        }
+    }
+
+    return "CLM-{$datePart}-{$sessionId}";
+}
+
+/**
+ * Persist note payload; return new or existing entry id.
+ *
+ * @throws Exception on DB errors
+ */
+function persist_session_note_entry(mysqli $conn, array $input): string
+{
+    if (!isset($input['client_id']) || !isset($input['session_notes'])) {
+        throw new InvalidArgumentException('client_id and session_notes are required fields');
+    }
+
+    ensureSessionEntryTable($conn);
+
+    $clientId = (string)$input['client_id'];
+    $sessionDate = (string)($input['session_date'] ?? date('Y-m-d'));
+    $sessionIdRaw = array_key_exists('session_id', $input) ? $input['session_id'] : null;
+    $sessionId = $sessionIdRaw !== null && $sessionIdRaw !== ''
+        ? (string)$sessionIdRaw
+        : null;
+
+    $sessionNotes = is_array($input['session_notes']) ? $input['session_notes'] : [];
+    $payload = json_encode($sessionNotes, JSON_UNESCAPED_UNICODE);
+    if ($payload === false) {
+        throw new Exception('Failed to encode session_notes payload');
+    }
+
+    $existingStmt = $conn->prepare('
+        SELECT id FROM client_session_note_entries
+        WHERE client_id = ? AND session_date = ?
+        LIMIT 1
+    ');
+    if (!$existingStmt) {
+        throw new Exception('Failed to prepare statement: ' . $conn->error);
+    }
+    $existingStmt->bind_param('ss', $clientId, $sessionDate);
+    $existingStmt->execute();
+    $existingResult = $existingStmt->get_result();
+    $existingRow = $existingResult->fetch_assoc();
+    $existingStmt->close();
+
+    if ($existingRow) {
+        if ($sessionId !== null) {
+            $updateStmt = $conn->prepare('
+                UPDATE client_session_note_entries
+                SET session_id = ?, payload = ?
+                WHERE id = ?
+            ');
+            if (!$updateStmt) {
+                throw new Exception('Failed to prepare statement: ' . $conn->error);
+            }
+            $updateStmt->bind_param('sss', $sessionId, $payload, $existingRow['id']);
+            if (!$updateStmt->execute()) {
+                throw new Exception('Failed to update session note entry: ' . $updateStmt->error);
+            }
+            $updateStmt->close();
+        } else {
+            $updateStmt = $conn->prepare('
+                UPDATE client_session_note_entries
+                SET session_id = NULL, payload = ?
+                WHERE id = ?
+            ');
+            if (!$updateStmt) {
+                throw new Exception('Failed to prepare statement: ' . $conn->error);
+            }
+            $updateStmt->bind_param('ss', $payload, $existingRow['id']);
+            if (!$updateStmt->execute()) {
+                throw new Exception('Failed to update session note entry: ' . $updateStmt->error);
+            }
+            $updateStmt->close();
+        }
+
+        return (string)$existingRow['id'];
+    }
+
+    $id = generateId();
+    if ($sessionId !== null) {
+        $insertStmt = $conn->prepare('
+            INSERT INTO client_session_note_entries (id, client_id, session_date, session_id, payload)
+            VALUES (?, ?, ?, ?, ?)
+        ');
+        if (!$insertStmt) {
+            throw new Exception('Failed to prepare statement: ' . $conn->error);
+        }
+        $insertStmt->bind_param('sssss', $id, $clientId, $sessionDate, $sessionId, $payload);
+        if (!$insertStmt->execute()) {
+            throw new Exception('Failed to create session note entry: ' . $insertStmt->error);
+        }
+        $insertStmt->close();
+    } else {
+        $insertStmt = $conn->prepare('
+            INSERT INTO client_session_note_entries (id, client_id, session_date, session_id, payload)
+            VALUES (?, ?, ?, NULL, ?)
+        ');
+        if (!$insertStmt) {
+            throw new Exception('Failed to prepare statement: ' . $conn->error);
+        }
+        $insertStmt->bind_param('ssss', $id, $clientId, $sessionDate, $payload);
+        if (!$insertStmt->execute()) {
+            throw new Exception('Failed to create session note entry: ' . $insertStmt->error);
+        }
+        $insertStmt->close();
+    }
+
+    return $id;
+}
+
+/**
+ * Mark scheduling session Rendered, sync rendered hours, set claim id/status when columns exist.
+ * Updates client_auth.units_serviced from all Ready to Bill sessions on this authorization.
+ *
+ * @throws Exception
+ */
+function finalize_session_ready_to_bill_notes(mysqli $conn, string $clientId, int $sessionId): array
+{
+    $stmt = $conn->prepare('SELECT * FROM sessions WHERE session_id = ? LIMIT 1');
+    if (!$stmt) {
+        throw new Exception('Failed to prepare session lookup: ' . $conn->error);
+    }
+    $stmt->bind_param('i', $sessionId);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$row) {
+        throw new Exception('Session not found');
+    }
+    if (trim((string)($row['client_id'] ?? '')) !== trim($clientId)) {
+        throw new Exception('Session does not belong to this client');
+    }
+
+    $statusRaw = (string)($row['STATUS'] ?? $row['status'] ?? '');
+    if (strcasecmp($statusRaw, 'Cancelled') === 0) {
+        throw new Exception('Cannot complete a cancelled session');
+    }
+
+    $fromWindow = session_duration_hours_from_bounds($row['start_utc'] ?? null, $row['end_utc'] ?? null);
+    $sched = (float)($row['scheduled_hours'] ?? 0);
+    if ($sched <= 0 && $fromWindow > 0) {
+        $sched = $fromWindow;
+    }
+
+    $rend = (float)($row['rendered_hours'] ?? 0);
+    $newRendered = $rend > 0 ? $rend : $sched;
+    /** If still unknown, rounding noise from DECIMAL strings */
+    if ($newRendered <= 0 && $fromWindow > 0) {
+        $newRendered = $fromWindow;
+    }
+
+    $repairScheduledDb = ($fromWindow > 0 && (float)($row['scheduled_hours'] ?? 0) <= 0);
+    $hasAuthCol = sessions_has_authorized_hours_column_notes($conn);
+    $authExisting = isset($row['authorized_hours']) ? (float)$row['authorized_hours'] : 0.0;
+    $repairAuthDb = $hasAuthCol && $authExisting <= 0 && $newRendered > 0;
+
+    $cols = sessions_has_claim_columns_notes($conn);
+    $claimIdExisting = trim((string)($row['claim_id'] ?? ''));
+    $claimStatusExisting = trim((string)($row['claim_status'] ?? ''));
+
+    $nextClaimId = $claimIdExisting;
+    if ($cols['claim_id'] && $nextClaimId === '') {
+        $nextClaimId = build_claim_id_notes($sessionId, $row['start_utc'] ?? null);
+    }
+
+    $submitted = $cols['claim_status'] && stripos($claimStatusExisting, 'submitted') !== false;
+    $nextClaimStatus = $claimStatusExisting;
+    if ($cols['claim_status'] && !$submitted) {
+        $nextClaimStatus = 'Ready to Bill';
+    }
+
+    $sets = ['`STATUS` = ?', 'rendered_hours = ?'];
+    $types = 'sd';
+    $bind = ['Rendered', $newRendered];
+
+    if ($repairScheduledDb) {
+        $sets[] = 'scheduled_hours = ?';
+        $types .= 'd';
+        $bind[] = $fromWindow;
+    }
+
+    if ($repairAuthDb) {
+        $sets[] = 'authorized_hours = ?';
+        $types .= 'd';
+        $bind[] = $newRendered;
+    }
+
+    if ($cols['claim_id'] && $nextClaimId !== '') {
+        $sets[] = 'claim_id = ?';
+        $types .= 's';
+        $bind[] = $nextClaimId;
+    }
+    if ($cols['claim_status'] && !$submitted) {
+        $sets[] = 'claim_status = ?';
+        $types .= 's';
+        $bind[] = $nextClaimStatus !== '' ? $nextClaimStatus : 'Ready to Bill';
+    }
+
+    $sql = 'UPDATE sessions SET ' . implode(', ', $sets) . ' WHERE session_id = ? AND client_id = ?';
+    $types .= 'is';
+    $bind[] = $sessionId;
+    $bind[] = $clientId;
+
+    $upd = $conn->prepare($sql);
+    if (!$upd) {
+        throw new Exception('Failed to prepare session update: ' . $conn->error);
+    }
+    $params = array_merge([$types], $bind);
+    $refs = [];
+    foreach ($params as $key => $_) {
+        $refs[$key] = &$params[$key];
+    }
+    call_user_func_array([$upd, 'bind_param'], $refs);
+    if (!$upd->execute()) {
+        throw new Exception('Failed to update session: ' . $upd->error);
+    }
+    $affected = $upd->affected_rows;
+    $upd->close();
+
+    $authSync = null;
+    $authId = (int)($row['auth_id'] ?? 0);
+    if ($authId > 0) {
+        $authSync = client_auth_sync_units_serviced_for_auth($conn, $authId);
+    }
+
+    return [
+        'session_id' => $sessionId,
+        'claim_id' => $cols['claim_id'] ? $nextClaimId : null,
+        'claim_status' => $cols['claim_status'] ? $nextClaimStatus : null,
+        'rendered_hours' => $newRendered,
+        'rows_affected' => $affected,
+        'auth_units' => $authSync,
+    ];
+}
+
+function session_notes_date_is_future(string $sessionDate): bool
+{
+    $sessionDate = trim($sessionDate);
+    if ($sessionDate === '') {
+        return false;
+    }
+    return $sessionDate > date('Y-m-d');
+}
+
+function handleCompleteSessionNotes(mysqli $conn, array $input): void
+{
+    $sessionDate = (string)($input['session_date'] ?? date('Y-m-d'));
+    if (session_notes_date_is_future($sessionDate)) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'code' => 'future_session_date',
+            'message' => 'You cannot complete session notes for a future date.',
+        ]);
+
+        return;
+    }
+
+    if (empty($input['session_id'])) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'session_id is required to complete and mark ready to bill']);
+
+        return;
+    }
+    $sessionId = (int)$input['session_id'];
+    if ($sessionId <= 0) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'Invalid session_id']);
+
+        return;
+    }
+
+    if (!isset($input['client_id']) || !isset($input['session_notes'])) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => 'client_id and session_notes are required']);
+
+        return;
+    }
+
+    try {
+        $conn->begin_transaction();
+        $entryId = persist_session_note_entry($conn, $input);
+        br_persist_from_session_notes_input($conn, $input);
+        $bill = finalize_session_ready_to_bill_notes($conn, (string)$input['client_id'], $sessionId);
+        $conn->commit();
+
+        echo json_encode([
+            'success' => true,
+            'message' => 'Session notes saved and session marked ready to bill',
+            'data' => [
+                'note_entry_id' => $entryId,
+                'billing' => $bill,
+            ],
+        ]);
+    } catch (InvalidArgumentException $e) {
+        $conn->rollback();
+        http_response_code(400);
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    } catch (Exception $e) {
+        $conn->rollback();
+        throw $e;
+    }
+}
+
 function handleSaveTrial($conn, $input) {
     if (!ensureTrialTable($conn)) {
         http_response_code(500);
@@ -157,7 +590,7 @@ function handleSaveTrial($conn, $input) {
     $targetId = (string)$input['target_id'];
     $sessionDate = (string)($input['session_date'] ?? date('Y-m-d'));
     $trialOutcome = (string)$input['trial_outcome'];
-    $notes = isset($input['notes']) ? (string)$input['notes'] : null;
+    $notes = isset($input['notes']) && $input['notes'] !== null ? (string)$input['notes'] : '';
 
     $trialNumberStmt = $conn->prepare("
         SELECT COALESCE(MAX(trial_number), 0) + 1 as next_trial
@@ -201,78 +634,20 @@ function handleSaveTrial($conn, $input) {
 }
 
 function handleSaveSessionEntry($conn, $input) {
-    if (!isset($input['client_id']) || !isset($input['session_notes'])) {
+    try {
+        $id = persist_session_note_entry($conn, $input);
+        br_persist_from_session_notes_input($conn, $input);
+    } catch (InvalidArgumentException $e) {
         http_response_code(400);
-        echo json_encode(['success' => false, 'message' => 'client_id and session_notes are required']);
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+
         return;
     }
-
-    ensureSessionEntryTable($conn);
-
-    $clientId = (string)$input['client_id'];
-    $sessionDate = (string)($input['session_date'] ?? date('Y-m-d'));
-    $sessionId = isset($input['session_id']) ? (string)$input['session_id'] : null;
-    $sessionNotes = is_array($input['session_notes']) ? $input['session_notes'] : [];
-    $payload = json_encode($sessionNotes, JSON_UNESCAPED_UNICODE);
-    if ($payload === false) {
-        throw new Exception("Failed to encode session_notes payload");
-    }
-
-    $existingStmt = $conn->prepare("
-        SELECT id FROM client_session_note_entries
-        WHERE client_id = ? AND session_date = ?
-        LIMIT 1
-    ");
-    if (!$existingStmt) {
-        throw new Exception("Failed to prepare statement: " . $conn->error);
-    }
-    $existingStmt->bind_param("ss", $clientId, $sessionDate);
-    $existingStmt->execute();
-    $existingResult = $existingStmt->get_result();
-    $existingRow = $existingResult->fetch_assoc();
-    $existingStmt->close();
-
-    if ($existingRow) {
-        $updateStmt = $conn->prepare("
-            UPDATE client_session_note_entries
-            SET session_id = ?, payload = ?
-            WHERE id = ?
-        ");
-        if (!$updateStmt) {
-            throw new Exception("Failed to prepare statement: " . $conn->error);
-        }
-        $updateStmt->bind_param("sss", $sessionId, $payload, $existingRow['id']);
-        if (!$updateStmt->execute()) {
-            throw new Exception("Failed to update session note entry: " . $updateStmt->error);
-        }
-        $updateStmt->close();
-
-        echo json_encode([
-            'success' => true,
-            'message' => 'Session notes updated successfully',
-            'data' => ['id' => $existingRow['id']]
-        ]);
-        return;
-    }
-
-    $id = generateId();
-    $insertStmt = $conn->prepare("
-        INSERT INTO client_session_note_entries (id, client_id, session_date, session_id, payload)
-        VALUES (?, ?, ?, ?, ?)
-    ");
-    if (!$insertStmt) {
-        throw new Exception("Failed to prepare statement: " . $conn->error);
-    }
-    $insertStmt->bind_param("sssss", $id, $clientId, $sessionDate, $sessionId, $payload);
-    if (!$insertStmt->execute()) {
-        throw new Exception("Failed to create session note entry: " . $insertStmt->error);
-    }
-    $insertStmt->close();
 
     echo json_encode([
         'success' => true,
         'message' => 'Session notes saved successfully',
-        'data' => ['id' => $id]
+        'data' => ['id' => $id],
     ]);
 }
 
@@ -284,8 +659,20 @@ function handlePost($conn) {
         return;
     }
 
+    $authU = getAuthenticatedUser();
+    if ($authU && !empty($input['client_id']) && !rbac_user_may_access_client_row($authU, $conn, (string) $input['client_id'])) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Permission denied']);
+        return;
+    }
+
     if (isset($input['target_id']) && isset($input['trial_outcome']) && isset($input['client_id'])) {
         handleSaveTrial($conn, $input);
+        return;
+    }
+
+    if (!empty($input['complete_session'])) {
+        handleCompleteSessionNotes($conn, $input);
         return;
     }
 
@@ -345,7 +732,7 @@ try {
             break;
     }
     $conn->close();
-} catch (Exception $e) {
+} catch (Throwable $e) {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => $e->getMessage()]);
 }

@@ -34,6 +34,21 @@ import { Users, Clock, FileText, Repeat, Trash2 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchClients } from "@/app/store/clientSlice";
+import { getMahaverseAuthHeaders } from "@/lib/api-auth";
+import { sessionIsRenderedOrReadyToBill } from "@/lib/scheduling-session-status";
+import { schedulingSaveErrorMessage } from "@/lib/scheduling-errors";
+import {
+  authorizationBillingCodeLabel,
+  authorizationBillingCodeMatches,
+} from "@/lib/authorization-billing-code";
+import { findLocalProviderScheduleConflict } from "@/lib/scheduling-provider-conflict";
+import { isActiveAuthorization } from "@/lib/client-authorization-active";
+
+const jsonAuthHeaders = () =>
+  getMahaverseAuthHeaders({
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  });
 
 // ... existing constants and helper functions ...
 
@@ -82,6 +97,35 @@ const initialForm = {
   scheduledHours: "",
   renderedHours: "0",
 };
+
+/** PK string for client_auth row as shown in Redux */
+function authorizationPk(a) {
+  return String(a?.auth_id ?? a?.id ?? "");
+}
+
+/**
+ * Resolve which authorization row to bill. Never trust form.authId alone (stale
+ * composite-split ids like 742 from cached bundles / wrong DB parity).
+ */
+function resolveAuthorizationRow(selectedClient, form) {
+  const rows = Array.isArray(selectedClient?.authorizations)
+    ? selectedClient.authorizations.filter(isActiveAuthorization)
+    : [];
+
+  if (rows.length === 0) return null;
+
+  const pid = String(form.authId ?? "").trim();
+  let hit = rows.find((a) => authorizationPk(a) === pid);
+  if (hit) return hit;
+
+  const code = String(form.authCode ?? "").trim();
+  if (!code) return null;
+
+  const sameCode = rows.filter((a) => authorizationBillingCodeMatches(a, code));
+  if (sameCode.length === 1) return sameCode[0];
+
+  return null;
+}
 
 const getLocalTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -153,6 +197,7 @@ export default function NewSessionFormModal({
   onSave,
   editingSession = null,
   selectedDate = null,
+  existingSessions = [],
 }) {
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
@@ -164,6 +209,7 @@ export default function NewSessionFormModal({
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelMode, setCancelMode] = useState("single");
+  const [isSaving, setIsSaving] = useState(false);
   const dispatch = useDispatch();
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
@@ -172,6 +218,19 @@ export default function NewSessionFormModal({
   }, [dispatch]);
   const clients = useSelector((state) => state.clients?.items || []);
   const selectedProvider = staff.find((s) => s.id === form.provider);
+
+  const isClientActive = (client) => {
+    if (!client) return false;
+    const active =
+      client.is_active !== false &&
+      client.is_active !== 0 &&
+      client.is_active !== "0";
+    const archived =
+      client.archived === true ||
+      client.archived === 1 ||
+      client.archived === "1";
+    return active && !archived;
+  };
 
   const tabOrder = ["scheduling", "notes"];
 
@@ -185,7 +244,9 @@ export default function NewSessionFormModal({
     const fetchStaff = async () => {
       setLoadingStaff(true);
       try {
-        const res = await fetch(`${baseUrl}/staff.php`);
+        const res = await fetch(`${baseUrl}/staff.php`, {
+          headers: getMahaverseAuthHeaders(),
+        });
         const data = await res.json();
         if (data.staff_records && Array.isArray(data.staff_records)) {
           const activeStaff = data.staff_records.filter(
@@ -294,7 +355,6 @@ export default function NewSessionFormModal({
   // }, [isOpen, editingSession, selectedDate, userTimezone]);
 
   // Replace the useEffect that handles editingSession (around line 215) with this:
-  console.log(editingSession, "editingSession");
   useEffect(() => {
     if (!isOpen) return;
 
@@ -313,11 +373,39 @@ export default function NewSessionFormModal({
           s.id === editingSession.supervisingProviderId ||
           s.id === editingSession.supervisingProvider
       );
-      let extractedAuthId = editingSession.authId || "";
+      let extractedAuthId =
+        editingSession.authId != null && editingSession.authId !== ""
+          ? String(editingSession.authId)
+          : "";
       if (!extractedAuthId && editingSession.authCode) {
-        const parts = editingSession.authCode.split("-");
-        if (parts.length === 2) {
-          extractedAuthId = parts[1];
+        const ac = String(editingSession.authCode);
+        const lastDash = ac.lastIndexOf("-");
+        if (lastDash > 0) {
+          const tail = ac.slice(lastDash + 1).trim();
+          if (/^\d+$/.test(tail)) extractedAuthId = tail;
+        }
+      }
+
+      const cid = editingSession.clientId || "";
+      const clientRow = clients.find((c) => c.client_id === cid);
+      const authList = Array.isArray(clientRow?.authorizations)
+        ? clientRow.authorizations
+        : [];
+      let resolvedAuthCode = editingSession.authCode || "";
+      if (extractedAuthId) {
+        const row = authList.find(
+          (a) => String(a.auth_id ?? a.id) === extractedAuthId
+        );
+        if (row) resolvedAuthCode = authorizationBillingCodeLabel(row);
+      }
+      if (!extractedAuthId && resolvedAuthCode) {
+        const activeRows = authList.filter(isActiveAuthorization);
+        const matches = activeRows.filter((a) =>
+          authorizationBillingCodeMatches(a, resolvedAuthCode)
+        );
+        if (matches.length === 1) {
+          extractedAuthId = authorizationPk(matches[0]);
+          resolvedAuthCode = authorizationBillingCodeLabel(matches[0]);
         }
       }
 
@@ -358,6 +446,7 @@ export default function NewSessionFormModal({
         startTZ: editingSession.startTZ || userTimezone,
         endTZ: editingSession.endTZ || userTimezone,
         authId: extractedAuthId,
+        authCode: resolvedAuthCode,
         scheduledHours:
           (
             editingSession.scheduledHours ??
@@ -383,11 +472,11 @@ export default function NewSessionFormModal({
         endTZ: userTimezone,
       }));
     }
-  }, [isOpen, editingSession, selectedDate, userTimezone, staff]);
+  }, [isOpen, editingSession, selectedDate, userTimezone, staff, clients]);
 
   const clientOptions = useMemo(
     () =>
-      clients.map((c) => ({
+      clients.filter(isClientActive).map((c) => ({
         id: c.client_id,
         name: [c.first_name, c.middle_name, c.last_name]
           .filter(Boolean)
@@ -418,6 +507,31 @@ export default function NewSessionFormModal({
     () => clientOptions.find((c) => c.id === form.clientId) || null,
     [clientOptions, form.clientId]
   );
+
+  const isCompletedLimitedEdit = useMemo(
+    () =>
+      Boolean(editingSession?.sessionId) &&
+      sessionIsRenderedOrReadyToBill(editingSession),
+    [editingSession]
+  );
+
+  const fieldLocked = (fieldId) =>
+    isCompletedLimitedEdit &&
+    !["startDateTime", "endDateTime", "startTZ", "endTZ", "locationAddress"].includes(
+      fieldId
+    );
+
+  useEffect(() => {
+    if (!isOpen || !form.authId || !selectedClient?.authorizations?.length) {
+      return;
+    }
+    if (resolveAuthorizationRow(selectedClient, form)) return;
+    setForm((prev) =>
+      prev.authId || prev.authCode
+        ? { ...prev, authId: "", authCode: "" }
+        : prev
+    );
+  }, [isOpen, selectedClient, form.authId, form.authCode, form.clientId]);
 
   const setField = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -479,7 +593,14 @@ export default function NewSessionFormModal({
       e.endDateTime = "End must be after Start";
     }
 
-    if (!form.authCode) e.authCode = "Required";
+    if (!form.authId) e.authId = "Required";
+    else if (
+      selectedClient &&
+      !resolveAuthorizationRow(selectedClient, form)
+    ) {
+      e.authId =
+        "Pick Billing code again — this authorization is not valid for this client.";
+    }
 
     if (form.recurring === "Repeats") {
       if (form.repeatFrequency === "Weekly" && form.repeatOn.length === 0) {
@@ -501,6 +622,7 @@ export default function NewSessionFormModal({
 
   const handleSubmit = async (e) => {
     e?.preventDefault();
+    if (isSaving) return;
     if (validateSchedulingTab()) {
       toast.error("Please fix errors before submitting.");
       return;
@@ -508,6 +630,17 @@ export default function NewSessionFormModal({
 
     const scheduledHoursNum = Number.parseFloat(form.scheduledHours) || 0;
     const renderedHoursNum = Number.parseFloat(form.renderedHours) || 0;
+
+    const authRowForSubmit = resolveAuthorizationRow(selectedClient, form);
+    if (!authRowForSubmit) {
+      toast.error(
+        "Billing authorization is missing or does not match this client. Open Billing code and select again. If it keeps failing, refresh the page so clients reload from the API (database must match the server)."
+      );
+      return;
+    }
+
+    const authPk = Number.parseInt(authorizationPk(authRowForSubmit), 10);
+    const authCodeResolved = authorizationBillingCodeLabel(authRowForSubmit);
 
     const payload = {
       clientId: form.clientId,
@@ -518,8 +651,8 @@ export default function NewSessionFormModal({
       endDateTime: convertToUTC(form.endDateTime, form.endTZ),
       startTZ: form.startTZ,
       endTZ: form.endTZ,
-      authCode: form.authCode,
-      authId: form.authId ? Number.parseInt(form.authId) : null,
+      authCode: authCodeResolved,
+      authId: Number.isFinite(authPk) ? authPk : null,
       placeOfService: form.placeOfService,
       locationAddress: form.locationAddress,
       quickNote: form.quickNote,
@@ -547,19 +680,82 @@ export default function NewSessionFormModal({
       }
     }
 
-    if (form.supervisingProvider) {
+    if (isCompletedLimitedEdit) {
+      payload.clientId = editingSession.clientId;
+      payload.clientName = editingSession.clientName || payload.clientName;
+      payload.provider = editingSession.providerId || editingSession.provider;
+      payload.providerName =
+        editingSession.providerName || editingSession.provider_name || "";
+      payload.authCode = editingSession.authCode || "";
+      payload.authId =
+        editingSession.authId != null && editingSession.authId !== ""
+          ? Number.parseInt(String(editingSession.authId), 10)
+          : null;
+      payload.quickNote = editingSession.quickNote || "";
+      payload.status =
+        editingSession.status === "Cancelled"
+          ? "Cancelled"
+          : "Rendered";
+      payload.rendered_hours =
+        Number.parseFloat(
+          editingSession.renderedHours ?? editingSession.rendered_hours ?? 0
+        ) || renderedHoursNum;
+      payload.recurring = {
+        frequency:
+          editingSession.recurring?.frequency &&
+          editingSession.recurring.frequency !== "No"
+            ? editingSession.recurring.frequency
+            : "No",
+        days: editingSession.recurring?.days || [],
+        ends: editingSession.recurring?.ends || {
+          type: "Never",
+          date: null,
+          occurrences: null,
+        },
+      };
+      if (
+        editingSession.supervisingProviderId ||
+        editingSession.supervisingProvider
+      ) {
+        payload.supervisingProvider =
+          editingSession.supervisingProviderId ||
+          editingSession.supervisingProvider;
+        payload.supervisingProviderName =
+          editingSession.supervisingProviderName ||
+          editingSession.supervising_provider_name ||
+          "";
+      }
+    } else if (form.supervisingProvider) {
       payload.supervisingProvider = form.supervisingProvider;
       payload.supervisingProviderName = form.supervisingProviderName || "";
     }
 
+    const localConflict = findLocalProviderScheduleConflict({
+      providerId: payload.provider,
+      startUtc: payload.startDateTime,
+      endUtc: payload.endDateTime,
+      sessions: existingSessions,
+      excludeSessionId: editingSession?.sessionId ?? null,
+    });
+    if (localConflict) {
+      toast.error(
+        schedulingSaveErrorMessage({
+          code: "provider_double_booked",
+          conflict: localConflict,
+        })
+      );
+      return;
+    }
+
+    setIsSaving(true);
     try {
       const res = await fetch(`${baseUrl}/add-session.php`, {
         method: editingSession?.sessionId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success === true) {
         toast.success(
           editingSession ? "Session updated!" : "Session scheduled!"
         );
@@ -569,12 +765,12 @@ export default function NewSessionFormModal({
         });
         handleClose();
       } else {
-        toast.error(
-          data.error || `Failed to save session. ${data.message || ""}`
-        );
+        toast.error(schedulingSaveErrorMessage(data));
       }
     } catch (err) {
       toast.error("A server error occurred during submission.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -595,7 +791,7 @@ export default function NewSessionFormModal({
     try {
       const res = await fetch(`${baseUrl}/add-session.php`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonAuthHeaders(),
         body: JSON.stringify(payload),
       });
       const data = await res.json();
@@ -611,19 +807,27 @@ export default function NewSessionFormModal({
     }
   };
 
-  const renderInputWithError = (id, label, value, onChange, props = {}) => (
-    <div className="space-y-1">
-      <Label htmlFor={id}>{label}</Label>
-      <Input
-        id={id}
-        value={value}
-        onChange={onChange}
-        className={errors[id] ? "border-red-500" : ""}
-        {...props}
-      />
-      {errors[id] && <p className="text-red-500 text-sm">{errors[id]}</p>}
-    </div>
-  );
+  const renderInputWithError = (id, label, value, onChange, props = {}) => {
+    const locked = fieldLocked(id);
+    const { readOnly: _ro, ...inputProps } = props;
+    return (
+      <div className="space-y-1">
+        <Label htmlFor={id}>{label}</Label>
+        <Input
+          id={id}
+          value={value}
+          onChange={locked ? undefined : onChange}
+          readOnly={locked}
+          disabled={locked}
+          className={`${errors[id] ? "border-red-500" : ""} ${
+            locked ? "bg-muted cursor-not-allowed opacity-90" : ""
+          }`}
+          {...inputProps}
+        />
+        {errors[id] && <p className="text-red-500 text-sm">{errors[id]}</p>}
+      </div>
+    );
+  };
 
   const renderSelectWithError = (
     id,
@@ -632,18 +836,29 @@ export default function NewSessionFormModal({
     onValueChange,
     items,
     placeholder = "Select..."
-  ) => (
-    <div className="space-y-1">
-      <Label>{label}</Label>
-      <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger className={errors[id] ? "border-red-500" : ""}>
-          <SelectValue placeholder={placeholder} />
-        </SelectTrigger>
-        <SelectContent>{items}</SelectContent>
-      </Select>
-      {errors[id] && <p className="text-red-500 text-sm">{errors[id]}</p>}
-    </div>
-  );
+  ) => {
+    const locked = fieldLocked(id);
+    return (
+      <div className="space-y-1">
+        <Label>{label}</Label>
+        <Select
+          value={value}
+          onValueChange={locked ? undefined : onValueChange}
+          disabled={locked}
+        >
+          <SelectTrigger
+            className={`${errors[id] ? "border-red-500" : ""} ${
+              locked ? "bg-muted cursor-not-allowed opacity-90" : ""
+            }`}
+          >
+            <SelectValue placeholder={placeholder} />
+          </SelectTrigger>
+          <SelectContent>{items}</SelectContent>
+        </Select>
+        {errors[id] && <p className="text-red-500 text-sm">{errors[id]}</p>}
+      </div>
+    );
+  };
 
   const handleClose = () => {
     setForm(initialForm);
@@ -652,6 +867,7 @@ export default function NewSessionFormModal({
     setCancelReason("");
     setCancelMode("single");
     setShowCancelDialog(false);
+    setIsSaving(false);
     onClose?.();
   };
   return (
@@ -660,15 +876,21 @@ export default function NewSessionFormModal({
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {editingSession ? "Edit Session" : "Add New Session"}
+              {isCompletedLimitedEdit
+                ? "Edit Completed Session"
+                : editingSession
+                  ? "Edit Session"
+                  : "Add New Session"}
             </DialogTitle>
             <DialogDescription>
-              Fill in the details for the therapy session. Times are shown in
-              your local timezone ({userTimezone}).
+              {isCompletedLimitedEdit
+                ? "This session is completed. You can only change the time and location address."
+                : `Fill in the details for the therapy session. Times are shown in your local timezone (${userTimezone}).`}
             </DialogDescription>
           </DialogHeader>
 
           {editingSession &&
+            !isCompletedLimitedEdit &&
             editingSession.recurring &&
             editingSession.recurring !== "No" && (
               <Card className="bg-blue-50 border-blue-200">
@@ -718,7 +940,11 @@ export default function NewSessionFormModal({
                         "clientId",
                         "Client *",
                         form.clientId,
-                        (v) => setField("clientId", v),
+                        (v) => {
+                          setField("clientId", v);
+                          setField("authId", "");
+                          setField("authCode", "");
+                        },
                         clientOptions
                           .sort((a, b) => a.name.localeCompare(b.name))
                           .map((c) => (
@@ -834,6 +1060,7 @@ export default function NewSessionFormModal({
                         ))
                       )}
                     </div>
+                    {!isCompletedLimitedEdit && (
                     <Card className="bg-slate-50/50">
                       <CardHeader className="pb-4">
                         <CardTitle className="flex items-center gap-2 text-base">
@@ -970,53 +1197,35 @@ export default function NewSessionFormModal({
                         )}
                       </CardContent>
                     </Card>
+                    )}
                     {renderSelectWithError(
-                      "authCode",
+                      "authId",
                       "Billing Code *",
-                      form.authCode,
+                      form.authId || "",
                       (v) => {
-                        setField("authCode", v);
                         if (v === "no-auth") {
                           setField("authId", "");
+                          setField("authCode", "");
                           return;
                         }
-                        // Parse composite value: "97151-301"
-                        const [code, authIdStr] = v.split("-");
-                        if (authIdStr) {
-                          setField("authId", authIdStr);
-                          return;
-                        }
-                        // Fallback to original find if no composite (for backward compatibility)
+                        setField("authId", v);
                         const selected = selectedClient?.authorizations?.find(
                           (a) =>
-                            (a.billing_codes?.trim() ||
-                              a.authorization_number?.trim()) === code
+                            String(a.auth_id ?? a.id) === String(v)
                         );
-                        if (selected) {
-                          setField(
-                            "authId",
-                            selected.auth_id?.toString() || ""
-                          );
-                        }
+                        setField(
+                          "authCode",
+                          selected ? authorizationBillingCodeLabel(selected) : ""
+                        );
                       },
                       selectedClient?.authorizations?.length
                         ? selectedClient.authorizations
-                            .filter((a) => a.status === "Active") // Optional: filter active only
-                            .map((a, i) => {
-                              const code =
-                                a.billing_codes?.trim() ||
-                                a.authorization_number?.trim();
-                              const authId = a.auth_id;
-                              const compositeValue = `${code}-${authId}`; // Unique: "97151-301"
-                              const displayCode = `${code} (Auth ID: ${authId} - ${
-                                a.end_date || "Ongoing"
-                              })`;
+                            .filter(isActiveAuthorization)
+                            .map((a) => {
+                              const pk = String(a.auth_id ?? a.id);
                               return (
-                                <SelectItem
-                                  key={compositeValue}
-                                  value={compositeValue}
-                                >
-                                  {displayCode}
+                                <SelectItem key={pk} value={pk}>
+                                  {authorizationBillingCodeLabel(a)}
                                 </SelectItem>
                               );
                             })
@@ -1103,6 +1312,13 @@ export default function NewSessionFormModal({
                               onChange={(e) =>
                                 setField("renderedHours", e.target.value)
                               }
+                              readOnly={isCompletedLimitedEdit}
+                              disabled={isCompletedLimitedEdit}
+                              className={
+                                isCompletedLimitedEdit
+                                  ? "bg-muted cursor-not-allowed opacity-90"
+                                  : ""
+                              }
                             />
                             <p className="text-xs text-muted-foreground">
                               Hours that are fully rendered (notes complete +
@@ -1126,6 +1342,13 @@ export default function NewSessionFormModal({
                           value={form.quickNote}
                           onChange={(e) => setField("quickNote", e.target.value)}
                           placeholder="Add a quick note for this session..."
+                          readOnly={isCompletedLimitedEdit}
+                          disabled={isCompletedLimitedEdit}
+                          className={
+                            isCompletedLimitedEdit
+                              ? "bg-muted cursor-not-allowed opacity-90"
+                              : ""
+                          }
                         />
                       </CardContent>
                     </Card>
@@ -1137,7 +1360,7 @@ export default function NewSessionFormModal({
                 <Button type="button" variant="outline" onClick={handleClose}>
                   Cancel
                 </Button>
-                {editingSession && (
+                {editingSession && !isCompletedLimitedEdit && (
                   <Button
                     type="button"
                     variant="destructive"
@@ -1149,8 +1372,18 @@ export default function NewSessionFormModal({
                   </Button>
                 )}
               </div>
-              <Button type="submit" className="bg-teal-600 hover:bg-teal-700">
-                {editingSession ? "Update Session" : "Add Session"}
+              <Button
+                type="submit"
+                className="bg-teal-600 hover:bg-teal-700"
+                disabled={isSaving}
+              >
+                {isSaving
+                  ? "Saving…"
+                  : isCompletedLimitedEdit
+                    ? "Save Time & Location"
+                    : editingSession
+                      ? "Update Session"
+                      : "Add Session"}
               </Button>
             </div>
           </form>

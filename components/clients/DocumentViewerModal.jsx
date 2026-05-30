@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { DismissableLayerBranch } from '@radix-ui/react-dismissable-layer';
 import { X, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -178,16 +180,25 @@ export default function DocumentViewerModal({
     }
   };
 
-  return (
-    <div
-      className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-75 z-50 transition-opacity duration-300"
+  // Portal to body for full-screen overlay. Radix modal Dialog sets body pointer-events:none;
+  // descendants must use pointer-events:auto to receive clicks. DismissableLayerBranch registers
+  // this subtree so the open Dialog does not treat interactions here as "outside" dismiss.
+  const modal = (
+    <DismissableLayerBranch
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 p-4 transition-opacity duration-300 !pointer-events-auto"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
+      role="presentation"
     >
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+      <div
+        className="bg-white pointer-events-auto rounded-xl shadow-2xl flex max-h-[90vh] w-full max-w-5xl min-h-0 flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-200">
+        <div className="flex shrink-0 items-center justify-between p-4 border-b border-slate-200">
           <div className="flex-1 min-w-0">
             <h3 className="text-lg font-semibold text-slate-800 truncate">{filename || 'Document'}</h3>
           </div>
@@ -211,19 +222,19 @@ export default function DocumentViewerModal({
           </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-4 bg-slate-50">
+        {/* Content: min-h-0 so flex child can shrink; iframe fills remaining height */}
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-4 bg-slate-50">
           {canDisplayInline ? (
-            <div className="w-full h-full flex items-center justify-center">
+            <div className="w-full min-h-0 flex-1 flex items-stretch justify-center">
               {loading ? (
-                <div className="flex items-center justify-center h-full">
+                <div className="flex flex-1 items-center justify-center min-h-[12rem]">
                   <div className="text-center">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
                     <p className="text-slate-600">Loading document...</p>
                   </div>
                 </div>
               ) : error ? (
-                <div className="flex flex-col items-center justify-center h-full text-center p-8">
+                <div className="flex flex-1 flex-col items-center justify-center text-center p-8 min-h-[12rem]">
                   <p className="text-red-600 mb-4">Error loading document: {error}</p>
                   <Button
                     onClick={handleDownload}
@@ -236,14 +247,14 @@ export default function DocumentViewerModal({
               ) : mimeType === 'application/pdf' ? (
                 <iframe
                   src={effectiveViewUrl}
-                  className="w-full h-full min-h-[600px] border border-slate-300 rounded-lg"
+                  className="w-full flex-1 min-h-[min(60vh,480px)] border border-slate-300 rounded-lg bg-white"
                   title={filename}
                 />
               ) : (
                 <img
                   src={effectiveViewUrl}
                   alt={filename}
-                  className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+                  className="max-w-full max-h-[min(70vh,720px)] w-auto h-auto object-contain rounded-lg shadow-lg mx-auto"
                   onError={(e) => {
                     // If image fails to load, show error message
                     const target = e.target;
@@ -270,7 +281,7 @@ export default function DocumentViewerModal({
               )}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center h-full text-center p-8">
+            <div className="flex flex-1 flex-col items-center justify-center text-center p-8 min-h-[12rem]">
               <p className="text-slate-600 mb-4">
                 This file type cannot be previewed. Please download to view.
               </p>
@@ -285,7 +296,10 @@ export default function DocumentViewerModal({
           )}
         </div>
       </div>
-    </div>
+    </DismissableLayerBranch>
   );
+
+  if (typeof document === 'undefined') return null;
+  return createPortal(modal, document.body);
 }
 

@@ -11,11 +11,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-// Database config
-$host = "db5015906524.hosting-data.io"; 
-$user = "dbu1350454"; 
-$pass = "Christo@2024"; 
-$db   = "dbs12924256";
+// Test DB — same as config.php getDBConnection() / add-session.php
+$host = "db5018419668.hosting-data.io";
+$user = "dbu1183438";
+$pass = "M@h@B3h@v1or@lH3@lth4@ut1sm";
+$db   = "dbs14649042";
 
 // Connect DB
 $conn = new mysqli($host, $user, $pass, $db);
