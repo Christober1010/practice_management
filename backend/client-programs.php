@@ -3,13 +3,18 @@
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Accept');
 
 // Handle OPTIONS preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$authUser = requireAuthReadWrite('master_data.read', 'master_data.write', 'mahaverse');
+
+
 
 // Database connection info
 $host = "db5018266079.hosting-data.io";
@@ -22,6 +27,7 @@ if ($conn->connect_error) {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Database connection failed']);
     exit();
+
 }
 
 $conn->set_charset('utf8mb4');

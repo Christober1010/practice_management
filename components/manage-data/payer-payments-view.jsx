@@ -26,6 +26,24 @@ import toast from "react-hot-toast";
 import { Calendar, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchClientsUtil } from "@/app/utils/fetchClients";
+import { formatReportDos, formatReportDosDate, reportDosKey } from "@/lib/report-dos-format";
+
+const PAYMENT_STATUS = {
+  NOT_PAID: "Not Paid",
+  RECEIVED: "Received",
+};
+
+function derivePaymentStatus(amountRow) {
+  const a = amountRow || {};
+  const paidRaw = a.payer_paid_amount;
+  const paid =
+    paidRaw != null &&
+    String(paidRaw).trim() !== "" &&
+    Number.isFinite(Number(paidRaw)) &&
+    Number(paidRaw) > 0;
+  const check = a.check_number != null && String(a.check_number).trim() !== "";
+  return paid || check ? PAYMENT_STATUS.RECEIVED : PAYMENT_STATUS.NOT_PAID;
+}
 
 function authHeaders() {
   if (typeof window === "undefined") return {};
@@ -47,24 +65,6 @@ function insuranceLabel(ins) {
   return `${name} (ID ${ins.insurance_id})`;
 }
 
-function formatReportDos(dos, aptStart) {
-  if (!dos && !aptStart) return "—";
-  const d = dos ? String(dos).slice(0, 10) : "";
-  let t = "";
-  if (aptStart) {
-    const s = String(aptStart);
-    t = s.length >= 8 ? s.slice(11, 16) || s.slice(0, 5) : s.slice(0, 8);
-  }
-  return [d, t].filter(Boolean).join(" ");
-}
-
-function reportDosKey(dos) {
-  if (dos == null || dos === "") return "";
-  const t = Date.parse(String(dos).slice(0, 10));
-  if (Number.isNaN(t)) return "";
-  return String(dos).slice(0, 10);
-}
-
 /** All primitive values on the row, for client-side search (matches table + linked IDs). */
 function reportRowSearchableText(row) {
   if (!row || typeof row !== "object") return "";
@@ -83,9 +83,12 @@ function payerRowMatchesSearch(row, rawQuery, amountsRow) {
   const q = rawQuery.trim().toLowerCase();
   if (!q) return true;
   const tokens = q.split(/\s+/).filter(Boolean);
+  const status = derivePaymentStatus(amountsRow);
   const basis = [
     reportRowSearchableText(row),
     formatReportDos(row.dos, row.apt_start_time),
+    formatReportDosDate(row.dos),
+    status,
     `${row.client_first_name || ""} ${row.client_last_name || ""}`.trim(),
     `${row.staff_first_name || ""} ${row.staff_last_name || ""}`.trim(),
   ];
@@ -110,6 +113,7 @@ export default function PayerPaymentsView() {
   const [amounts, setAmounts] = useState({});
   const [filterDos, setFilterDos] = useState("");
   const [filterCheckNumber, setFilterCheckNumber] = useState("all");
+  const [filterPaymentStatus, setFilterPaymentStatus] = useState("all");
   const [tableSearch, setTableSearch] = useState("");
   const [savedRows, setSavedRows] = useState([]);
 
@@ -146,12 +150,22 @@ export default function PayerPaymentsView() {
     });
   }, [filteredReportLines, filterCheckNumber, amounts]);
 
+  const linesAfterPaymentStatusFilter = useMemo(() => {
+    if (filterPaymentStatus === "all") return linesAfterCheckFilter;
+    const wantReceived = filterPaymentStatus === "received";
+    return linesAfterCheckFilter.filter((r) => {
+      const status = derivePaymentStatus(amounts[String(r.id)]);
+      const isReceived = status === PAYMENT_STATUS.RECEIVED;
+      return wantReceived ? isReceived : !isReceived;
+    });
+  }, [linesAfterCheckFilter, filterPaymentStatus, amounts]);
+
   const displayReportLines = useMemo(() => {
-    if (!tableSearch.trim()) return linesAfterCheckFilter;
-    return linesAfterCheckFilter.filter((r) =>
+    if (!tableSearch.trim()) return linesAfterPaymentStatusFilter;
+    return linesAfterPaymentStatusFilter.filter((r) =>
       payerRowMatchesSearch(r, tableSearch, amounts[String(r.id)])
     );
-  }, [linesAfterCheckFilter, tableSearch, amounts]);
+  }, [linesAfterPaymentStatusFilter, tableSearch, amounts]);
 
   const loadPayerIndex = useCallback(async () => {
     setLoadingIndex(true);
@@ -361,7 +375,10 @@ export default function PayerPaymentsView() {
   };
 
   const hasActiveFilters =
-    tableSearch.trim() !== "" || filterDos.trim() !== "" || filterCheckNumber !== "all";
+    tableSearch.trim() !== "" ||
+    filterDos.trim() !== "" ||
+    filterCheckNumber !== "all" ||
+    filterPaymentStatus !== "all";
 
   const visibleAmountTotals = useMemo(() => {
     const toNumber = (v) => {
@@ -392,6 +409,7 @@ export default function PayerPaymentsView() {
     setTableSearch("");
     setFilterDos("");
     setFilterCheckNumber("all");
+    setFilterPaymentStatus("all");
   }, []);
 
   return (
@@ -422,7 +440,7 @@ export default function PayerPaymentsView() {
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none z-[1]" />
                   <Input
                     type="search"
-                    placeholder="Search all columns (report #, DOS, code, payer, staff, IDs, amounts…)"
+                    placeholder="Search all columns (report #, DOS, code, payer, staff, payment status, amounts…)"
                     className={cn(
                       "pl-10 border-slate-200 focus:border-teal-500 focus:ring-teal-500 focus-visible:ring-teal-500",
                       tableSearch.trim() !== "" ? "pr-10" : "pr-3"
@@ -445,8 +463,10 @@ export default function PayerPaymentsView() {
                 {reportLines.length > 0 && tableSearch.trim() !== "" && (
                   <p className="text-xs text-slate-500">
                     {displayReportLines.length} row(s) match search
-                    {filterDos.trim() !== "" || filterCheckNumber !== "all"
-                      ? ` (${linesAfterCheckFilter.length} after other filters)`
+                    {filterDos.trim() !== "" ||
+                    filterCheckNumber !== "all" ||
+                    filterPaymentStatus !== "all"
+                      ? ` (${linesAfterPaymentStatusFilter.length} after other filters)`
                       : ` (${reportLines.length} in current view)`}
                     .
                   </p>
@@ -462,6 +482,7 @@ export default function PayerPaymentsView() {
                     setInsuranceId("");
                     setFilterDos("");
                     setFilterCheckNumber("all");
+                    setFilterPaymentStatus("all");
                     setTableSearch("");
                     setAmounts({});
                   }}
@@ -535,6 +556,28 @@ export default function PayerPaymentsView() {
                   </p>
                 )}
               </div>
+              <div className="space-y-2">
+                <Label>Payment status</Label>
+                <Select
+                  value={filterPaymentStatus}
+                  onValueChange={setFilterPaymentStatus}
+                  disabled={allReportRows.length === 0}
+                >
+                  <SelectTrigger className="border-slate-200">
+                    <SelectValue placeholder="Payment status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="not_paid">{PAYMENT_STATUS.NOT_PAID}</SelectItem>
+                    <SelectItem value="received">{PAYMENT_STATUS.RECEIVED}</SelectItem>
+                  </SelectContent>
+                </Select>
+                {reportLines.length > 0 && filterPaymentStatus !== "all" && (
+                  <p className="text-xs text-slate-500">
+                    {linesAfterPaymentStatusFilter.length} row(s) after payment status filter.
+                  </p>
+                )}
+              </div>
               </div>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <Button
@@ -594,6 +637,7 @@ export default function PayerPaymentsView() {
                     <TableHead className="font-semibold">Code</TableHead>
                     <TableHead className="font-semibold">Payer (report)</TableHead>
                     <TableHead className="font-semibold">Staff</TableHead>
+                    <TableHead className="font-semibold">Payment status</TableHead>
                     <TableHead className="font-semibold text-right">Dur. hrs</TableHead>
                     <TableHead>Co-insurance $</TableHead>
                     <TableHead>Copay $</TableHead>
@@ -605,7 +649,7 @@ export default function PayerPaymentsView() {
                 <TableBody>
                   {displayReportLines.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={12} className="text-center text-sm text-slate-500 py-10">
+                      <TableCell colSpan={13} className="text-center text-sm text-slate-500 py-10">
                         No rows match your search. Clear the search box or try different keywords.
                       </TableCell>
                     </TableRow>
@@ -646,6 +690,18 @@ export default function PayerPaymentsView() {
                             </TableCell>
                             <TableCell className="max-w-[8rem] truncate text-xs" title={staff}>
                               {staff || "—"}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-xs">
+                              <span
+                                className={cn(
+                                  "inline-flex rounded-full px-2 py-0.5 text-xs font-medium",
+                                  derivePaymentStatus(a) === PAYMENT_STATUS.RECEIVED
+                                    ? "bg-emerald-50 text-emerald-800"
+                                    : "bg-slate-100 text-slate-600"
+                                )}
+                              >
+                                {derivePaymentStatus(a)}
+                              </span>
                             </TableCell>
                             <TableCell className="text-right tabular-nums text-xs">
                               {row.duration_render_in_hrs != null && row.duration_render_in_hrs !== ""
@@ -691,7 +747,7 @@ export default function PayerPaymentsView() {
                         );
                       })}
                       <TableRow className="bg-slate-50 border-t-2">
-                        <TableCell colSpan={7} className="text-right font-medium text-slate-700">
+                        <TableCell colSpan={8} className="text-right font-medium text-slate-700">
                           Totals (visible rows)
                         </TableCell>
                         <TableCell className="text-right tabular-nums font-medium">
@@ -768,6 +824,7 @@ export default function PayerPaymentsView() {
                   <TableRow className="bg-slate-50">
                     <TableHead>Report</TableHead>
                     <TableHead>DOS</TableHead>
+                    <TableHead>Payment status</TableHead>
                     <TableHead>Code</TableHead>
                     <TableHead>Co-ins.</TableHead>
                     <TableHead>Copay</TableHead>
@@ -777,10 +834,17 @@ export default function PayerPaymentsView() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {savedRows.map((r) => (
+                  {savedRows.map((r) => {
+                    const savedAmounts = {
+                      payer_paid_amount: r.payer_paid_amount,
+                      check_number: r.check_number,
+                    };
+                    const savedStatus = derivePaymentStatus(savedAmounts);
+                    return (
                     <TableRow key={r.id}>
                       <TableCell className="font-mono text-xs">{r.report_id ?? "—"}</TableCell>
-                      <TableCell className="whitespace-nowrap">{r.dos}</TableCell>
+                      <TableCell className="whitespace-nowrap">{formatReportDosDate(r.dos) || r.dos}</TableCell>
+                      <TableCell className="text-xs">{savedStatus}</TableCell>
                       <TableCell>{r.service_code}</TableCell>
                       <TableCell>{r.coinsurance_amount ?? "—"}</TableCell>
                       <TableCell>{r.copay_amount ?? "—"}</TableCell>
@@ -788,7 +852,8 @@ export default function PayerPaymentsView() {
                       <TableCell>{r.payer_paid_amount ?? "—"}</TableCell>
                       <TableCell>{r.check_number ?? "—"}</TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

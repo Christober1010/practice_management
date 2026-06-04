@@ -34,7 +34,7 @@ if (empty($redirectUri)) {
 }
 
 // Check if redirect URI matches expected format
-$expectedUri = 'https://www.mahabehavioralhealth.com/mahaverse-backend-logics/drive_oauth_callback.php';
+$expectedUri = 'https://www.mahabehavioralhealth.com/mahaverse-backend/drive_oauth_callback.php';
 if ($redirectUri !== $expectedUri) {
     $debug['recommendations'][] = "Redirect URI mismatch! Expected: $expectedUri, Got: $redirectUri";
     $debug['recommendations'][] = "Make sure your .env file has: GOOGLE_DRIVE_OAUTH_REDIRECT_URI=$expectedUri";

@@ -5,12 +5,24 @@
   "scripts": {
     "dev": "next dev",
     "dev:test": "dotenv -e .env.test -- next dev",
+    "dev:prod": "dotenv -e .env.prod -- next dev -p 3001",
     "build": "next build && bash scripts/zip-static-export.sh prod",
     "build:test": "dotenv -e .env.test -- next build && bash scripts/zip-static-export.sh test",
     "start": "next start",
     "lint": "next lint",
     "test:test": "bash scripts/generate-api-audit-report.sh test",
-    "test": "bash scripts/generate-api-audit-report.sh prod"
+    "test": "bash scripts/generate-api-audit-report.sh prod",
+    "test:e2e": "pnpm run test:e2e:test && pnpm run test:e2e:prod",
+    "test:e2e:test": "E2E_TARGET=test playwright test",
+    "test:e2e:prod": "E2E_TARGET=prod playwright test",
+    "test:e2e:api": "pnpm run test:e2e:api:test && pnpm run test:e2e:api:prod",
+    "test:e2e:api:test": "E2E_TARGET=test playwright test --project=api-test",
+    "test:e2e:api:prod": "E2E_TARGET=prod playwright test --project=api-prod",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report",
+    "test:e2e:report:test": "playwright show-report playwright-report-test",
+    "test:e2e:report:prod": "playwright show-report playwright-report-prod"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -83,9 +95,11 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "dotenv": "^17.4.2",
     "dotenv-cli": "^10.0.0",
     "postcss": "^8.5",
     "tailwindcss": "^3.4.17",

@@ -382,7 +382,7 @@ export default function LoginPage() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, otp, newPassword }),
+          body: JSON.stringify({ email, new_password: newPassword }),
         }
       );
 
@@ -393,7 +393,7 @@ export default function LoginPage() {
         setView("login"); // Switch back to the login view
         setPassword(""); // Clear the old password field
       } else {
-        setLoginError(data.error || "Failed to reset password. Invalid OTP?");
+        setLoginError(data.message || data.error || "Failed to reset password.");
       }
     } catch (error) {
       console.error("Reset password error:", error);

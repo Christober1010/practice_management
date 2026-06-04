@@ -3,29 +3,13 @@
 // Purpose: Verify an emailed OTP for a given email against a hashed OTP with expiry.
 // Response: JSON { success: bool, message?: string, error?: string }
 
-// ---- CORS (adjust allowed origins) ----
-$allowed_origins = [
-    'http://localhost:3000',
-    'http://mahaverse-dev.mahabehavioralhealth.com/', // change to your real domain
-    'https://mahaverse-dev.mahabehavioralhealth.com/', // HTTPS version
-    'http://mahaverse.mahabehavioralhealth.com/', // TODO: replace with your Next.js domain
-];
+// ---- CORS (public password-reset flow) ----
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Accept');
+header('Access-Control-Max-Age: 86400');
 
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if (in_array($origin, $allowed_origins, true)) {
-    header("Access-Control-Allow-Origin: $origin");
-    header("Vary: Origin");
-    // If using cookies or Authorization headers with credentials:
-    // header("Access-Control-Allow-Credentials: true");
-} else {
-    header("Vary: Origin");
-}
-
-header("Access-Control-Allow-Methods: POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization");
-header("Access-Control-Max-Age: 86400");
-
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
     http_response_code(204);
     exit;
 }

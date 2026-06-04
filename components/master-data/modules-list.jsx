@@ -110,10 +110,10 @@ export default function ModulesList() {
 
       // If a specific client is selected, use client-modules.php for accurate per-client data
       const url = selectedClientId
-        ? `${baseUrl}/client-modules.php?client_id=${encodeURIComponent(String(selectedClientId))}`
-        : `${baseUrl}/get-all.php`;
+        ? `/client-modules.php?client_id=${encodeURIComponent(String(selectedClientId))}`
+        : `/get-all.php`;
 
-      const res = await fetch(url);
+      const res = await mahaverseFetch(url);
       const data = await res.json();
 
       if (data && data.success) {

@@ -49,7 +49,7 @@ if (!file_exists($backendHelperPath) && file_exists($localHelperPath)) {
 // Load composer autoloader first (required for Google API client)
 // Try multiple paths to find vendor/autoload.php
 $vendorPaths = [
-    __DIR__ . '/vendor/autoload.php',  // Local vendor folder (e.g. mahaverse-backend-logics)
+    __DIR__ . '/vendor/autoload.php',  // Local vendor folder in mahaverse-backend
     __DIR__ . '/../maha-launchpad/vendor/autoload.php',
     __DIR__ . '/../vendor/autoload.php',
 ];

@@ -8,16 +8,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
     exit();
 }
-
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
-$authUser = getAuthenticatedUser();
-if ($authUser && !rbac_user_has_permission_key($authUser['role'], 'users.read', 'mahaverse')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Permission denied']);
-    exit;
-}
+$authUser = requireAuth('users.read', 'mahaverse');
 
+
+
+// Test DB — same as config.php getDBConnection() / add-session.php
 $host = "db5018266079.hosting-data.io";
 $dbname = "dbs14484433";
 $dbUser = "dbu3321929";
@@ -27,7 +24,6 @@ try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8mb4", $dbUser, $pass);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Explicit columns (avoid leaking password hashes); ORDER BY id avoids missing created_at column.
     $stmt = $conn->query(
         'SELECT id, email, `role`, first_name, last_name, is_active FROM users ORDER BY id DESC'
     );

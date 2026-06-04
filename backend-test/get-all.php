@@ -10,8 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 }
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/rbac_helpers.php';
-$authUser = requireAuth('clients.read', 'mahaverse');
+$authUser = requireAuthAny(['clients.read', 'master_data.read'], 'mahaverse');
 
 
 

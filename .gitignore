@@ -30,3 +30,12 @@ next-env.d.ts
 /artifacts/prod/
 /artifacts/test/
 /*.zip
+
+# Playwright
+/playwright-report/
+/test-results/
+/e2e/.auth/
+/playwright-report-test/
+/playwright-report-prod/
+/e2e/.env
+/playwright/.cache/

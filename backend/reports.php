@@ -9,17 +9,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
-
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
-$user = getAuthenticatedUser();
-if ($user && !rbac_user_has_permission_key($user['role'], 'reports.read', 'mahaverse')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Permission denied']);
-    exit;
-}
+$authUser = requireAuth('reports.read', 'mahaverse');
 
-// DB connection
+
+
+// Test DB — same as config.php getDBConnection() / add-session.php
 $host = "db5018266079.hosting-data.io";
 $user = "dbu3321929";
 $password = "M@h@B3h@v1or@lH3@lth4@ut1sm";
@@ -41,7 +37,7 @@ function excelSerialToDateTimeString($serial, $dateOnly = false) {
     if ($serial === '' || $serial === null) return null;
     if (!is_numeric($serial)) return $serial; // already a string
 
-    // Excel 1900 date system: serial 1 = 1899-12-31; adjust for Unix epoch [web:176][web:198]
+    // Excel 1900 date system: serial 1 = 1899-12-31; adjust for Unix epoch
     $base = 25569;
     $seconds = ($serial - $base) * 86400;
     $format = $dateOnly ? "Y-m-d" : "Y-m-d H:i:s";
@@ -86,49 +82,6 @@ function sqlValue($conn, $value) {
     return "'" . $conn->real_escape_string($value) . "'";
 }
 
-/** Normalize for duplicate fingerprint: trim, collapse spaces, lowercase. */
-function reports_normalize_token($s) {
-    $s = trim(preg_replace('/\s+/', ' ', (string)$s));
-    return strtolower($s);
-}
-
-/** Stable time fragment for DOS+time duplicate key (apt_start_time may be time or datetime string). */
-function reports_time_token($apt) {
-    if ($apt === null || $apt === '') {
-        return '';
-    }
-    $ts = strtotime((string)$apt);
-    if ($ts !== false) {
-        return date('H:i:s', $ts);
-    }
-    if (preg_match('/(\d{1,2}:\d{2}(:\d{2})?)/', (string)$apt, $m)) {
-        return strlen($m[1]) === 5 ? $m[1] . ':00' : $m[1];
-    }
-    return reports_normalize_token($apt);
-}
-
-/**
- * Duplicate fingerprint: same client + staff + service code + DOS (date) + apt start time.
- * Documented for Schedule Tracker imports — keep in sync with client-side checks if any.
- */
-function reports_dup_fingerprint_from_values($cf, $cl, $sf, $sl, $svc, $dos, $aptStart) {
-    $dosKey = '';
-    if ($dos !== null && $dos !== '') {
-        $t = strtotime((string)$dos);
-        $dosKey = $t !== false ? date('Y-m-d', $t) : reports_normalize_token($dos);
-    }
-    $parts = [
-        reports_normalize_token($cf),
-        reports_normalize_token($cl),
-        reports_normalize_token($sf),
-        reports_normalize_token($sl),
-        reports_normalize_token($svc),
-        $dosKey,
-        reports_time_token($aptStart),
-    ];
-    return implode('|', $parts);
-}
-
 function reports_row_linked_id($row, $isExcelFormat, $snakeKey, $excelLabel)
 {
     if ($isExcelFormat) {
@@ -140,6 +93,12 @@ function reports_row_linked_id($row, $isExcelFormat, $snakeKey, $excelLabel)
         return null;
     }
     return trim((string)$v);
+}
+
+/** Normalize for duplicate fingerprint: trim, collapse spaces, lowercase. */
+function reports_normalize_token($s) {
+    $s = trim(preg_replace('/\s+/', ' ', (string)$s));
+    return strtolower($s);
 }
 
 /**
@@ -269,6 +228,43 @@ function reports_backfill_row_linked_ids_if_empty(mysqli $conn, array &$row)
     }
 }
 
+/** Stable time fragment for DOS+time duplicate key (apt_start_time may be time or datetime string). */
+function reports_time_token($apt) {
+    if ($apt === null || $apt === '') {
+        return '';
+    }
+    $ts = strtotime((string)$apt);
+    if ($ts !== false) {
+        return date('H:i:s', $ts);
+    }
+    if (preg_match('/(\d{1,2}:\d{2}(:\d{2})?)/', (string)$apt, $m)) {
+        return strlen($m[1]) === 5 ? $m[1] . ':00' : $m[1];
+    }
+    return reports_normalize_token($apt);
+}
+
+/**
+ * Duplicate fingerprint: same client + staff + service code + DOS (date) + apt start time.
+ * Documented for Schedule Tracker imports — keep in sync with client-side checks if any.
+ */
+function reports_dup_fingerprint_from_values($cf, $cl, $sf, $sl, $svc, $dos, $aptStart) {
+    $dosKey = '';
+    if ($dos !== null && $dos !== '') {
+        $t = strtotime((string)$dos);
+        $dosKey = $t !== false ? date('Y-m-d', $t) : reports_normalize_token($dos);
+    }
+    $parts = [
+        reports_normalize_token($cf),
+        reports_normalize_token($cl),
+        reports_normalize_token($sf),
+        reports_normalize_token($sl),
+        reports_normalize_token($svc),
+        $dosKey,
+        reports_time_token($aptStart),
+    ];
+    return implode('|', $parts);
+}
+
 /** Find existing report ids that match the fingerprint (archived = 0). Max 5 ids. */
 function reports_find_db_duplicate_ids(mysqli $conn, $cf, $cl, $sf, $sl, $svc, $dos, $aptStart) {
     $dosKey = null;
@@ -288,8 +284,6 @@ function reports_find_db_duplicate_ids(mysqli $conn, $cf, $cl, $sf, $sl, $svc, $
     $aptForTime = ($aptStart !== null && $aptStart !== '') ? (string)$aptStart : '00:00:00';
     $aptEsc = $conn->real_escape_string($aptForTime);
 
-    // Same matching rules as fingerprint. Use escaped query (not mysqli prepare) so duplicate
-    // detection works on hosts where get_result/bind_result for prepared SELECT fails or returns nothing.
     $sql = "
         SELECT id FROM reports WHERE archived = 0
         AND LOWER(TRIM(COALESCE(client_first_name,''))) = '{$cfn}'
@@ -352,6 +346,143 @@ function reports_strip_excluded_fields_schedule_tracker(array $row): array
         unset($row[$k]);
     }
     return $row;
+}
+
+/**
+ * Build the INSERT SQL string for a pending row.
+ * Extracted to avoid duplicating the large SQL block.
+ */
+function reports_build_insert_sql(mysqli $conn, array $p): string
+{
+    $row           = $p['row'];
+    $isExcelFormat = $p['isExcelFormat'];
+    $miscHrs       = $p['miscHrs'];
+    $cf            = $p['cf'];
+    $cl            = $p['cl'];
+    $sf            = $p['sf'];
+    $sl            = $p['sl'];
+
+    $linkClientId = reports_row_linked_id($row, $isExcelFormat, 'client_id', 'Client ID');
+    $linkProviderId = reports_row_linked_id($row, $isExcelFormat, 'provider_id', 'Provider ID');
+    if (($linkProviderId === null || $linkProviderId === '') && $isExcelFormat) {
+        $rawSid = $row['Staff ID'] ?? $row['staff_id'] ?? '';
+        if ($rawSid !== '' && $rawSid !== null) {
+            $linkProviderId = trim((string)$rawSid);
+        }
+    }
+    if (($linkProviderId === null || $linkProviderId === '') && !$isExcelFormat) {
+        $rawSid = $row['staff_id'] ?? '';
+        if ($rawSid !== '' && $rawSid !== null) {
+            $linkProviderId = trim((string)$rawSid);
+        }
+    }
+    if ($linkClientId === null || $linkClientId === '') {
+        $resolved = reports_resolve_client_id_by_name($conn, $cf, $cl);
+        if ($resolved !== null) {
+            $linkClientId = $resolved;
+        }
+    }
+    if ($linkProviderId === null || $linkProviderId === '') {
+        $resolved = reports_resolve_staff_id_by_name($conn, $sf, $sl);
+        if ($resolved !== null) {
+            $linkProviderId = $resolved;
+        }
+    }
+
+    return "
+        INSERT INTO reports (
+            client_id, provider_id,
+            client_first_name, client_last_name, client_middle_name,
+            staff_first_name, staff_last_name, staff_middle_name,
+            name_of_rbt_supervised,
+            payer, activity_type, location_code, authorization_number,
+            service_code_with_modifiers,
+            dos, apt_start_time, apt_end_time,
+            duration_schedule_in_min, duration_schedule_in_hrs,
+            rendered_date, rendered_start_time, rendered_end_time,
+            duration_render_in_min, duration_render_in_hrs,
+            session_completion_latency_hrs,
+            address, status, non_billable_notes, billable,
+            office,
+            rendering_provider_first_name, rendering_provider_last_name,
+            rendering_provider_middlename,
+            created_by, created_date,
+            notes,
+            staff_signature_on_file, staff_sign_date, approx_location_staff_sign,
+            guardian_signature_on_file, guardian_sign_date, approx_location_guardian_sign,
+            direct_or_indirect_service,
+            make_up_session, make_up_session_hours,
+            exclude_from_payroll, exclude_from_mileage,
+            misc_hrs,
+            archived
+        ) VALUES (
+            " . sqlValue($conn, $linkClientId) . ",
+            " . sqlValue($conn, $linkProviderId) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Client First Name'] ?? null) : ($row['client_first_name'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Client Last Name'] ?? null) : ($row['client_last_name'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Client Middle Name'] ?? null) : ($row['client_middle_name'] ?? null)) . ",
+
+            " . sqlValue($conn, $isExcelFormat ? ($row['Staff First Name'] ?? null) : ($row['staff_first_name'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Staff Last Name'] ?? null) : ($row['staff_last_name'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Staff Middle Name'] ?? null) : ($row['staff_middle_name'] ?? null)) . ",
+
+            " . sqlValue($conn, $isExcelFormat ? ($row['Name of RBT Supervised'] ?? null) : ($row['name_of_rbt_supervised'] ?? null)) . ",
+
+            " . sqlValue($conn, $isExcelFormat ? ($row['Payer'] ?? null) : ($row['payer'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Activity Type'] ?? null) : ($row['activity_type'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Location Code'] ?? null) : ($row['location_code'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Authorization Number'] ?? null) : ($row['authorization_number'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Service Code With Modifiers'] ?? null) : ($row['service_code_with_modifiers'] ?? null)) . ",
+
+            " . sqlValue($conn, $p['dos']) . ",
+            " . sqlValue($conn, $p['aptStart']) . ",
+            " . sqlValue($conn, $p['aptEnd'] ?? null) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Duration Schedule In Min'] ?? null) : ($row['duration_schedule_in_min'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Duration Schedule In Hrs'] ?? null) : ($row['duration_schedule_in_hrs'] ?? null)) . ",
+
+            " . sqlValue($conn, $p['renderedDate'] ?? null) . ",
+            " . sqlValue($conn, $p['renderedStart'] ?? null) . ",
+            " . sqlValue($conn, $p['renderedEnd'] ?? null) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Duration Render in Min'] ?? null) : ($row['duration_render_in_min'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Duration Render in Hrs'] ?? null) : ($row['duration_render_in_hrs'] ?? null)) . ",
+
+            " . sqlValue($conn, $isExcelFormat ? ($row['Session Completion Latency in Hrs'] ?? null) : ($row['session_completion_latency_hrs'] ?? null)) . ",
+
+            " . sqlValue($conn, $isExcelFormat ? ($row['Address'] ?? null) : ($row['address'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Status'] ?? null) : ($row['status'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Non-Billable Notes'] ?? null) : ($row['non_billable_notes'] ?? null)) . ",
+            " . $p['billable'] . ",
+
+            " . sqlValue($conn, $isExcelFormat ? ($row['Office'] ?? null) : ($row['office'] ?? null)) . ",
+
+            " . sqlValue($conn, $isExcelFormat ? ($row['Rendering Provider First Name'] ?? null) : ($row['rendering_provider_first_name'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Rendering Provider Last Name'] ?? null) : ($row['rendering_provider_last_name'] ?? null)) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Rendering Provider MiddleName'] ?? null) : ($row['rendering_provider_middlename'] ?? null)) . ",
+
+            " . sqlValue($conn, $isExcelFormat ? ($row['Created By'] ?? null) : ($row['created_by'] ?? null)) . ",
+            " . sqlValue($conn, $p['createdDate'] ?? null) . ",
+
+            " . sqlValue($conn, $isExcelFormat ? ($row['Notes'] ?? null) : ($row['notes'] ?? null)) . ",
+
+            " . $p['staffSig'] . ",
+            " . sqlValue($conn, $p['staffSignDate'] ?? null) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Approx. location of Staff Sign'] ?? null) : ($row['approx_location_staff_sign'] ?? null)) . ",
+
+            " . $p['guardianSig'] . ",
+            " . sqlValue($conn, $p['guardianSignDate'] ?? null) . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Approx. location of Guardian Sign'] ?? null) : ($row['approx_location_guardian_sign'] ?? null)) . ",
+
+            " . sqlValue($conn, $isExcelFormat ? ($row['DIRECT or INDIRECT Service'] ?? null) : ($row['direct_or_indirect_service'] ?? null)) . ",
+
+            " . $p['makeUp'] . ",
+            " . sqlValue($conn, $isExcelFormat ? ($row['Make-Up Session Hours'] ?? null) : ($row['make_up_session_hours'] ?? null)) . ",
+
+            " . $p['excludePayroll'] . ",
+            " . $p['excludeMileage'] . ",
+            " . sqlValue($conn, $miscHrs) . ",
+            0
+        )
+    ";
 }
 
 // ---------- Routing ----------
@@ -478,11 +609,11 @@ function handleGet($conn)
     echo json_encode(['success' => true, 'data' => $id ? ($rows[0] ?? null) : $rows]);
 }
 
+// ---------- POST (create single report or bulk from Excel) ----------
 function handlePost($conn, $input)
 {
     $isSingleReport = isset($input['id']) || (isset($input['client_first_name']) && !isset($input[0]));
     $items = $isSingleReport ? [$input] : (isset($input[0]) ? $input : [$input]);
-    // Bulk = JSON array of row objects (not mysqlnd-dependent duplicate check must still run).
     $isBulk = is_array($input) && isset($input[0]) && is_array($input[0]);
 
     $pending = [];
@@ -543,187 +674,112 @@ function handlePost($conn, $input)
         }
         $miscHrs = ($miscRaw === '' || $miscRaw === null) ? null : $miscRaw;
 
-        $linkClientId = reports_row_linked_id($row, $isExcelFormat, 'client_id', 'Client ID');
-        $linkProviderId = reports_row_linked_id($row, $isExcelFormat, 'provider_id', 'Provider ID');
-        if (($linkProviderId === null || $linkProviderId === '') && $isExcelFormat) {
-            $rawSid = $row['Staff ID'] ?? $row['staff_id'] ?? '';
-            if ($rawSid !== '' && $rawSid !== null) {
-                $linkProviderId = trim((string)$rawSid);
-            }
-        }
-        if (($linkProviderId === null || $linkProviderId === '') && !$isExcelFormat) {
-            $rawSid = $row['staff_id'] ?? '';
-            if ($rawSid !== '' && $rawSid !== null) {
-                $linkProviderId = trim((string)$rawSid);
-            }
-        }
-        if ($linkClientId === null || $linkClientId === '') {
-            $resolved = reports_resolve_client_id_by_name($conn, $cf, $cl);
-            if ($resolved !== null) {
-                $linkClientId = $resolved;
-            }
-        }
-        if ($linkProviderId === null || $linkProviderId === '') {
-            $resolved = reports_resolve_staff_id_by_name($conn, $sf, $sl);
-            if ($resolved !== null) {
-                $linkProviderId = $resolved;
-            }
-        }
-
         $fp = reports_dup_fingerprint_from_values($cf, $cl, $sf, $sl, $svc, $dos, $aptStart);
 
-        $sql = "
-                INSERT INTO reports (
-                    client_id, provider_id,
-                    client_first_name, client_last_name, client_middle_name,
-                    staff_first_name, staff_last_name, staff_middle_name,
-                    name_of_rbt_supervised,
-                    payer, activity_type, location_code, authorization_number,
-                    service_code_with_modifiers,
-                    dos, apt_start_time, apt_end_time,
-                    duration_schedule_in_min, duration_schedule_in_hrs,
-                    rendered_date, rendered_start_time, rendered_end_time,
-                    duration_render_in_min, duration_render_in_hrs,
-                    session_completion_latency_hrs,
-                    address, status, non_billable_notes, billable,
-                    office,
-                    rendering_provider_first_name, rendering_provider_last_name,
-                    rendering_provider_middlename,
-                    created_by, created_date,
-                    notes,
-                    staff_signature_on_file, staff_sign_date, approx_location_staff_sign,
-                    guardian_signature_on_file, guardian_sign_date, approx_location_guardian_sign,
-                    direct_or_indirect_service,
-                    make_up_session, make_up_session_hours,
-                    exclude_from_payroll, exclude_from_mileage,
-                    misc_hrs,
-                    archived
-                ) VALUES (
-                    " . sqlValue($conn, $linkClientId) . ",
-                    " . sqlValue($conn, $linkProviderId) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Client First Name'] ?? null) : ($row['client_first_name'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Client Last Name'] ?? null) : ($row['client_last_name'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Client Middle Name'] ?? null) : ($row['client_middle_name'] ?? null)) . ",
-
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Staff First Name'] ?? null) : ($row['staff_first_name'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Staff Last Name'] ?? null) : ($row['staff_last_name'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Staff Middle Name'] ?? null) : ($row['staff_middle_name'] ?? null)) . ",
-
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Name of RBT Supervised'] ?? null) : ($row['name_of_rbt_supervised'] ?? null)) . ",
-
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Payer'] ?? null) : ($row['payer'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Activity Type'] ?? null) : ($row['activity_type'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Location Code'] ?? null) : ($row['location_code'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Authorization Number'] ?? null) : ($row['authorization_number'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Service Code With Modifiers'] ?? null) : ($row['service_code_with_modifiers'] ?? null)) . ",
-
-                    " . sqlValue($conn, $dos) . ",
-                    " . sqlValue($conn, $aptStart) . ",
-                    " . sqlValue($conn, $aptEnd) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Duration Schedule In Min'] ?? null) : ($row['duration_schedule_in_min'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Duration Schedule In Hrs'] ?? null) : ($row['duration_schedule_in_hrs'] ?? null)) . ",
-
-                    " . sqlValue($conn, $renderedDate) . ",
-                    " . sqlValue($conn, $renderedStart) . ",
-                    " . sqlValue($conn, $renderedEnd) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Duration Render in Min'] ?? null) : ($row['duration_render_in_min'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Duration Render in Hrs'] ?? null) : ($row['duration_render_in_hrs'] ?? null)) . ",
-
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Session Completion Latency in Hrs'] ?? null) : ($row['session_completion_latency_hrs'] ?? null)) . ",
-
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Address'] ?? null) : ($row['address'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Status'] ?? null) : ($row['status'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Non-Billable Notes'] ?? null) : ($row['non_billable_notes'] ?? null)) . ",
-                    $billable,
-
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Office'] ?? null) : ($row['office'] ?? null)) . ",
-
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Rendering Provider First Name'] ?? null) : ($row['rendering_provider_first_name'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Rendering Provider Last Name'] ?? null) : ($row['rendering_provider_last_name'] ?? null)) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Rendering Provider MiddleName'] ?? null) : ($row['rendering_provider_middlename'] ?? null)) . ",
-
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Created By'] ?? null) : ($row['created_by'] ?? null)) . ",
-                    " . sqlValue($conn, $createdDate) . ",
-
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Notes'] ?? null) : ($row['notes'] ?? null)) . ",
-
-                    $staffSig,
-                    " . sqlValue($conn, $staffSignDate) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Approx. location of Staff Sign'] ?? null) : ($row['approx_location_staff_sign'] ?? null)) . ",
-
-                    $guardianSig,
-                    " . sqlValue($conn, $guardianSignDate) . ",
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Approx. location of Guardian Sign'] ?? null) : ($row['approx_location_guardian_sign'] ?? null)) . ",
-
-                    " . sqlValue($conn, $isExcelFormat ? ($row['DIRECT or INDIRECT Service'] ?? null) : ($row['direct_or_indirect_service'] ?? null)) . ",
-
-                    $makeUp,
-                    " . sqlValue($conn, $isExcelFormat ? ($row['Make-Up Session Hours'] ?? null) : ($row['make_up_session_hours'] ?? null)) . ",
-
-                    $excludePayroll,
-                    $excludeMileage,
-                    " . sqlValue($conn, $miscHrs) . ",
-                    0
-                )
-            ";
-
         $pending[] = [
-            'line' => $lineNo,
-            'sql' => $sql,
-            'fp' => $fp,
-            'cf' => $cf,
-            'cl' => $cl,
-            'sf' => $sf,
-            'sl' => $sl,
-            'svc' => $svc,
-            'dos' => $dos,
-            'apt' => $aptStart,
+            'line'             => $lineNo,
+            'row'              => $row,
+            'isExcelFormat'    => $isExcelFormat,
+            'dos'              => $dos,
+            'aptStart'         => $aptStart,
+            'aptEnd'           => $aptEnd ?? null,
+            'renderedDate'     => $renderedDate ?? null,
+            'renderedStart'    => $renderedStart ?? null,
+            'renderedEnd'      => $renderedEnd ?? null,
+            'createdDate'      => $createdDate ?? null,
+            'staffSignDate'    => $staffSignDate ?? null,
+            'guardianSignDate' => $guardianSignDate ?? null,
+            'miscHrs'          => $miscHrs,
+            'billable'         => $billable,
+            'staffSig'         => $staffSig,
+            'guardianSig'      => $guardianSig,
+            'makeUp'           => $makeUp,
+            'excludePayroll'   => $excludePayroll,
+            'excludeMileage'   => $excludeMileage,
+            'cf'               => $cf,
+            'cl'               => $cl,
+            'sf'               => $sf,
+            'sl'               => $sl,
+            'svc'              => $svc,
+            'fp'               => $fp,
         ];
     }
 
-    $warnings = ['duplicatesWithinFile' => [], 'duplicatesInDb' => []];
-    $fpToLines = [];
+    // ---- Detect within-file duplicates by fingerprint ----
+    $warnings   = ['duplicatesWithinFile' => [], 'duplicatesInDb' => []];
+    $fpToLines  = [];
     foreach ($pending as $p) {
-        if (!isset($fpToLines[$p['fp']])) {
-            $fpToLines[$p['fp']] = [];
-        }
         $fpToLines[$p['fp']][] = $p['line'];
     }
-    foreach ($fpToLines as $fp => $lines) {
-        if (count($lines) > 1) {
-            $warnings['duplicatesWithinFile'][] = ['fingerprint' => $fp, 'rowIndexes' => $lines];
-        }
-    }
-    if ($isBulk && count($pending) <= 200) {
-        foreach ($pending as $p) {
-            $ids = reports_find_db_duplicate_ids(
-                $conn,
-                $p['cf'],
-                $p['cl'],
-                $p['sf'],
-                $p['sl'],
-                $p['svc'],
-                $p['dos'],
-                $p['apt']
-            );
-            if (!empty($ids)) {
-                $warnings['duplicatesInDb'][] = [
+
+    // Keep only the first occurrence of each fingerprint within the file
+    $toInsert     = [];
+    $seenFps      = [];
+    foreach ($pending as $p) {
+        $isDupWithinFile = count($fpToLines[$p['fp']]) > 1;
+        if ($isDupWithinFile) {
+            if (!isset($seenFps[$p['fp']])) {
+                // Record the warning once
+                $warnings['duplicatesWithinFile'][] = [
                     'fingerprint' => $p['fp'],
-                    'rowIndexes' => [$p['line']],
-                    'existingIds' => $ids,
+                    'rowIndexes'  => $fpToLines[$p['fp']],
                 ];
             }
+            if (isset($seenFps[$p['fp']])) {
+                // Skip all subsequent occurrences
+                continue;
+            }
+        }
+        $seenFps[$p['fp']] = true;
+        $toInsert[] = $p;
+    }
+
+    // ---- Check DB for duplicates and build SQL ----
+    // FIX: collect results into a new array so modifications are not lost (was missing &ref + _insertOk=false).
+    $toInsertFinal = [];
+
+    if ($isBulk && count($toInsert) <= 200) {
+        foreach ($toInsert as $p) {
+            $ids = reports_find_db_duplicate_ids(
+                $conn,
+                $p['cf'], $p['cl'], $p['sf'], $p['sl'],
+                $p['svc'], $p['dos'], $p['aptStart']
+            );
+            if (!empty($ids)) {
+                // Duplicate exists in DB — record warning and explicitly skip insertion
+                $warnings['duplicatesInDb'][] = [
+                    'fingerprint' => $p['fp'],
+                    'rowIndexes'  => [$p['line']],
+                    'existingIds' => $ids,
+                ];
+                $p['_insertOk'] = false; // FIX: must be explicitly set to false
+            } else {
+                $p['_sql']      = reports_build_insert_sql($conn, $p);
+                $p['_insertOk'] = true;
+            }
+            $toInsertFinal[] = $p; // FIX: push modified copy back into final array
+        }
+    } else {
+        // Single insert or >200 rows: no DB-duplicate check, just build SQL for all
+        foreach ($toInsert as $p) {
+            $p['_sql']      = reports_build_insert_sql($conn, $p);
+            $p['_insertOk'] = true;
+            $toInsertFinal[] = $p;
         }
     }
 
+    // ---- Execute inserts inside a transaction ----
     $conn->begin_transaction();
     try {
-        foreach ($pending as $p) {
-            if (!$conn->query($p['sql'])) {
-                throw new Exception($conn->error);
+        foreach ($toInsertFinal as $p) {
+            if (!empty($p['_insertOk'])) {
+                if (!$conn->query($p['_sql'])) {
+                    throw new Exception($conn->error);
+                }
             }
         }
         $conn->commit();
+
         $out = ['success' => true, 'message' => 'Reports created'];
         if (!empty($warnings['duplicatesWithinFile']) || !empty($warnings['duplicatesInDb'])) {
             $out['warnings'] = $warnings;
@@ -736,7 +792,7 @@ function handlePost($conn, $input)
     }
 }
 
-// ---------- PUT (update by id – same as before) ----------
+// ---------- PUT (update by id) ----------
 function handlePut($conn, $input)
 {
     if (empty($input['id'])) {

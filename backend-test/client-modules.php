@@ -11,10 +11,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/rbac_helpers.php';
-$authUser = requireAuthReadWrite('master_data.read', 'master_data.write', 'mahaverse');
 
-
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+// Session notes data collection loads programs/targets/behaviors via GET — not master-data admin only.
+if ($method === 'GET') {
+    $authUser = requireAuthAny(
+        ['master_data.read', 'scheduling.read', 'scheduling.session.notes', 'clients.read'],
+        'mahaverse'
+    );
+} else {
+    $authUser = requireAuthReadWrite('master_data.read', 'master_data.write', 'mahaverse');
+}
 
 // Database connection
 $host = "db5018419668.hosting-data.io";
@@ -50,7 +57,6 @@ function ensureClientCanonicalDomainModule($conn, $clientId, $moduleId)
                   ON DUPLICATE KEY UPDATE name='$name'");
 }
 
-$method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents('php://input'), true);
 
 try {
@@ -154,10 +160,17 @@ function saveActivityTasks($conn, $clientId, $activityId, $tasks)
 function handleGet($conn)
 {
     $clientId = $_GET['client_id'] ?? null;
-    
+
     if (!$clientId) {
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Client ID is required']);
+        return;
+    }
+
+    $authU = getAuthenticatedUser();
+    if ($authU && !rbac_user_may_access_client_row($authU, $conn, (string) $clientId)) {
+        http_response_code(403);
+        echo json_encode(['success' => false, 'message' => 'Permission denied']);
         return;
     }
 

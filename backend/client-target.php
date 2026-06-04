@@ -8,13 +8,18 @@ error_reporting(E_ALL);
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Accept');
 
 // Preflight
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$authUser = requireAuthReadWrite('master_data.read', 'master_data.write', 'mahaverse');
+
+
 
 // DB credentials
 $host = "db5018266079.hosting-data.io";
@@ -55,6 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['diagnose'])) {
     echo json_encode(['success' => true, 'mismatched_columns' => $rows]);
     $conn->close();
     exit();
+
 }
 
 $method = $_SERVER['REQUEST_METHOD'];

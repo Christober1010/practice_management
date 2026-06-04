@@ -1,5 +1,4 @@
 <?php
-// CORS: run before any output. Preflight must not use JSON Content-Type.
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Accept, Accept-Language, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With");
@@ -10,18 +9,15 @@ if (($_SERVER["REQUEST_METHOD"] ?? "") === "OPTIONS") {
     exit();
 }
 
+require_once __DIR__ . '/config.php';
+
 header("Content-Type: application/json; charset=utf-8");
 
-require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/rbac_helpers.php';
-require_once __DIR__ . '/client_auth_units_helpers.php';
-$authUser = getAuthenticatedUser();
-if ($authUser && !rbac_user_has_permission_key($authUser['role'], 'clients.read', 'mahaverse')) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Permission denied']);
-    exit;
-}
+$authUser = requireAuth('clients.read', 'mahaverse');
 
+mahaverse_require_helper('client_auth_units_helpers');
+
+// Must match backend/config.php getDBConnection() and add-session.php (test DB)
 $host = "db5018266079.hosting-data.io";
 $dbname = "dbs14484433";
 $dbUser = "dbu3321929";

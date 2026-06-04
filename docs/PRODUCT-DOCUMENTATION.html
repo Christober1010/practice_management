@@ -1,0 +1,1053 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mahaverse Product Documentation</title>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --paper: #ffffff;
+      --ink: #172033;
+      --muted: #5d6b82;
+      --line: #dce4ef;
+      --teal: #0f766e;
+      --teal-soft: #e6fffb;
+      --blue: #2563eb;
+      --amber: #b45309;
+      --rose: #be123c;
+      --shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+      --radius: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.6;
+    }
+
+    a {
+      color: var(--teal);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .page {
+      display: grid;
+      grid-template-columns: 290px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    aside {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: auto;
+      padding: 28px 22px;
+      background: #0f172a;
+      color: #dbeafe;
+      border-right: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    aside h1 {
+      margin: 0 0 8px;
+      color: #ffffff;
+      font-size: 24px;
+      line-height: 1.2;
+    }
+
+    aside p {
+      margin: 0 0 22px;
+      color: #a7b7d0;
+      font-size: 14px;
+    }
+
+    nav {
+      display: grid;
+      gap: 4px;
+    }
+
+    nav a {
+      display: block;
+      padding: 9px 10px;
+      border-radius: 10px;
+      color: #dbeafe;
+      font-size: 14px;
+    }
+
+    nav a:hover {
+      background: rgba(255, 255, 255, 0.08);
+      text-decoration: none;
+    }
+
+    main {
+      padding: 44px;
+      max-width: 1180px;
+      width: 100%;
+    }
+
+    .hero {
+      padding: 42px;
+      border-radius: 28px;
+      background:
+        radial-gradient(circle at top right, rgba(20, 184, 166, 0.2), transparent 35%),
+        linear-gradient(135deg, #ffffff 0%, #eefaf9 100%);
+      box-shadow: var(--shadow);
+      border: 1px solid #d7f4f0;
+      margin-bottom: 28px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 11px;
+      border-radius: 999px;
+      background: var(--teal-soft);
+      color: var(--teal);
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.02em;
+    }
+
+    .hero h2 {
+      margin: 18px 0 12px;
+      max-width: 850px;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 1.05;
+      letter-spacing: -0.045em;
+    }
+
+    .hero p {
+      max-width: 820px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    section {
+      margin: 24px 0;
+      padding: 30px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+    }
+
+    section h2 {
+      margin: 0 0 14px;
+      font-size: 28px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    section h3 {
+      margin: 26px 0 10px;
+      font-size: 20px;
+      color: #1f2937;
+    }
+
+    section h4 {
+      margin: 18px 0 8px;
+      font-size: 16px;
+      color: var(--teal);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    ul, ol {
+      margin: 8px 0 16px;
+      padding-left: 22px;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .card, .note, .case, .step-list {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fbfdff;
+      padding: 16px;
+    }
+
+    .card strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #0f172a;
+    }
+
+    .note {
+      background: #f0fdfa;
+      border-color: #99f6e4;
+      color: #134e4a;
+    }
+
+    .warning {
+      background: #fff7ed;
+      border-color: #fed7aa;
+      color: #7c2d12;
+    }
+
+    .case {
+      background: #f8fafc;
+    }
+
+    .case strong {
+      color: var(--teal);
+    }
+
+    .module-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 14px;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 8px 0 18px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .path {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      color: #334155;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      padding: 2px 6px;
+      border-radius: 7px;
+      white-space: nowrap;
+    }
+
+    .workflow {
+      counter-reset: step;
+      display: grid;
+      gap: 12px;
+      margin: 14px 0 22px;
+    }
+
+    .workflow .step {
+      position: relative;
+      padding: 14px 14px 14px 52px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #ffffff;
+    }
+
+    .workflow .step::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 14px;
+      top: 14px;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--teal);
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 13px;
+    }
+
+    .two-col {
+      columns: 2;
+      column-gap: 28px;
+    }
+
+    .divider {
+      height: 1px;
+      background: var(--line);
+      margin: 22px 0;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .footer {
+      margin: 34px 0 12px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+
+    @media (max-width: 980px) {
+      .page {
+        grid-template-columns: 1fr;
+      }
+
+      aside {
+        position: relative;
+        height: auto;
+      }
+
+      main {
+        padding: 22px;
+      }
+
+      .grid, .cards {
+        grid-template-columns: 1fr;
+      }
+
+      .two-col {
+        columns: 1;
+      }
+    }
+
+    @media print {
+      body {
+        background: white;
+      }
+
+      .page {
+        display: block;
+      }
+
+      aside {
+        display: none;
+      }
+
+      main {
+        padding: 0;
+        max-width: none;
+      }
+
+      section, .hero {
+        box-shadow: none;
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <aside>
+      <h1>Mahaverse</h1>
+      <p>Product documentation for operations, clinical workflows, billing setup, and administration.</p>
+      <nav aria-label="Documentation navigation">
+        <a href="#what-it-is">What It Is</a>
+        <a href="#terminology">Terminology</a>
+        <a href="#authentication">Authentication</a>
+        <a href="#roles">Roles and Access</a>
+        <a href="#setup-sequence">Recommended Setup Sequence</a>
+        <a href="#end-to-end">End-to-End Flows</a>
+        <a href="#dashboard">Dashboard</a>
+        <a href="#staff">Staff</a>
+        <a href="#clients">Clients</a>
+        <a href="#configure-data">Configure Data</a>
+        <a href="#manage-data">Manage Data</a>
+        <a href="#scheduling">Scheduling and Sessions</a>
+        <a href="#session-notes">Session Notes and Data Collection</a>
+        <a href="#billing">Billing and Claims</a>
+        <a href="#reports">Reports</a>
+        <a href="#users">Users</a>
+        <a href="#role-access">Role Access</a>
+        <a href="#launchpad">Maha Launchpad</a>
+        <a href="#common-cases">Common Cases</a>
+        <a href="#api-reference">API Reference</a>
+        <a href="#caveats">Product Caveats</a>
+      </nav>
+    </aside>
+
+    <main>
+      <header class="hero" id="what-it-is">
+        <span class="eyebrow">Product Guide</span>
+        <h2>Mahaverse Product Documentation</h2>
+        <p>
+          Mahaverse is an ABA practice management platform used to manage staff,
+          clients, clinical programs, schedules, session notes, data collection,
+          billing configuration, claims, reports, users, and role-based access.
+          It centralizes the operational and clinical flow from intake and setup
+          through service delivery and revenue-cycle follow-up.
+        </p>
+      </header>
+
+      <section>
+        <h2>Product Overview</h2>
+        <p>
+          The product is split into two connected applications: <strong>Mahaverse</strong>,
+          the main practice-management workspace, and <strong>Maha Launchpad</strong>,
+          an intake/onboarding experience. Users access modules from the left sidebar,
+          and available menu items depend on their role and permissions.
+        </p>
+        <div class="cards">
+          <div class="card">
+            <strong>Operational management</strong>
+            Create staff, clients, providers, locations, users, and permissions.
+          </div>
+          <div class="card">
+            <strong>Clinical workflow</strong>
+            Configure domains, programs, targets, behaviors, session notes, and data collection.
+          </div>
+          <div class="card">
+            <strong>Scheduling and billing</strong>
+            Schedule sessions, complete notes, finalize rendered hours, preview claims, and track reports.
+          </div>
+        </div>
+      </section>
+
+      <section id="terminology">
+        <h2>Terminology</h2>
+        <p>Use these terms consistently while working in the product.</p>
+        <div class="grid">
+          <div class="card"><strong>Client</strong> The recipient of ABA services. Client records include demographics, insurance, authorizations, guardian details, documents, clinical assignments, and notes.</div>
+          <div class="card"><strong>Staff</strong> A clinical or operational employee record. Staff records are used for provider details, certifications, availability, assignments, scheduling, and documentation.</div>
+          <div class="card"><strong>User</strong> A login account with a role and permissions. A user account is separate from a staff record.</div>
+          <div class="card"><strong>Session</strong> A scheduled appointment linked to a client, provider, supervisor, authorization, date/time, place of service, and rendered hours.</div>
+          <div class="card"><strong>Session Notes</strong> SOAP documentation, clinical notes, service metadata, signatures, and completion state for a client/session date.</div>
+          <div class="card"><strong>Data Collection</strong> Skill acquisition, behavior-reduction, and related clinical measurements recorded during service delivery.</div>
+          <div class="card"><strong>Configure Data</strong> Organization-level clinical libraries such as domains, programs, targets, prompts, behaviors, and behavior categories.</div>
+          <div class="card"><strong>Client Configure Data</strong> Client-specific assignment of clinical programs, targets, domains, and behaviors that appear in data collection.</div>
+          <div class="card"><strong>Authorization</strong> Insurance approval details tied to billing codes, date ranges, units or hours, and billing readiness.</div>
+          <div class="card"><strong>Rendered / Ready to Bill</strong> Session states that indicate services were delivered and can move into billing or claims review.</div>
+          <div class="card"><strong>CMS-1500</strong> Professional claim form used for insurance billing preview and claim output.</div>
+          <div class="card"><strong>RBAC</strong> Role-based access control that governs module visibility and action permissions.</div>
+        </div>
+      </section>
+
+      <section id="authentication">
+        <div class="module-header">
+          <div>
+            <h2>Authentication</h2>
+            <p>Authentication controls login, token storage, password reset, and the user's initial entry into Mahaverse or Launchpad.</p>
+          </div>
+          <span class="tag">Access</span>
+        </div>
+
+        <h3>Login Flow</h3>
+        <div class="workflow">
+          <div class="step">Open Mahaverse and enter email and password.</div>
+          <div class="step">The system validates credentials and stores the signed-in user, auth token, and token expiry in the browser.</div>
+          <div class="step">Permissions are loaded for the user and the dashboard opens with role-appropriate navigation.</div>
+          <div class="step">If the login was started from a protected Launchpad link, the user can be redirected into the requested Launchpad route after authentication.</div>
+        </div>
+
+        <h3>Password Reset Flow</h3>
+        <div class="workflow">
+          <div class="step">Choose forgot-password or reset-password from the login experience.</div>
+          <div class="step">Request an OTP for the account email.</div>
+          <div class="step">Verify the OTP.</div>
+          <div class="step">Set the new password and return to login.</div>
+        </div>
+
+        <div class="grid">
+          <div class="case"><strong>Expired token.</strong> If the saved token is expired, the user is logged out and must sign in again.</div>
+          <div class="case"><strong>Permission refresh.</strong> Permissions can change server-side; refresh or sign in again if module visibility does not match recent Role Access changes.</div>
+          <div class="case"><strong>Environment dependency.</strong> API calls depend on the configured base URL for the deployed backend environment.</div>
+          <div class="case"><strong>Logout.</strong> Signing out clears the active session and returns the user to the login entry point.</div>
+        </div>
+      </section>
+
+      <section id="roles">
+        <h2>Roles and Access</h2>
+        <p>
+          Mahaverse uses role-based access control. The sidebar only shows modules
+          the signed-in user can view, and some actions such as creating, archiving,
+          deleting, or editing records require additional permissions.
+        </p>
+        <div class="grid">
+          <div class="card">
+            <strong>Admin</strong>
+            Full administrative access, including role access, users, staff, clients, setup data, and operations.
+          </div>
+          <div class="card">
+            <strong>BCBA</strong>
+            Clinical oversight workflows, including clients, programming, schedules, session notes, and data review.
+          </div>
+          <div class="card">
+            <strong>RBT</strong>
+            Direct service workflows, commonly focused on schedules, session notes, and data collection.
+          </div>
+          <div class="card">
+            <strong>Biller</strong>
+            Billing, claims, payer payments, reports, service code setup, and revenue-cycle views.
+          </div>
+          <div class="card">
+            <strong>Parent / Client</strong>
+            Limited portal-style access where enabled by the administrator.
+          </div>
+          <div class="card">
+            <strong>Planner</strong>
+            Scheduling and planning workflows where granted.
+          </div>
+        </div>
+        <div class="note">
+          If a user cannot see a module or button, check <span class="path">Role Access</span>
+          first before assuming the module is missing.
+        </div>
+      </section>
+
+      <section id="setup-sequence">
+        <h2>Recommended Setup Sequence</h2>
+        <p>
+          The smoothest onboarding path is to configure foundational records before
+          creating clients and sessions. This prevents missing options while scheduling
+          or completing billing details.
+        </p>
+        <ol>
+          <li>Create roles and users, then verify each role has the correct permissions.</li>
+          <li>Create manage-data records: locations, facility types, treatment types, providers, service codes, diagnosis codes, document types, and payer payments.</li>
+          <li>Create clinical configuration: domains, programs, targets, prompts, behavior categories, and behaviors.</li>
+          <li>Create staff records, including professional details, certifications, availability, assignments, and documents.</li>
+          <li>Create client records, including demographics, contact information, guardians, insurance, authorizations, assigned clinical programs, availability, and documents.</li>
+          <li>Create sessions from Scheduling, then complete data collection and session notes after service delivery.</li>
+          <li>Review billing and claims once sessions are rendered and documentation is complete.</li>
+        </ol>
+      </section>
+
+      <section id="end-to-end">
+        <h2>End-to-End Flows</h2>
+        <h3>New Client to First Billable Session</h3>
+        <div class="workflow">
+          <div class="step">Create foundational setup data: locations, providers, service codes, diagnosis codes, facility types, treatment types, and document types.</div>
+          <div class="step">Create the client profile with demographics, contacts, guardian, insurance, documents, and notes.</div>
+          <div class="step">Add active authorizations with the correct billing codes, date ranges, and units/hours.</div>
+          <div class="step">Assign client-specific domains, programs, targets, and behaviors.</div>
+          <div class="step">Create or verify the staff provider record with availability and active status.</div>
+          <div class="step">Schedule the session using the correct client, provider, supervisor, authorization, place of service, and location.</div>
+          <div class="step">Complete data collection, SOAP notes, clinical notes, rendered hours, and signatures.</div>
+          <div class="step">Review the rendered session in billing/claims and preview or generate the claim output.</div>
+        </div>
+
+        <h3>New Hire to Product Access</h3>
+        <div class="workflow">
+          <div class="step">Use Launchpad for offer letter, onboarding form, signatures, and required document collection where applicable.</div>
+          <div class="step">Create a Mahaverse staff record with professional details, certifications, documents, assignments, and availability.</div>
+          <div class="step">Create a user account for login access and assign the correct role.</div>
+          <div class="step">Use Role Access to confirm the role has required module and action permissions.</div>
+          <div class="step">Have the new user sign in and verify that their sidebar and allowed actions match their job responsibilities.</div>
+        </div>
+      </section>
+
+      <section id="dashboard">
+        <div class="module-header">
+          <div>
+            <h2>Dashboard</h2>
+            <p>The dashboard gives users a role-specific starting point after login.</p>
+          </div>
+          <span class="tag">Core Module</span>
+        </div>
+        <div class="grid">
+          <div class="case">
+            <strong>Admin dashboard</strong>
+            Shows high-level administrative visibility and shortcuts into operational areas.
+          </div>
+          <div class="case">
+            <strong>BCBA dashboard</strong>
+            Focuses on clinical oversight and assigned client/service activity.
+          </div>
+          <div class="case">
+            <strong>RBT dashboard</strong>
+            Focuses on direct-service work, sessions, and documentation.
+          </div>
+          <div class="case">
+            <strong>Biller dashboard</strong>
+            Opens into billing-oriented revenue-cycle visibility.
+          </div>
+        </div>
+      </section>
+
+      <section id="staff">
+        <div class="module-header">
+          <div>
+            <h2>Staff Module</h2>
+            <p>Create and manage provider/staff records used for scheduling, supervision, assignments, and documentation.</p>
+          </div>
+          <span class="tag">People</span>
+        </div>
+        <div class="tag-row">
+          <span class="tag">Add Staff</span>
+          <span class="tag">Edit Staff</span>
+          <span class="tag">Archive / Restore</span>
+          <span class="tag">Documents</span>
+          <span class="tag">Availability</span>
+        </div>
+
+        <h3>How to Create a Staff Record</h3>
+        <div class="workflow">
+          <div class="step"><strong>Open Staff.</strong> From the sidebar, select <span class="path">Staff</span>.</div>
+          <div class="step"><strong>Start a new record.</strong> Click <span class="path">Add Staff</span>.</div>
+          <div class="step"><strong>Complete Personal Information.</strong> Enter first name, last name, email, phone, SSN if required, address, and emergency contact.</div>
+          <div class="step"><strong>Complete Professional Information.</strong> Select staff type such as RBT, BT, BCBA, or BCaBA; set status; add NPI, hire dates, education, assigned supervisor, assigned clients, and job title.</div>
+          <div class="step"><strong>Add Certifications.</strong> Add one or more certifications with type, number, issue date, expiration date, and status.</div>
+          <div class="step"><strong>Set Availability.</strong> Select available days, start/end times, and service location preferences such as home, clinic, school, or community.</div>
+          <div class="step"><strong>Upload Documents.</strong> Add staff documents such as licenses, background checks, or other configured document types.</div>
+          <div class="step"><strong>Save.</strong> Submit the form. The record appears in the active staff list if the status is active and it is not archived.</div>
+        </div>
+
+        <h3>Cases Covered</h3>
+        <div class="grid">
+          <div class="case"><strong>Edit staff.</strong> Use the edit action on a staff row, update any tab, and save.</div>
+          <div class="case"><strong>Archive staff.</strong> Use archive options to move a staff member out of the active list. Archived staff can be restored from the archived view.</div>
+          <div class="case"><strong>Search and filter.</strong> Search by name, staff ID, or certification number; filter by staff type and status.</div>
+          <div class="case"><strong>Document viewing.</strong> Uploaded documents can be viewed from the staff detail area when a document path is available.</div>
+          <div class="case"><strong>Scheduling readiness.</strong> Staff must be active and not archived to appear as available providers for scheduling.</div>
+          <div class="case"><strong>Supervisor/client assignments.</strong> Assign supervisors and clients so clinical responsibility is visible and permission scopes can be enforced.</div>
+        </div>
+      </section>
+
+      <section id="clients">
+        <div class="module-header">
+          <div>
+            <h2>Clients Module</h2>
+            <p>Create and manage client intake, demographic, contact, insurance, authorization, clinical configuration, and documentation data.</p>
+          </div>
+          <span class="tag">Clinical Records</span>
+        </div>
+        <div class="tag-row">
+          <span class="tag">Add Client</span>
+          <span class="tag">Edit Client</span>
+          <span class="tag">Session Notes</span>
+          <span class="tag">Data Collection</span>
+          <span class="tag">Configure Data</span>
+          <span class="tag">Archive / Restore</span>
+        </div>
+
+        <h3>How to Create a Client</h3>
+        <div class="workflow">
+          <div class="step"><strong>Open Clients.</strong> From the sidebar, select <span class="path">Clients</span>.</div>
+          <div class="step"><strong>Start a new record.</strong> Click <span class="path">Add Client</span>.</div>
+          <div class="step"><strong>Complete Personal.</strong> Add name, date of birth, gender, preferred language, workflow status, active flag, waitlist status, and location.</div>
+          <div class="step"><strong>Complete Contact.</strong> Add phone, email, appointment reminder preference, and one or more service addresses such as Home, Telehealth, Office, School, or Other.</div>
+          <div class="step"><strong>Add Guardian and Emergency Contact.</strong> Enter parent/guardian details, relationship to insured, emergency contact name, phone, email, and relationship.</div>
+          <div class="step"><strong>Add Insurance.</strong> Add Primary, Secondary, or Tertiary insurance, subscriber details, claim settings, signatures on file, insured address, payer details, and insurance notes.</div>
+          <div class="step"><strong>Configure Client Data.</strong> Assign clinical domains, programs, targets, and behaviors that should appear during data collection.</div>
+          <div class="step"><strong>Add Authorizations.</strong> Add authorization number, status, start/end dates, service/billing code, units or hours, provider, treatment type, facility type, and notes.</div>
+          <div class="step"><strong>Set Availability.</strong> Add weekly availability windows used by scheduling and planning.</div>
+          <div class="step"><strong>Upload Documents and Notes.</strong> Add insurance, intake, clinical, service, or miscellaneous documents, plus client notes and other information.</div>
+          <div class="step"><strong>Save.</strong> The client becomes available for scheduling if active and not archived.</div>
+        </div>
+
+        <h3>Client Workflow Statuses</h3>
+        <p>Client records support the following workflow statuses:</p>
+        <ul class="two-col">
+          <li>New</li>
+          <li>Benefits Verification</li>
+          <li>Prior Authorization</li>
+          <li>Client Assessment</li>
+          <li>Pending Authorization</li>
+          <li>Initial Authorization</li>
+          <li>Active Treatment</li>
+          <li>Reauthorization</li>
+        </ul>
+
+        <h3>Cases Covered</h3>
+        <div class="grid">
+          <div class="case"><strong>Edit client.</strong> Use the edit action on a client row to update any tab, insurance, authorizations, documents, or clinical configuration.</div>
+          <div class="case"><strong>Archive client.</strong> Archive a client to remove them from the active list. Restoring makes the record active again.</div>
+          <div class="case"><strong>Search and filter.</strong> Search across client fields and filter by workflow status or active/inactive state.</div>
+          <div class="case"><strong>Multiple addresses.</strong> Add more than one service location when the client receives services in multiple settings.</div>
+          <div class="case"><strong>Multiple insurances.</strong> Use Primary, Secondary, and Tertiary insurance tabs when a client has more than one payer.</div>
+          <div class="case"><strong>Authorization status.</strong> Authorizations are Active or Inactive. Scheduling uses active authorizations that match the selected billing code.</div>
+          <div class="case"><strong>Session notes shortcut.</strong> Open Session Notes directly from the client row for documentation tied to a date.</div>
+          <div class="case"><strong>Data collection shortcut.</strong> Open Data Collection from the client row to record skill acquisition and behavior data.</div>
+        </div>
+      </section>
+
+      <section id="configure-data">
+        <div class="module-header">
+          <div>
+            <h2>Configure Data</h2>
+            <p>Configure clinical master data used in client programming and data collection.</p>
+          </div>
+          <span class="tag">Clinical Setup</span>
+        </div>
+        <div class="grid">
+          <div class="card"><strong>Domains</strong> Broad clinical areas used to organize programs and goals.</div>
+          <div class="card"><strong>Programs</strong> Treatment programs that group targets and skill acquisition goals.</div>
+          <div class="card"><strong>Targets</strong> Specific goals or skills tracked during sessions.</div>
+          <div class="card"><strong>Prompts</strong> Prompting options used while recording trials or skill-acquisition data.</div>
+          <div class="card"><strong>Behaviors</strong> Behaviors for reduction plans and session behavior tracking.</div>
+          <div class="card"><strong>Behavior Categories</strong> Grouping options for behavior records.</div>
+        </div>
+        <h3>Typical Flow</h3>
+        <div class="workflow">
+          <div class="step">Create or edit domains first.</div>
+          <div class="step">Create programs and attach them to the correct domain where applicable.</div>
+          <div class="step">Create targets under programs and add relevant instructions or measurement details.</div>
+          <div class="step">Create prompt options and behavior definitions used by clinical teams.</div>
+          <div class="step">Assign the configured items to clients from the client <span class="path">Configure Data</span> tab.</div>
+        </div>
+        <div class="note">
+          Configure-data records become useful only after they are assigned to a client.
+          Client-specific assignment controls what appears in data collection.
+        </div>
+      </section>
+
+      <section id="manage-data">
+        <div class="module-header">
+          <div>
+            <h2>Manage Data</h2>
+            <p>Manage operational, billing, and administrative reference records used throughout the application.</p>
+          </div>
+          <span class="tag">Administrative Setup</span>
+        </div>
+        <div class="grid">
+          <div class="card"><strong>Locations</strong> Office, service-location, facility, and billing provider details.</div>
+          <div class="card"><strong>Facility Types</strong> Facility categories used in authorization, scheduling, and claims.</div>
+          <div class="card"><strong>Treatment Types</strong> Treatment categories used for authorizations and service planning.</div>
+          <div class="card"><strong>Document Types</strong> Types displayed in staff and client document upload flows.</div>
+          <div class="card"><strong>Providers</strong> Provider records used in billing and claim configuration.</div>
+          <div class="card"><strong>Service Codes</strong> CPT/service codes used for scheduling, authorizations, claims, and reporting.</div>
+          <div class="card"><strong>Provider Service Code</strong> Maps providers to service codes for billing setup.</div>
+          <div class="card"><strong>Diagnosis</strong> Diagnosis codes used in client records, session notes, and claims.</div>
+          <div class="card"><strong>Payer Payments</strong> Payment posting and payer payment tracking.</div>
+        </div>
+
+        <h3>How to Create a Location</h3>
+        <div class="workflow">
+          <div class="step">Open <span class="path">Manage Data</span>, then choose <span class="path">Locations</span>.</div>
+          <div class="step">Click the add-location action.</div>
+          <div class="step">Complete General Office Information: Tax ID, office phone, time zone, start/end time, location name, description, and status.</div>
+          <div class="step">Complete Facility Service Location details for claim Box 32: facility type, NPI, name, address, city, state, and zip.</div>
+          <div class="step">Complete Billing Provider details for claim Box 33: taxonomy code, billing NPI, provider name, billing address, city, state, and zip.</div>
+          <div class="step">Save. The location becomes available in client, scheduling, and billing workflows where applicable.</div>
+        </div>
+
+        <h3>Reference Data Cases</h3>
+        <div class="grid">
+          <div class="case"><strong>Add/edit setup records.</strong> Use each setup screen to maintain active values for dropdowns and billing configuration.</div>
+          <div class="case"><strong>Deactivate instead of deleting.</strong> Use inactive/archive states where available to preserve historical records used by clients, sessions, or claims.</div>
+          <div class="case"><strong>Billing dependencies.</strong> Create providers, service codes, diagnosis codes, facility types, and locations before creating authorizations or claims.</div>
+          <div class="case"><strong>Document upload consistency.</strong> Document Types determine the options users see when uploading client or staff files.</div>
+        </div>
+      </section>
+
+      <section id="scheduling">
+        <div class="module-header">
+          <div>
+            <h2>Scheduling and Sessions</h2>
+            <p>Create, view, edit, cancel, and delete scheduled sessions. Scheduling connects clients, providers, authorizations, locations, and session notes.</p>
+          </div>
+          <span class="tag">Service Delivery</span>
+        </div>
+
+        <h3>How to Create a Session</h3>
+        <div class="workflow">
+          <div class="step"><strong>Open Scheduling.</strong> From the sidebar, select <span class="path">Scheduling</span>.</div>
+          <div class="step"><strong>Choose a calendar date.</strong> Use Today, Month, Week, Day, or list-style views, then click <span class="path">Add Session</span> or a date cell.</div>
+          <div class="step"><strong>Select the client.</strong> Only active, non-archived clients should be used for new sessions.</div>
+          <div class="step"><strong>Select provider and supervisor.</strong> Choose an active provider and, when needed, a supervising provider.</div>
+          <div class="step"><strong>Choose date, time, and timezone.</strong> Enter start and end time. Scheduled hours calculate from the time range.</div>
+          <div class="step"><strong>Select place of service and location address.</strong> Use the correct service setting for operational and billing accuracy.</div>
+          <div class="step"><strong>Select billing authorization.</strong> Choose a billing code backed by an active client authorization. The system validates that the selected authorization belongs to the client.</div>
+          <div class="step"><strong>Add a quick note.</strong> Use quick notes for scheduling context or special instructions.</div>
+          <div class="step"><strong>Choose recurrence if needed.</strong> Set a repeating schedule with frequency, weekly days, and ending rules.</div>
+          <div class="step"><strong>Save.</strong> The session appears on the calendar and can be opened for viewing, editing, session notes, or data collection.</div>
+        </div>
+
+        <h3>Session Statuses</h3>
+        <ul>
+          <li><strong>Scheduled:</strong> Default status for upcoming and active appointments.</li>
+          <li><strong>Rendered:</strong> Used when services have been documented and are ready for billing workflow.</li>
+          <li><strong>Ready to Bill:</strong> Indicates session documentation/billing data has been finalized for revenue-cycle processing where enabled.</li>
+          <li><strong>Cancelled:</strong> Used when a scheduled session is cancelled with a reason.</li>
+        </ul>
+
+        <h3>Cases Covered</h3>
+        <div class="grid">
+          <div class="case"><strong>Edit one session.</strong> Open the session and edit date, time, provider, authorization, notes, or location details.</div>
+          <div class="case"><strong>Edit recurring sessions.</strong> For recurring appointments, choose whether to update one occurrence or the recurring set.</div>
+          <div class="case"><strong>Cancel session.</strong> Cancel from the edit flow and record a cancellation reason. Recurring sessions can support single or recurring cancellation mode.</div>
+          <div class="case"><strong>Delete session.</strong> Delete is permission-gated and usually restricted to scheduled sessions that are not rendered or ready to bill.</div>
+          <div class="case"><strong>Provider conflict check.</strong> The scheduler checks for local provider schedule conflicts before saving.</div>
+          <div class="case"><strong>Missing authorization.</strong> If billing code selection fails, refresh client data or verify the client has an active matching authorization.</div>
+          <div class="case"><strong>Session notes shortcut.</strong> Use the notes action on a calendar item to open notes for that exact client/date/session.</div>
+          <div class="case"><strong>Filters.</strong> Use location and staff filters to narrow the calendar to specific operational views.</div>
+        </div>
+      </section>
+
+      <section id="session-notes">
+        <div class="module-header">
+          <div>
+            <h2>Session Notes and Data Collection</h2>
+            <p>Record clinical data, SOAP notes, service details, signatures, and rendered-session information.</p>
+          </div>
+          <span class="tag">Clinical Documentation</span>
+        </div>
+
+        <h3>How to Complete Data Collection</h3>
+        <div class="workflow">
+          <div class="step">Open a client or scheduled session and select <span class="path">Data Collection</span> or <span class="path">Session Notes</span>.</div>
+          <div class="step">Confirm the session date. When opened from Scheduling, the modal uses the linked session date.</div>
+          <div class="step">In <span class="path">Skill Acquisition</span>, record trials or values for assigned client programs and targets.</div>
+          <div class="step">In <span class="path">Behaviors</span>, record behavior-reduction data and relevant behavior counts or measurements.</div>
+          <div class="step">Save progress so entered data is stored with the session note payload.</div>
+        </div>
+
+        <h3>How to Complete Session Notes</h3>
+        <div class="workflow">
+          <div class="step">Open the <span class="path">Session Notes</span> tab set.</div>
+          <div class="step">Complete <span class="path">Overview</span>: session date, start/end time, people present, caregiver, service location, diagnosis, service codes, and administration write-up.</div>
+          <div class="step">Complete <span class="path">SOAP Entry</span>: subjective, objective, assessment, and plan.</div>
+          <div class="step">Complete <span class="path">Clinical Notes</span>: add clinical observations and any required service narrative.</div>
+          <div class="step">Complete <span class="path">Signatures</span>: collect employee and guardian signatures where required.</div>
+          <div class="step">Save the note or complete/finalize it when documentation is ready for billing.</div>
+        </div>
+
+        <h3>Cases Covered</h3>
+        <div class="grid">
+          <div class="case"><strong>Future sessions.</strong> Future-dated sessions are protected from completion. Save behavior may be allowed, but complete/finalize is blocked until the session date is valid.</div>
+          <div class="case"><strong>No scheduled session found.</strong> Notes can still load client configuration; scheduling metadata may be blank if no appointment exists for the date.</div>
+          <div class="case"><strong>Configured data missing.</strong> If skill targets or behaviors are not visible, confirm they are assigned on the client Configure Data tab.</div>
+          <div class="case"><strong>Saved notes.</strong> Reopening a date loads previously saved notes and data collection entries.</div>
+          <div class="case"><strong>Billing handoff.</strong> Completed notes can update rendered/billing-ready session data depending on the session workflow.</div>
+          <div class="case"><strong>Signatures.</strong> Employee and guardian signatures include names and signature dates for documentation compliance.</div>
+        </div>
+      </section>
+
+      <section id="billing">
+        <div class="module-header">
+          <div>
+            <h2>Billing and Claims</h2>
+            <p>Manage revenue-cycle visibility, claims, CMS-1500 previews, invoices, payer payments, and billing reference data.</p>
+          </div>
+          <span class="tag">Revenue Cycle</span>
+        </div>
+        <div class="grid">
+          <div class="card"><strong>Billing Overview</strong> Shows revenue metrics, outstanding amounts, pending claims, recent invoices, and revenue analytics placeholders.</div>
+          <div class="card"><strong>Claims</strong> Supports claim review and CMS-1500 preview workflows.</div>
+          <div class="card"><strong>Payer Payments</strong> Tracks payer payment entries from Manage Data.</div>
+          <div class="card"><strong>Billing Setup</strong> Uses providers, provider-service-code mappings, service codes, diagnosis codes, locations, facility types, treatment types, and client authorizations.</div>
+        </div>
+
+        <h3>Typical Billing Flow</h3>
+        <div class="workflow">
+          <div class="step">Set up providers, service codes, diagnosis codes, locations, facility types, and treatment types.</div>
+          <div class="step">Add client insurance and authorizations with active status and matching billing codes.</div>
+          <div class="step">Schedule sessions using the correct authorization and place of service.</div>
+          <div class="step">Complete session notes, rendered hours, service codes, signatures, and required clinical documentation.</div>
+          <div class="step">Review billing/claims and generate or preview claim output.</div>
+          <div class="step">Track payer payments and follow-up items.</div>
+        </div>
+
+        <div class="warning case">
+          <strong>Important:</strong> Billing quality depends on upstream setup. Missing NPI,
+          taxonomy, diagnosis, service code, authorization, or location data can prevent clean
+          claim generation.
+        </div>
+      </section>
+
+      <section id="reports">
+        <div class="module-header">
+          <div>
+            <h2>Reports</h2>
+            <p>Manage operational reporting, spreadsheet-style report data, and schedule-tracker imports.</p>
+          </div>
+          <span class="tag">Reporting</span>
+        </div>
+        <h3>How to Create or Import Reports</h3>
+        <div class="workflow">
+          <div class="step">Open <span class="path">Reports</span> from the sidebar.</div>
+          <div class="step">Use the summary/report view to add a single report or batch of report rows.</div>
+          <div class="step">Use the spreadsheet grid for table-style review and editing where available.</div>
+          <div class="step">Use Schedule Tracker import for schedule-tracker data files.</div>
+          <div class="step">Search, filter by status, expand a report for details, edit existing reports, or archive/restore reports.</div>
+        </div>
+        <div class="grid">
+          <div class="case"><strong>Add report.</strong> Create one report or submit multiple report rows in a batch.</div>
+          <div class="case"><strong>Edit report.</strong> Open an existing report, update fields, and save.</div>
+          <div class="case"><strong>Archive report.</strong> Archive completed or outdated records; restore them from archived view when needed.</div>
+          <div class="case"><strong>Schedule tracker.</strong> Import tracker data, review it in a grid, and refresh the tracker view.</div>
+        </div>
+      </section>
+
+      <section id="users">
+        <div class="module-header">
+          <div>
+            <h2>Users Module</h2>
+            <p>Create login accounts and assign roles that determine each user's default permissions and available modules.</p>
+          </div>
+          <span class="tag">Administration</span>
+        </div>
+
+        <h3>How to Create a User</h3>
+        <div class="workflow">
+          <div class="step">Open <span class="path">Users</span> from the sidebar.</div>
+          <div class="step">Click <span class="path">Add User</span>.</div>
+          <div class="step">Enter email, password, first name, and last name.</div>
+          <div class="step">Select a role: admin, BCBA, RBT, biller, parent, planner, or client.</div>
+          <div class="step">Set the active checkbox to allow login.</div>
+          <div class="step">Save the user.</div>
+        </div>
+
+        <h3>Cases Covered</h3>
+        <div class="grid">
+          <div class="case"><strong>Edit user.</strong> Update role, name, email, or active status. Leave password blank when editing to keep the current password.</div>
+          <div class="case"><strong>Deactivate user.</strong> Clear active status when a user should no longer access the product.</div>
+          <div class="case"><strong>Role mismatch.</strong> If the user can log in but cannot see expected modules, update Role Access for that role.</div>
+          <div class="case"><strong>Separate staff record.</strong> A user account controls login. A staff record controls provider, clinical, scheduling, and certification details.</div>
+        </div>
+      </section>
+
+      <section id="role-access">
+        <div class="module-header">
+          <div>
+            <h2>Role Access</h2>
+            <p>Administrators use Role Access to grant or remove module and action permissions by role.</p>
+          </div>
+          <span class="tag">Security</span>
+        </div>
+
+        <h3>How to Update Permissions</h3>
+        <div class="workflow">
+          <div class="step">Open <span class="path">Role Access</span>. This is available to administrators with user-management permission.</div>
+          <div class="step">Choose the application scope, such as Mahaverse or Launchpad.</div>
+          <div class="step">Select the role you want to edit.</div>
+          <div class="step">Search or expand modules to find the relevant permission group.</div>
+          <div class="step">Turn permissions on or off. Some permissions support scoped choices such as off, self, or all.</div>
+          <div class="step">Review the permission summary and save changes.</div>
+        </div>
+
+        <div class="note">
+          Permission changes affect navigation visibility and action availability. After saving,
+          users may need to refresh or sign in again depending on their current session.
+        </div>
+      </section>
+
+      <section id="launchpad">
+        <div class="module-header">
+          <div>
+            <h2>Maha Launchpad</h2>
+            <p>Maha Launchpad is the intake/onboarding area connected from the product switcher in the sidebar header.</p>
+          </div>
+          <span class="tag">Intake</span>
+        </div>
+        <p>
+          Launchpad focuses on collecting onboarding information through a guided form
+          and supporting backend workflows such as SSO login, OTP verification, offer
+          acceptance, document upload, Google Drive integration, reminders, and RBAC.
+        </p>
+        <h3>Typical Flow</h3>
+        <div class="workflow">
+          <div class="step">Open the product switcher from the sidebar header and choose <span class="path">Maha Launchpad</span>.</div>
+          <div class="step">Start or continue the guided form.</div>
+          <div class="step">Complete step-based intake sections such as location, emergency contact, documents, and related form details.</div>
+          <div class="step">Submit the form and upload required attachments where prompted.</div>
+          <div class="step">Administrators can review submissions, signatures, reminders, and document storage workflows.</div>
+        </div>
+      </section>
+
+      <section id="common-cases">
+        <h2>Common Operational Cases</h2>
+        <div class="grid">
+          <div class="case">
+            <strong>A provider does not show in Scheduling.</strong>
+            Confirm the staff record is active, not archived, and has a provider/staff type appropriate for scheduling.
+          </div>
+          <div class="case">
+            <strong>A client does not show in Scheduling.</strong>
+            Confirm the client is active, not archived, and has the required authorization/setup data.
+          </div>
+          <div class="case">
+            <strong>Billing code cannot be selected.</strong>
+            Confirm the client has an active authorization whose billing code matches the intended service code.
+          </div>
+          <div class="case">
+            <strong>Targets are missing in data collection.</strong>
+            Confirm the targets exist in Configure Data and are assigned to the client in the Configure Data tab.
+          </div>
+          <div class="case">
+            <strong>A module is missing from the sidebar.</strong>
+            Check the user's role and role-access permissions for that screen.
+          </div>
+          <div class="case">
+            <strong>Documents are not categorized correctly.</strong>
+            Review Document Types in Manage Data and ensure the uploader selects the correct type.
+          </div>
+          <div class="case">
+            <strong>Claims are incomplete.</strong>
+            Review client insurance, authorizations, provider setup, locations, diagnosis codes, service codes, and completed session notes.
+          </div>
+          <div class="case">
+            <strong>Need to preserve history.</strong>
+            Prefer archive, restore, inactive, or status changes over deleting records used by historical sessions, notes, or claims.
+          </div>
+        </div>
+      </section>
+
+      <section id="api-reference">
+        <h2>API Quick Reference</h2>
+        <p class="small">This reference is intended for implementation and support teams that need to connect screens to backend resources.</p>
+        <div class="grid">
+          <div class="card"><strong>Authentication</strong> login.php, logout.php, verify.php, me-permissions.php, send-otp.php, verify-otp.php, reset-password-with-otp.php</div>
+          <div class="card"><strong>Clients</strong> get-clients.php, add-clients.php, update-clients.php, client-modules.php, client-domain.php, client-programs.php, client-target.php, client-behaviors.php</div>
+          <div class="card"><strong>Staff</strong> staff.php, upload-staff-document.php</div>
+          <div class="card"><strong>Users</strong> get-users.php, update-users.php</div>
+          <div class="card"><strong>Scheduling</strong> get-sessions.php, add-session.php, add-session-with-invite.php</div>
+          <div class="card"><strong>Clinical Notes</strong> session-notes.php, client-modules.php, behaviors.php, client-behaviors.php</div>
+          <div class="card"><strong>Manage Data</strong> providers.php, provider-service-codes.php, service-codes.php, diagnosis-codes.php, facility-types.php, treatment-types.php, document-types.php, payer-payment-entries.php, locations.php</div>
+          <div class="card"><strong>Billing and Claims</strong> claims-cms1500-preview.php, add-session.php, get-clients.php</div>
+          <div class="card"><strong>Reports</strong> reports.php, reports-old.php</div>
+          <div class="card"><strong>Role Access</strong> rbac-catalog.php, rbac-matrix.php, rbac-save-role.php</div>
+          <div class="card"><strong>Documents and Drive</strong> upload-client-document.php, view-client-document.php, download-client-document.php, drive_oauth_start.php, drive_oauth_callback.php, check-drive-status.php</div>
+          <div class="card"><strong>Launchpad</strong> app/launchpad/backend login, submit form, offer acceptance, staff listing, reminders, Drive, and RBAC endpoints</div>
+        </div>
+      </section>
+
+      <section id="caveats">
+        <h2>Product Caveats</h2>
+        <div class="grid">
+          <div class="case"><strong>Navigation model.</strong> Main Mahaverse modules are controlled by view state and local storage rather than deep-linked routes. Launchpad uses route-based pages.</div>
+          <div class="case"><strong>Billing overview.</strong> The Billing Overview screen includes illustrative metrics and invoice-style UI; Claims is the operational claim-review area.</div>
+          <div class="case"><strong>Sessions placeholder.</strong> The standalone sessions view is not the primary live documentation flow. Scheduling plus Session Notes is the active session workflow.</div>
+          <div class="case"><strong>Parent portal.</strong> Parent/client portal behavior may be limited or placeholder depending on deployment and permissions.</div>
+          <div class="case"><strong>Environment split.</strong> Production and test backends may have different base URLs and database wiring. Confirm the configured environment before debugging missing data.</div>
+          <div class="case"><strong>Historical records.</strong> Prefer archive, inactive status, or restore flows over deleting records that may be referenced by sessions, claims, documents, or reports.</div>
+        </div>
+      </section>
+
+      <p class="footer">
+        Generated product documentation for Mahaverse. Keep this file updated as workflows, permissions, and module behavior evolve.
+      </p>
+    </main>
+  </div>
+</body>
+</html>

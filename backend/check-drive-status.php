@@ -1,11 +1,11 @@
 <?php
 /**
- * Google Drive Integration Status Check for Mahaverse
- *
+ * Google Drive Integration Status Check for Mahaverse (PRODUCTION)
+ * 
  * This endpoint provides comprehensive status of Google Drive integration
- *
- * Access URL (production):
- * - https://www.mahabehavioralhealth.com/mahaverse-backend-logics/check-drive-status.php
+ * 
+ * Access URL:
+ * - https://www.mahabehavioralhealth.com/mahaverse-backend/check-drive-status.php
  */
 
 header('Content-Type: application/json; charset=utf-8');

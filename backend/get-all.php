@@ -2,12 +2,17 @@
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Accept');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
+
 }
+require_once __DIR__ . '/config.php';
+$authUser = requireAuthAny(['clients.read', 'master_data.read'], 'mahaverse');
+
+
 
 try {
     $host = "db5018266079.hosting-data.io";

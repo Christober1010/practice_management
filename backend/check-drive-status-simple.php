@@ -1,6 +1,6 @@
 <?php
 /**
- * Simple Google Drive Status Check (No Dependencies)
+ * Simple Google Drive Status Check (No Dependencies) - TEST ENVIRONMENT
  * This version works even if vendor folder is missing
  */
 
@@ -114,7 +114,7 @@ foreach ($filesToCheck as $name => $path) {
 
 // Check vendor/autoload.php first (but don't load it yet)
 $vendorPaths = [
-    __DIR__ . '/vendor/autoload.php',  // Local vendor folder (e.g. mahaverse-backend-logics)
+    __DIR__ . '/vendor/autoload.php',  // Local vendor folder in mahaverse-backend
     __DIR__ . '/../maha-launchpad/vendor/autoload.php',
     dirname(__DIR__) . '/maha-launchpad/vendor/autoload.php',
 ];

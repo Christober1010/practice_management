@@ -1,6 +1,6 @@
 <?php
 /**
- * Upload staff documents to Google Drive or local storage (Driver License, Background Check, etc.).
+ * Upload staff documents to Google Drive or local storage. TEST ENVIRONMENT.
  * Client documents use upload-client-document.php — separate URL so logs and DevTools match the entity.
  */
 
@@ -13,6 +13,11 @@ if (($_SERVER["REQUEST_METHOD"] ?? "") === "OPTIONS") {
     http_response_code(204);
     exit();
 }
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$authUser = requireAuth('staff.write', 'mahaverse');
+
+
 
 header("Content-Type: application/json; charset=utf-8");
 
@@ -139,6 +144,7 @@ if (!$savedToDrive) {
         http_response_code(500);
         echo json_encode(['success' => false, 'message' => 'Failed to save uploaded file']);
         exit();
+
     }
     $documentPath = 'uploads/staff_' . $staffId . '/documents/' . $storedFilename;
     $documentFilename = $storedFilename;

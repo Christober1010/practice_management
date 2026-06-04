@@ -9,20 +9,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
     exit();
 }
-
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
-$authUser = getAuthenticatedUser();
-if (
-    $authUser
-    && !rbac_user_has_permission_key($authUser['role'], 'clients.create', 'mahaverse')
-    && !rbac_user_has_permission_key($authUser['role'], 'clients.write', 'mahaverse')
-) {
-    http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Permission denied']);
-    exit;
-}
+$authUser = requireAuthAny(['clients.create', 'clients.write'], 'mahaverse');
 
+
+
+// Must match backend/config.php getDBConnection() and add-session.php (test DB)
 $host = "db5018266079.hosting-data.io";
 $dbname = "dbs14484433";
 $dbUser = "dbu3321929";

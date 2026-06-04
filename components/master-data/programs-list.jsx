@@ -88,10 +88,10 @@ export default function ProgramsList() {
         selectedClientObj?.client_id || selectedClientObj?.id || selectedClientObj?.clientId || null;
 
       const url = selectedClientId
-        ? `${baseUrl}/client-modules.php?client_id=${encodeURIComponent(String(selectedClientId))}`
-        : `${baseUrl}/get-all.php`;
+        ? `/client-modules.php?client_id=${encodeURIComponent(String(selectedClientId))}`
+        : `/get-all.php`;
 
-      const res = await fetch(url);
+      const res = await mahaverseFetch(url);
       const data = await res.json();
       if (data && data.success) {
         const payload = data.data ?? data;

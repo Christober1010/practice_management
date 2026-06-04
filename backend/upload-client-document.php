@@ -1,6 +1,6 @@
 <?php
 /**
- * Upload client documents to Google Drive (or local fallback).
+ * Upload client documents to Google Drive (or local fallback). TEST ENVIRONMENT.
  * Staff documents use upload-staff-document.php (same backend folder).
  */
 
@@ -31,11 +31,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
     exit();
 }
-
-// Load environment variables from .env file
-if (file_exists(__DIR__ . '/config.php')) {
-    require_once __DIR__ . '/config.php';
-}
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$authUser = requireAuthAny(['clients.update', 'clients.write'], 'mahaverse');
 
 // Include Google Drive helper
 // First try local copy in backend folder, then try maha-launchpad folder
@@ -95,7 +93,7 @@ if (!file_exists($backendHelperPath) && file_exists($driveHelperPath)) {
 // Load Composer autoloader if available (required for Google Drive API)
 // Try multiple paths to find vendor/autoload.php
 $vendorPaths = [
-    __DIR__ . '/vendor/autoload.php',  // Local vendor folder (e.g. mahaverse-backend-logics)
+    __DIR__ . '/vendor/autoload.php',  // Local vendor folder in mahaverse-backend
     __DIR__ . '/backend/vendor/autoload.php',
     dirname(__DIR__) . '/vendor/autoload.php',
     dirname(__DIR__) . '/backend/vendor/autoload.php',
@@ -111,7 +109,7 @@ foreach ($vendorPaths as $vp) {
     }
 }
 
-// Database configuration
+// Database configuration (PRODUCTION)
 $host = "db5018266079.hosting-data.io";
 $dbname = "dbs14484433";
 $user = "dbu3321929";
@@ -309,6 +307,7 @@ try {
             http_response_code(500);
             echo json_encode(['success' => false, 'message' => 'Failed to save uploaded file']);
             exit();
+
         }
 
         // Store full relative file path so UI can preview/download directly or via proxy.

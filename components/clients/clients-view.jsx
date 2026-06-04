@@ -269,8 +269,7 @@ export default function ClientsView({ userRole }) {
         // Optimistic: update Redux
         dispatch(addClientAction(clientToSend));
         setIsAddModalOpen(false);
-        // Optional: re-sync from backend to ensure server truth
-        fetchClients();
+        dispatch(fetchClients());
         toast.success("Client added successfully!");
       } else {
         toast.error(

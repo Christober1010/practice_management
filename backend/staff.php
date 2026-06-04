@@ -11,7 +11,7 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token,
 header("Access-Control-Max-Age: 86400");
 header("Content-Type: application/json");
 
-// Preflight without touching DB (avoids slow/failed mysqli during OPTIONS)
+// Preflight without touching DB
 if (($_SERVER["REQUEST_METHOD"] ?? "") === "OPTIONS") {
     http_response_code(204);
     exit();
@@ -289,15 +289,7 @@ $method = $_SERVER['REQUEST_METHOD'];
 if ($method !== 'OPTIONS') {
     require_once __DIR__ . '/config.php';
     require_once __DIR__ . '/rbac_helpers.php';
-    $authUser = getAuthenticatedUser();
-    if ($authUser) {
-        $need = $method === 'GET' ? 'staff.read' : 'staff.write';
-        if (!rbac_user_has_permission_key($authUser['role'], $need, 'mahaverse')) {
-            http_response_code(403);
-            echo json_encode(['success' => false, 'message' => 'Permission denied']);
-            exit;
-        }
-    }
+    $authUser = requireAuthReadWrite('staff.read', 'staff.write', 'mahaverse');
 }
 
 switch ($method) {
@@ -698,8 +690,6 @@ function handleUpdateStaff($conn)
     if (($currentStaffRow['dob'] ?? null) !== $dob) $hasChanged = true;
     if ($hasLocation && ($currentStaffRow['location'] ?? null) !== $location) $hasChanged = true;
     if ($currentStaffRow['archived'] != $archived) $hasChanged = true;
-    // Use array_key_exists (not isset): DB NULL makes isset(...) false, so first-time
-    // values (e.g. new SSN) would never mark the row as changed and the UPDATE was skipped.
     if (array_key_exists('job_title', $currentStaffRow) && (($currentStaffRow['job_title'] ?? null) !== $jobTitle)) $hasChanged = true;
     if (array_key_exists('ssn_encrypted', $currentStaffRow) && (($currentStaffRow['ssn_encrypted'] ?? null) !== $ssnEncrypted)) $hasChanged = true;
     if (array_key_exists('address_line_1', $currentStaffRow) && (($currentStaffRow['address_line_1'] ?? null) !== $addrLine1)) $hasChanged = true;

@@ -54,6 +54,18 @@ After changes, grep that **`backend-test`** schedulers (`add-session.php`) and *
 
 Scripts skip obvious **includes** (not direct HTTP targets): `rbac_helpers.php`, `drive_helper.php`, `config.php`, `db.php`. Adjust `EXCLUDE` in `map-php-databases.sh` / `ping-endpoints.sh` if needed.
 
+## Report output (required)
+
+After running the scripts, **always** write a human-readable summary to the repo **`report/`** folder:
+
+- Filename: `report/API-DB-AUDIT-YYYY-MM-DD.md` (use audit date in UTC)
+- Save raw script output alongside when useful:
+  - `report/.db-map-latest.tsv`
+  - `report/.ping-latest.tsv`
+- Include: DB targets (prod vs test), HTTP pass/fail table, prod vs test auth comparison, and concrete next steps (deploy, migrations, failing endpoints).
+
+Use [report/API-DB-AUDIT-2026-06-04.md](../../../report/API-DB-AUDIT-2026-06-04.md) as a template.
+
 ## Additional reference
 
 - For sample output interpretation and CI integration ideas, see [reference.md](reference.md).

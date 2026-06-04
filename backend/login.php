@@ -17,6 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit();
 }
 
+// TEST environment database (must match backend/config.php getDBConnection)
 $host = "db5018266079.hosting-data.io";
 $dbname = "dbs14484433";
 $dbUser = "dbu3321929";
@@ -51,7 +52,7 @@ if ($emailRaw === '' || !filter_var($emailRaw, FILTER_VALIDATE_EMAIL)) {
 }
 
 try {
-    // Case-insensitive match; do not require is_active here so we can return a clear inactive message
+    // Case-insensitive match; inactive users get a dedicated error below
     $stmt = $pdo->prepare("SELECT id, email, password, role, first_name, last_name, is_active FROM users WHERE LOWER(TRIM(email)) = LOWER(?)");
     $stmt->execute([$emailRaw]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -70,21 +71,21 @@ try {
 
     // Verify password - check if it's hashed or plain text
     $passwordValid = false;
-    
+
     // First try password_verify for hashed passwords
     if (password_verify($password, $user['password'])) {
         $passwordValid = true;
-    } 
+    }
     // If that fails, check if it's a plain text password (temporary fallback)
     else if ($password === $user['password']) {
         $passwordValid = true;
-        
+
         // Optional: Update to hashed password for security
         $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
         $updateStmt = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
         $updateStmt->execute([$hashedPassword, $user['id']]);
     }
-    
+
     if (!$passwordValid) {
         http_response_code(401);
         echo json_encode(['error' => 'Invalid email or password']);

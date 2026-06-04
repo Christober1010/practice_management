@@ -17,20 +17,10 @@ import {
 import { Calendar, RotateCw, ChevronDown, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
+import { formatReportDos, reportDosInRange } from "@/lib/report-dos-format";
 
 /** Prefix for multiselect value when row has no client_id (match by normalized name). */
 const CLIENT_NAME_VALUE_PREFIX = "__name__:";
-
-function formatDosTime(dos, aptStart) {
-  if (!dos && !aptStart) return "—";
-  const d = dos ? String(dos).slice(0, 10) : "";
-  let t = "";
-  if (aptStart) {
-    const s = String(aptStart);
-    t = s.length >= 8 ? s.slice(11, 16) || s.slice(0, 5) : s.slice(0, 8);
-  }
-  return [d, t].filter(Boolean).join(" ");
-}
 
 function normalizeNameParts(first, last) {
   return `${first || ""} ${last || ""}`
@@ -66,13 +56,6 @@ function rowMatchesServiceCodes(row, selectedCodes) {
   if (!selectedCodes.length) return true;
   const code = String(row.service_code_with_modifiers ?? "").trim();
   return code !== "" && selectedCodes.includes(code);
-}
-
-function reportDosKey(dos) {
-  if (dos == null || dos === "") return "";
-  const t = Date.parse(String(dos).slice(0, 10));
-  if (Number.isNaN(t)) return "";
-  return String(dos).slice(0, 10);
 }
 
 function parseHours(value) {
@@ -219,7 +202,8 @@ export default function ScheduleTrackerGrid() {
   const [drafts, setDrafts] = useState({});
   const [selectedClientIds, setSelectedClientIds] = useState([]);
   const [selectedServiceCodes, setSelectedServiceCodes] = useState([]);
-  const [filterDos, setFilterDos] = useState("");
+  const [filterDosFrom, setFilterDosFrom] = useState("");
+  const [filterDosTo, setFilterDosTo] = useState("");
 
   const clientOptionsFromRows = useMemo(() => {
     const byValue = new Map();
@@ -283,17 +267,18 @@ export default function ScheduleTrackerGrid() {
   }, [load]);
 
   const filteredRows = useMemo(() => {
-    const dosQ = filterDos.trim();
+    const fromQ = filterDosFrom.trim();
+    const toQ = filterDosTo.trim();
 
     return allRows.filter((r) => {
       if (!rowMatchesClients(r, selectedClientIds)) return false;
       if (!rowMatchesServiceCodes(r, selectedServiceCodes)) return false;
-      if (dosQ) {
-        if (reportDosKey(r.dos) !== dosQ) return false;
+      if (fromQ || toQ) {
+        if (!reportDosInRange(r.dos, fromQ, toQ)) return false;
       }
       return true;
     });
-  }, [allRows, selectedClientIds, selectedServiceCodes, filterDos]);
+  }, [allRows, selectedClientIds, selectedServiceCodes, filterDosFrom, filterDosTo]);
 
   const trackerColumnTotals = useMemo(() => {
     let sumDur = 0;
@@ -312,7 +297,8 @@ export default function ScheduleTrackerGrid() {
   const clearFilters = () => {
     setSelectedClientIds([]);
     setSelectedServiceCodes([]);
-    setFilterDos("");
+    setFilterDosFrom("");
+    setFilterDosTo("");
   };
 
   const setMiscDraft = (id, value) => {
@@ -354,7 +340,8 @@ export default function ScheduleTrackerGrid() {
   const hasActiveFilters =
     selectedClientIds.length > 0 ||
     selectedServiceCodes.length > 0 ||
-    filterDos.trim() !== "";
+    filterDosFrom.trim() !== "" ||
+    filterDosTo.trim() !== "";
 
   return (
     <div className="space-y-4">
@@ -391,14 +378,31 @@ export default function ScheduleTrackerGrid() {
                 emptySearchMessage="No codes found"
               />
             </div>
-            <div className="relative w-full lg:w-48 min-w-[10rem]">
-              <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none z-[1]" />
-              <Input
-                type="date"
-                className={`pl-10 ${inputFilterClass}`}
-                value={filterDos}
-                onChange={(e) => setFilterDos(e.target.value)}
-              />
+            <div className="w-full lg:w-44 min-w-[10rem] space-y-1">
+              <label className="text-xs font-medium text-slate-600">DOS from</label>
+              <div className="relative">
+                <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none z-[1]" />
+                <Input
+                  type="date"
+                  className={`pl-10 ${inputFilterClass}`}
+                  value={filterDosFrom}
+                  onChange={(e) => setFilterDosFrom(e.target.value)}
+                  aria-label="DOS from"
+                />
+              </div>
+            </div>
+            <div className="w-full lg:w-44 min-w-[10rem] space-y-1">
+              <label className="text-xs font-medium text-slate-600">DOS to</label>
+              <div className="relative">
+                <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none z-[1]" />
+                <Input
+                  type="date"
+                  className={`pl-10 ${inputFilterClass}`}
+                  value={filterDosTo}
+                  onChange={(e) => setFilterDosTo(e.target.value)}
+                  aria-label="DOS to"
+                />
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
               {hasActiveFilters && (
@@ -426,8 +430,9 @@ export default function ScheduleTrackerGrid() {
             </div>
           </div>
           <p className="text-xs text-slate-500 mt-3">
-            Client and service code lists come only from the loaded table rows. Filters run in the
-            browser; Refresh data reloads from the server.
+            Client and service code lists come only from the loaded table rows. Use DOS from / to for a
+            date range (either boundary is optional). Filters run in the browser; Refresh data reloads
+            from the server.
             {hasActiveFilters &&
               ` Showing ${filteredRows.length} of ${allRows.length} row(s).`}
           </p>
@@ -523,7 +528,7 @@ export default function ScheduleTrackerGrid() {
                             {r.service_code_with_modifiers || "—"}
                           </TableCell>
                           <TableCell className="whitespace-nowrap text-xs">
-                            {formatDosTime(r.dos, r.apt_start_time)}
+                            {formatReportDos(r.dos, r.apt_start_time)}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
                             {r.duration_render_in_hrs != null && r.duration_render_in_hrs !== ""

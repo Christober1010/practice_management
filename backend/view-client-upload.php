@@ -1,13 +1,13 @@
 <?php
 /**
- * View a locally stored client upload (uploads/...) with CORS-friendly headers.
+ * View a locally stored client upload (uploads/...) with CORS-friendly headers. (backend)
  *
  * Query params:
  * - path: relative path under uploads/, e.g. uploads/client_<id>/documents/<file>
  */
 
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Headers: Content-Type, Authorization");
+header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Accept");
 header("Access-Control-Allow-Methods: GET, OPTIONS");
 header("Access-Control-Expose-Headers: Content-Type, Content-Disposition, Content-Length");
 
@@ -15,6 +15,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$authUser = requireAuth('clients.read', 'mahaverse');
+
+
 
 $rel = $_GET['path'] ?? '';
 if (!$rel || !is_string($rel)) {
@@ -44,6 +49,7 @@ if (!file_exists($abs) || !is_file($abs)) {
     header('Content-Type: application/json');
     echo json_encode(['success' => false, 'message' => 'file not found']);
     exit();
+
 }
 
 $mime = 'application/octet-stream';

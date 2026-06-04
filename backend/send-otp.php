@@ -7,22 +7,12 @@ ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-// ---- CORS ----
-$allowed_origins = [
-  'http://localhost:3000',
-  'http://mahaverse-dev.mahabehavioralhealth.com/', // change to your real domain
-  'https://mahaverse-dev.mahabehavioralhealth.com/', // HTTPS version
-  'http://mahaverse.mahabehavioralhealth.com/'
-];
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if (in_array($origin, $allowed_origins, true)) {
-  header("Access-Control-Allow-Origin: $origin");
-  header("Vary: Origin");
-}
-header("Access-Control-Allow-Methods: POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization");
-header("Access-Control-Max-Age: 86400");
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+// ---- CORS (public endpoint) ----
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Accept');
+header('Access-Control-Max-Age: 86400');
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
   http_response_code(204);
   exit;
 }

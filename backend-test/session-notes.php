@@ -184,7 +184,7 @@ function handleGet($conn) {
     $targetId = $_GET['target_id'] ?? null;
     $sessionDate = $_GET['session_date'] ?? date('Y-m-d');
 
-    $authU = $authUser;
+    $authU = getAuthenticatedUser();
     if ($authU && $clientId && !rbac_user_may_access_client_row($authU, $conn, (string) $clientId)) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Permission denied']);
@@ -662,7 +662,7 @@ function handlePost($conn) {
         return;
     }
 
-    $authU = $authUser;
+    $authU = getAuthenticatedUser();
     if ($authU && !empty($input['client_id']) && !rbac_user_may_access_client_row($authU, $conn, (string) $input['client_id'])) {
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Permission denied']);

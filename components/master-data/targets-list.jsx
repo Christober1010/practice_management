@@ -105,10 +105,10 @@ export default function TargetsList() {
 
       // If a specific client is selected, prefer client-modules.php so we get per-client activities (+ tasks/prompts if backend supports)
       const url = selectedClientId
-        ? `${baseUrl}/client-modules.php?client_id=${encodeURIComponent(String(selectedClientId))}`
-        : `${baseUrl}/get-all.php`;
+        ? `/client-modules.php?client_id=${encodeURIComponent(String(selectedClientId))}`
+        : `/get-all.php`;
 
-      const res = await fetch(url);
+      const res = await mahaverseFetch(url);
       const data = await res.json();
 
       if (data && data.success) {

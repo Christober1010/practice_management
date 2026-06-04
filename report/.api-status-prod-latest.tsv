@@ -1,0 +1,54 @@
+endpoint	options	get_no_token	get_no_class	get_with_token	get_yes_class	preview
+add-clients.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"Missing required field: id"}
+add-session-with-invite.php	200	401	OK_AUTH_REQUIRED	200	OK	[{"session_id":40,"client_id":"4434aa45-76f8-461b-a1b4-1a67058a9329","provider_id":"ST689e74a7b4302","provider_name":"Harini Chandramouli","supervising_provider_id":null,"supervising_provider_name":nu
+add-session.php	200	401	OK_AUTH_REQUIRED	200	OK	[{"session_id":40,"client_id":"4434aa45-76f8-461b-a1b4-1a67058a9329","provider_id":"ST689e74a7b4302","provider_name":"Harini Chandramouli","supervising_provider_id":null,"supervising_provider_name":nu
+behaviors.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"data":{"categories":[],"behaviors":[]}}
+check-drive-status-simple.php	204	200	OK	200	OK	{     "success": true,     "timestamp": "2026-06-04 12:52:51",     "environment": "test",     "server_info": {         "php_version": "8.2.31",         "script_path": "\/homepages\/13\/d1011178552\/ht
+check-drive-status.php	204	200	OK	200	OK	{     "success": true,     "timestamp": "2026-06-04 12:52:55",     "environment": "test",     "environment_vars": {         "GOOGLE_DRIVE_ENABLED": {             "set": true,             "value": "tru
+claims-cms1500-preview.php	200	405	OK_POST_ONLY	405	OK_POST_ONLY	{"success":false,"message":"Method not allowed"}
+client-behaviors.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"client_id is required"}
+client-domain.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"Domain ID is required"}
+client-modules.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"Client ID is required"}
+client-program-detail.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"Program ID is required"}
+client-programs.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"Client ID is required"}
+client-target-detail.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"Target ID is required"}
+client-target.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"Client ID is required"}
+dashboard-stats.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"data":{"activeClients":18,"activeStaff":14,"sessionsToday":0,"pendingSessions":0,"upcomingSessions":0,"totalTargets":5,"activities":[{"type":"client","title":"New client enrolled","de
+diagnosis-codes.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"data":[{"id":"7688cc03-74d3-4721-a64b-1f48ee1bc7cd","diagnosis_code":"F152","diagnosis_description":"Dolores nihil aliqua","archived":0,"created_at":"2026-03-01 11:53:50","updated_at"
+document-types.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"data":[{"id":"93515b4a-2861-11f1-9593-001a4a3501a4","type_name":"Assessment Report","description":"Assessment and evaluation reports","active":1,"archived":0,"created_at":"2026-03-25 
+download-client-document.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"File ID is required"}
+download-client-upload.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"path is required"}
+drive_oauth_callback.php	204	400	OK_NEEDS_PARAMS	400	OK_NEEDS_PARAMS	<!doctype html><html><head><meta charset="utf-8"><title>Google Drive Connect Failed</title></head><body style="font-family:system-ui, sans-serif; padding:24px; max-width: 820px; margin: 0 auto;"><h1>G
+drive_oauth_start.php	204	302	OK_REDIRECT	302	OK_REDIRECT	<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=https://accounts.google.com/o/oauth2/v2/auth?response_type=code&amp;access_type=offline&amp;client_id=1062750
+facility-types.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"data":[{"id":"6a840b02-2861-11f1-9593-001a4a3501a4","pos_code":"01","facility_name":"Pharmacy","description":"A facility or location where drugs and other medically related items and 
+get-all.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"modules":[{"id":"skill-acquisition","client_id":"11082b15-ac5d-4e7f-99f6-0f3bc08ba82b","name":"Skill Acquisition","description":"","status":"Active","archived":false,"client_name":"Te
+get-clients-old.php	200	200	OK	200	OK	{"success":true,"clients":[{"client_id":"11082b15-ac5d-4e7f-99f6-0f3bc08ba82b","client_uuid":"","client_status":"New","wait_list_status":"No","first_name":"Test","middle_name":"","last_name":"Client",
+get-clients.php	204	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"clients":[{"client_id":"11082b15-ac5d-4e7f-99f6-0f3bc08ba82b","client_uuid":"","client_status":"New","wait_list_status":"No","first_name":"Test","middle_name":"","last_name":"Client",
+get-sessions.php	204	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"sessions":[{"session_id":"48","client_id":"4434aa45-76f8-461b-a1b4-1a67058a9329","provider_id":"ST689e74a7b4302","provider_name":"Harini Chandramouli","supervising_provider_id":null,"
+get-users.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"users":[{"id":58,"email":"kittychristoflora@gmail.com","role":"","first_name":"Christober","last_name":"Cecil Edward","is_active":1},{"id":57,"email":"manikandan.nj@gmail.com","role":
+locations.php	204	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"data":[]}
+login.php	200	405	OK_POST_ONLY	405	OK_POST_ONLY	{"error":"Method not allowed"}
+logout.php	204	405	OK_POST_ONLY	405	OK_POST_ONLY	{"success":false,"message":"Method not allowed"}
+me-permissions.php	204	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"role":"admin","scope":"mahaverse","permissions":["nav.dashboard","nav.scheduling","nav.clients","nav.staff","nav.users","nav.master_data","nav.manage_data","nav.reports","nav.launchpa
+payer-payment-entries.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"data":[{"id":7,"report_id":27,"client_id":"196dec13-9487-4880-8950-b7aa24a83e9f","insurance_id":551,"dos":"2026-01-07","service_code":"97155","coinsurance_amount":"61.08","copay_amoun
+programs.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"data":{"modules":[],"domains":[{"id":"domain_1771168876785_h0mnozhyb","module_id":null,"NAME":"Test","description":"Test","STATUS":"Active","archived":"0","created_at":"2026-02-15 10:
+provider-service-codes.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"data":[{"id":"121e5d66-916c-49e7-8aa2-b62be0c1fa83","provider_id":"2823dc1c-3847-453a-a511-39a646c0ec97","service_code_id":5,"unit_duration":"15","unit_type":"Minute(s)","rate":null,"
+providers.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"data":[{"id":"2823dc1c-3847-453a-a511-39a646c0ec97","provider_name":"Blue Cross Community Health Plans","provider_code":"66012","email":"","phone":"","fax":"","address1":"P.O. Box 650
+rbac-catalog.php	204	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"permissions":[{"id":1,"perm_key":"nav.dashboard","label":"Dashboard (menu)","perm_group":"mahaverse_nav","app_scope":"mahaverse","sort_order":10},{"id":2,"perm_key":"nav.scheduling","
+rbac-matrix.php	204	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"scope":"mahaverse","permissions":[{"id":1,"perm_key":"nav.dashboard","label":"Dashboard (menu)","perm_group":"mahaverse_nav","app_scope":"mahaverse","sort_order":10},{"id":2,"perm_key
+rbac-save-role.php	204	405	OK_POST_ONLY	405	OK_POST_ONLY	{"success":false,"message":"Method not allowed"}
+reports.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"data":[{"id":132,"client_id":"196dec13-9487-4880-8950-b7aa24a83e9f","provider_id":"ST177613169660219qte","client_first_name":"Angelo","client_last_name":"Murphy","client_middle_name":
+reset-password-with-otp.php	204	400	OK_NEEDS_PARAMS	400	OK_NEEDS_PARAMS	{"success":false,"message":"Invalid JSON"}
+send-otp.php	204	400	OK_NEEDS_PARAMS	400	OK_NEEDS_PARAMS	{"success":false,"error":"Valid email is required"}
+service-codes.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"data":[{"code_id":5,"code":"97151","code_description":"Behavior Identification Assessment","created_at":"2026-03-01 12:26:45","updated_at":"2026-03-01 12:28:50"},{"code_id":6,"code":"
+session-notes.php	204	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"client_id is required"}
+staff.php	204	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"staff_records":[{"id":"ST1776101508407cvkmd","firstName":"Christober-rbt","lastName":"Cecil Edward","fullName":"Christober-rbt Cecil Edward","staffType":"RBT","certificationNumber":"4
+treatment-types.php	200	401	OK_AUTH_REQUIRED	200	OK	{"success":true,"data":[{"id":"829be0f4-2861-11f1-9593-001a4a3501a4","treatment_name":"Behavioral therapy","description":"Applied Behavior Analysis (ABA) and related behavioral interventions","active"
+update-clients.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"Missing required field: client_id"}
+update-users.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"Missing required field: email"}
+upload-client-document.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"No file uploaded or upload error"}
+upload-staff-document.php	204	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"No file uploaded or upload error"}
+verify-otp.php	204	400	OK_NEEDS_PARAMS	400	OK_NEEDS_PARAMS	{"success":false,"error":"Invalid JSON"}
+verify.php	204	401	OK_AUTH_REQUIRED	200	OK	{"valid":true,"success":true,"user":{"id":9,"username":"christoberedward@gmail.com","role":"admin"}}
+view-client-document.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"File ID is required"}
+view-client-upload.php	200	401	OK_AUTH_REQUIRED	400	OK_NEEDS_PARAMS	{"success":false,"message":"path is required"}

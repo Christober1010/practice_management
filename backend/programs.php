@@ -3,13 +3,18 @@
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With, Accept');
 
 // Handle OPTIONS preflight request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
     exit();
 }
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
+$authUser = requireAuthReadWrite('master_data.read', 'master_data.write', 'mahaverse');
+
+
 
 // Database connection
 $host = "db5018266079.hosting-data.io";
@@ -23,11 +28,11 @@ if ($conn->connect_error) {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Database connection failed']);
     exit();
+
 }
 
 $conn->set_charset('utf8mb4');
 
-/** Ensure Skill Acquisition / Behaviour Reduction rows exist for domain module_id. */
 function ensureCanonicalDomainModule($conn, $moduleId)
 {
     $canonical = [
@@ -538,12 +543,12 @@ function handlePut($conn, $input)
     // Handle domain updates (domainId format from frontend)
     if (isset($input['domainId']) && !isset($input['programId']) && !isset($input['activityId'])) {
         $domainId = $conn->real_escape_string($input['domainId']);
-        $moduleId = $conn->real_escape_string($input['moduleId'] ?? $input['module_id'] ?? '');
         $name = $conn->real_escape_string($input['name'] ?? '');
         $description = $conn->real_escape_string($input['description'] ?? '');
         $status = $conn->real_escape_string($input['status'] ?? 'Active');
         $archived = (int)($input['archived'] ?? 0);
 
+        $moduleId = $conn->real_escape_string($input['moduleId'] ?? $input['module_id'] ?? '');
         if ($moduleId !== '') {
             ensureCanonicalDomainModule($conn, $moduleId);
             $query = "UPDATE master_domains SET module_id='$moduleId', name='$name', description='$description', status='$status', archived=$archived WHERE id='$domainId'";

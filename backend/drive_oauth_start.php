@@ -108,7 +108,7 @@ if (!$authUser && isset($_GET['token']) && $_GET['token'] !== '') {
     $authUser = getAuthenticatedUserFromToken(trim((string)$_GET['token']));
 }
 
-// If no authentication, use a system user for OAuth setup (use with care in production)
+// If no authentication, use a system user for OAuth setup (TEST ENVIRONMENT ONLY)
 if (!$authUser) {
     $authUser = [
         'id' => 0,
@@ -157,7 +157,7 @@ if (!file_exists($backendHelperPath) && file_exists($localHelperPath)) {
 // Load composer autoloader first (required for Google API client)
 // Try multiple paths to find vendor/autoload.php
 $vendorPaths = [
-    __DIR__ . '/vendor/autoload.php',  // Local vendor folder (e.g. mahaverse-backend-logics)
+    __DIR__ . '/vendor/autoload.php',  // Local vendor folder in mahaverse-backend
     __DIR__ . '/../maha-launchpad/vendor/autoload.php',
     __DIR__ . '/../vendor/autoload.php',
 ];
