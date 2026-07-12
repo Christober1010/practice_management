@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import toast from "react-hot-toast";
+import { mahaverseFetch } from "@/lib/mahaverse-api";
 
 interface Module {
   id: string;
@@ -164,7 +165,7 @@ export default function AddModuleModal({
           ],
         };
 
-        const res = await fetch(`${BASE_URL}/client-modules.php`, {
+        const res = await mahaverseFetch("/client-modules.php", {
           method: editingModule ? "PUT" : "POST", // some servers use PUT for update; adapt if required
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
@@ -194,7 +195,7 @@ export default function AddModuleModal({
           ],
         };
 
-        const res = await fetch(`${BASE_URL}/modules.php`, {
+        const res = await mahaverseFetch("/modules.php", {
           method: editingModule ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),

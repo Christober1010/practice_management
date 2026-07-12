@@ -191,8 +191,55 @@ function getDriveOAuthRefreshTokenFromDb(): ?string {
 }
 
 /**
+ * Sanitize a Google Drive folder ID from env (reject URLs, scopes, etc.).
+ */
+function sanitizeDriveFolderId($raw): ?string {
+    $raw = trim((string)$raw);
+    if ($raw === '') {
+        return null;
+    }
+    if (preg_match('#^https?://#i', $raw)) {
+        return null;
+    }
+    if (!preg_match('/^[A-Za-z0-9_-]{10,}$/', $raw)) {
+        return null;
+    }
+    return $raw;
+}
+
+/**
+ * Verify a Drive folder exists and can accept child files/folders.
+ *
+ * @throws Exception when the folder is missing or not writable
+ */
+function assertDriveFolderWritable(Drive $drive, string $folderId, string $label = 'folder'): void {
+    try {
+        $meta = $drive->files->get($folderId, [
+            'supportsAllDrives' => true,
+            'fields' => 'id,name,mimeType,trashed,capabilities/canAddChildren,driveId',
+        ]);
+    } catch (Exception $e) {
+        throw new Exception(
+            "Drive {$label} inaccessible ({$folderId}): " . $e->getMessage()
+        );
+    }
+
+    if ($meta->getTrashed()) {
+        throw new Exception("Drive {$label} is in trash ({$folderId}).");
+    }
+
+    $capabilities = $meta->getCapabilities();
+    if ($capabilities && method_exists($capabilities, 'getCanAddChildren') && $capabilities->getCanAddChildren() === false) {
+        // Warn only — some Shared Drive folders report false but still allow folder create for Editors.
+        error_log(
+            "Drive {$label} reports canAddChildren=false ({$folderId}). Attempting create anyway."
+        );
+    }
+}
+
+/**
  * Get or create a folder in Google Drive
- * 
+ *
  * @param string $folderName Name of the folder
  * @param string|null $parentFolderId Parent folder ID (null for root)
  * @param bool $useSharedDrive Whether to use Shared Drive (if configured)
@@ -203,73 +250,65 @@ function getOrCreateDriveFolder($folderName, $parentFolderId = null, $useSharedD
     if (!$client) {
         return null;
     }
-    
+
+    $folderName = trim((string)$folderName);
+    if ($folderName === '') {
+        error_log('Google Drive folder creation failed: empty folder name');
+        return null;
+    }
+
+    $parentFolderId = sanitizeDriveFolderId($parentFolderId);
+    if (!$parentFolderId) {
+        $parentFolderId = getDriveRootFolderId();
+    }
+
     try {
         $drive = new Drive($client);
 
-        // In practice, many installs use a Shared Drive folder as the root folder but do not set
-        // GOOGLE_DRIVE_SHARED_DRIVE_ID. Using supportsAllDrives is safe for both My Drive and Shared Drives
-        // and prevents "File not found" when the parent is in a Shared Drive.
-        $supportsAllDrives = true;
-        
         // Build query to find existing folder
-        $query = "name = '" . addslashes($folderName) . "' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
+        $escapedName = str_replace("'", "\\'", $folderName);
+        $query = "name = '" . $escapedName . "' and mimeType = 'application/vnd.google-apps.folder' and trashed = false";
         if ($parentFolderId) {
             $query .= " and '" . addslashes($parentFolderId) . "' in parents";
-        } else {
-            // Search in root or shared drive
-            $rootFolderId = getenv('GOOGLE_DRIVE_ROOT_FOLDER_ID');
-            if ($rootFolderId) {
-                $query .= " and '" . addslashes($rootFolderId) . "' in parents";
-            }
         }
-        
+
         $optParams = [
             'q' => $query,
             'fields' => 'files(id, name)',
             'spaces' => 'drive',
-            'pageSize' => 1
+            'pageSize' => 1,
+            'supportsAllDrives' => true,
+            'includeItemsFromAllDrives' => true,
         ];
-        
-        // Always allow searching across drives (safe for My Drive too)
-        if ($supportsAllDrives) {
-            $optParams['supportsAllDrives'] = true;
-            $optParams['includeItemsFromAllDrives'] = true;
-            $optParams['corpora'] = 'allDrives';
-        }
-        
+
         $results = $drive->files->listFiles($optParams);
-        
-        // If folder exists, return its ID
+
         if (count($results->getFiles()) > 0) {
             return $results->getFiles()[0]->getId();
         }
-        
-        // Create new folder
+
         $folderMetadata = new DriveFile([
             'name' => $folderName,
-            'mimeType' => 'application/vnd.google-apps.folder'
+            'mimeType' => 'application/vnd.google-apps.folder',
         ]);
-        
+
         if ($parentFolderId) {
             $folderMetadata->setParents([$parentFolderId]);
-        } else {
-            $rootFolderId = getenv('GOOGLE_DRIVE_ROOT_FOLDER_ID');
-            if ($rootFolderId) {
-                $folderMetadata->setParents([$rootFolderId]);
-            }
         }
-        
-        $createParams = [];
-        if ($supportsAllDrives) {
-            $createParams['supportsAllDrives'] = true;
+
+        $folder = $drive->files->create($folderMetadata, [
+            'supportsAllDrives' => true,
+            'fields' => 'id,name,parents',
+        ]);
+
+        $createdId = $folder->getId();
+        if (!$createdId) {
+            throw new Exception('Drive API returned no folder id after create');
         }
-        
-        $folder = $drive->files->create($folderMetadata, $createParams);
-        return $folder->getId();
-        
+
+        return $createdId;
     } catch (Exception $e) {
-        $parentHint = $parentFolderId ? "parent={$parentFolderId}" : "parent=(env root)";
+        $parentHint = $parentFolderId ? "parent={$parentFolderId}" : 'parent=(none)';
         error_log("Google Drive folder creation failed ({$parentHint}, name={$folderName}): " . $e->getMessage());
         return null;
     }
@@ -308,7 +347,7 @@ function uploadFileToDrive($filePath, $fileName, $mimeType, $parentFolderId = nu
         if ($parentFolderId) {
             $fileMetadata->setParents([$parentFolderId]);
         } else {
-            $rootFolderId = getenv('GOOGLE_DRIVE_ROOT_FOLDER_ID');
+            $rootFolderId = getDriveRootFolderId();
             if ($rootFolderId) {
                 $fileMetadata->setParents([$rootFolderId]);
             }
@@ -323,9 +362,8 @@ function uploadFileToDrive($filePath, $fileName, $mimeType, $parentFolderId = nu
             'fields' => 'id, name, webViewLink, webContentLink, size'
         ];
         
-        if ($useSharedDrive) {
-            $createParams['supportsAllDrives'] = true;
-        }
+        // Always allow Shared Drive parents (safe for My Drive too; matches getOrCreateDriveFolder).
+        $createParams['supportsAllDrives'] = true;
         
         $file = $drive->files->create($fileMetadata, $createParams);
         
@@ -371,7 +409,7 @@ function uploadFileContentToDrive($fileContent, $fileName, $mimeType, $parentFol
         if ($parentFolderId) {
             $fileMetadata->setParents([$parentFolderId]);
         } else {
-            $rootFolderId = getenv('GOOGLE_DRIVE_ROOT_FOLDER_ID');
+            $rootFolderId = getDriveRootFolderId();
             if ($rootFolderId) {
                 $fileMetadata->setParents([$rootFolderId]);
             }
@@ -385,9 +423,8 @@ function uploadFileContentToDrive($fileContent, $fileName, $mimeType, $parentFol
             'fields' => 'id, name, webViewLink, webContentLink, size'
         ];
         
-        if ($useSharedDrive) {
-            $createParams['supportsAllDrives'] = true;
-        }
+        // Always allow Shared Drive parents (safe for My Drive too; matches getOrCreateDriveFolder).
+        $createParams['supportsAllDrives'] = true;
         
         $file = $drive->files->create($fileMetadata, $createParams);
         
@@ -498,7 +535,7 @@ function isGoogleDriveEnabled() {
  * @return string|null
  */
 function getDriveRootFolderId() {
-    return getenv('GOOGLE_DRIVE_ROOT_FOLDER_ID') ?: null;
+    return sanitizeDriveFolderId(getenv('GOOGLE_DRIVE_ROOT_FOLDER_ID'));
 }
 
 /**

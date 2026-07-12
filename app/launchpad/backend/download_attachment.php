@@ -1,24 +1,6 @@
 <?php
-// Re-apply CORS headers (config.php may remove in some environments)
-$allowedOrigins = [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'https://localhost:3000',
-    'https://localhost:3001',
-    'http://launchpad.dev.mahabehavioralhealth.com',
-    'https://launchpad.dev.mahabehavioralhealth.com',
-    'https://launchpad.mahabehavioralhealth.com',
-    'https://maha-launchpad.mahabehavioralhealth.com',
-];
-$origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
-$requestHost = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
-$isSameDomain = !empty($origin) && parse_url($origin, PHP_URL_HOST) === $requestHost;
-if (in_array($origin, $allowedOrigins) || $isSameDomain) {
-    header("Access-Control-Allow-Origin: $origin");
-}
-header('Access-Control-Allow-Credentials: true');
-header('Access-Control-Allow-Methods: GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, Accept, Origin, Authorization, X-Auth-Token, X-CSRF-Token');
+require_once __DIR__ . '/cors_helpers.php';
+launchpad_apply_cors_headers('GET, OPTIONS');
 // Start output buffering to prevent any accidental output
 ob_start();
 

@@ -98,10 +98,9 @@ export default function ProviderServiceCodeSetup() {
 
   const handleAddMapping = async (mapping) => {
     try {
-      const url = `${baseUrl}/provider-service-codes.php`;
       const method = editingMapping ? "PUT" : "POST";
 
-      const res = await fetch(url, {
+      const res = await mahaverseFetch("/provider-service-codes.php", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(mapping),

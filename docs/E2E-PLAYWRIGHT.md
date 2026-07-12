@@ -78,7 +78,7 @@ Auth state: `e2e/.auth/user-test.json`, `e2e/.auth/user-prod.json`.
 |---------|---------|
 | `setup-test` / `setup-prod` | Login → save storage state |
 | `test-chromium` / `prod-chromium` | Browser UI specs |
-| `api-test` / `api-prod` | Serial API flow (`api-endpoints.spec.ts`) |
+| `api-test` / `api-prod` | Schema probes then serial API (`00-schema-readiness.spec.ts`, `api-endpoints.spec.ts`) |
 
 ---
 
@@ -90,13 +90,20 @@ Auth state: `e2e/.auth/user-test.json`, `e2e/.auth/user-prod.json`.
 | `e2e/login-guard.spec.ts` | Unauthenticated login screen |
 | `e2e/dashboard.spec.ts` | Admin dashboard |
 | `e2e/clients.spec.ts` | List, add client, edit modal |
-| `e2e/scheduling.spec.ts` | Calendar, sessions API, add-session modal |
+| `e2e/scheduling.spec.ts` | Calendar smoke, add-session modal open/cancel |
+| `e2e/scheduling-flows.spec.ts` | **Full flows:** create session UI, notes, behaviors, SOAP save |
+
+```bash
+pnpm run dev:test   # terminal 1
+pnpm run test:e2e:scheduling   # terminal 2 — needs admin E2E_EMAIL in e2e/.env
+```
 | `e2e/staff.spec.ts` / `e2e/users.spec.ts` | Lists + add modals |
 | `e2e/master-data.spec.ts` / `e2e/manage-data.spec.ts` | Configure / manage data |
 | `e2e/reports.spec.ts` | Reports list |
 | `e2e/users-full.spec.ts` | Create user (full flow) |
 | `e2e/master-data-crud.spec.ts` | Add behavior category |
-| `e2e/data-collection-ui.spec.ts` | Session notes from scheduling |
+| `e2e/data-collection-ui.spec.ts` | (skipped — covered by `scheduling-flows`) |
+| `e2e/00-schema-readiness.spec.ts` | Migration/schema probes (fail on `Unknown column`) |
 | `e2e/api-endpoints.spec.ts` | All major PHP endpoints (serial) |
 
 Helpers: `e2e/helpers/` (`navigation`, `api`, `api-client`, `client-form`, etc.).
@@ -120,5 +127,15 @@ API suite **creates** data on the target DB. Only run prod when you accept write
 ## Prod notes
 
 - Same write-heavy flows as test on the **live** database.
-- If prod DB is behind test migrations (e.g. `sessions.recurring_id`), add-session and session-notes API tests **skip** until migrations are applied — see [MIGRATIONS-CHECKLIST.md](MIGRATIONS-CHECKLIST.md).
+- If prod MySQL is behind test migrations (e.g. missing `sessions.recurring_id`), **`00-schema-readiness`** and **`api-endpoints`** **fail** with a schema-drift message — they do not skip. Apply SQL from [MIGRATIONS-CHECKLIST.md](MIGRATIONS-CHECKLIST.md).
 - Read-only prod API smoke (no Playwright): `pnpm run test` → `scripts/generate-api-audit-report.sh prod`.
+
+### Why UI tests did not catch `recurring_id` on prod
+
+| Gap | What happened |
+|-----|----------------|
+| **UI scheduling spec** | Only opens the Add Session modal and cancels — it never submits `POST add-session.php`. |
+| **API suite (before fix)** | On `Unknown column`, tests called `test.skip()`, so prod runs looked **passed with skips** while session create was broken in the real app. |
+| **Test vs prod DB** | Test DB already had `recurring_id`; only prod was missing it, so `test:e2e:test` stayed green. |
+
+Run `pnpm run test:e2e:api:prod` after every prod migration batch.

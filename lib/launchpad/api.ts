@@ -1,4 +1,4 @@
-import { FormData as StaffFormData, ApiResponse } from './types';
+import { FormData as StaffFormData, ApiResponse, ClientIntakeData } from './types';
 
 function getLaunchpadBasePath(): string {
   const raw = process.env.NEXT_PUBLIC_LAUNCHPAD_BASE_PATH || '/launchpad';
@@ -428,6 +428,31 @@ export async function submitForm(formData: StaffFormData, csrfToken: string): Pr
   }
 }
 
+export async function submitClientIntake(intakeData: ClientIntakeData): Promise<ApiResponse & { intake_id?: number }> {
+  try {
+    const authToken = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const response = await fetch(`${API_BASE_URL}/backend/submit_client_intake.php`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        ...(authToken ? { 'X-Auth-Token': authToken } : {}),
+      },
+      credentials: 'include',
+      body: JSON.stringify(intakeData),
+    });
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    return {
+      success: false,
+      title: 'Submission Failed',
+      message: 'There was a problem submitting the client intake form. Please try again.',
+    };
+  }
+}
+
 export interface StaffCertification {
   cert_type: string;
   cert_number: string | null;
@@ -608,6 +633,15 @@ export interface OfferAcceptance {
   accepted_at: string; // timestamp
 }
 
+export interface OfferPosition {
+  position_id: number;
+  position_code: string;
+  position_name: string;
+  offer_letter_template: string;
+  job_description_template: string;
+  is_active: number;
+}
+
 export interface OfferInitiation {
   initiation_id: number;
   staff_id: number;
@@ -615,8 +649,29 @@ export interface OfferInitiation {
   employee_name: string;
   job_title: string;
   pay_rate: string;
+  position_code?: string | null;
+  offer_letter_body?: string | null;
   initiated_at: string;
   updated_at: string;
+}
+
+export async function getOfferPositions(): Promise<{ success: boolean; positions?: OfferPosition[]; message?: string }> {
+  try {
+    const authToken = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+    const response = await fetch(`${API_BASE_URL}/backend/offer_positions_get.php`, {
+      method: 'GET',
+      headers: {
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        ...(authToken ? { 'X-Auth-Token': authToken } : {}),
+      },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (response.ok && data.success) return { success: true, positions: data.positions ?? [] };
+    return { success: false, message: data.message || 'Failed to load positions' };
+  } catch {
+    return { success: false, message: 'Network error. Please try again.' };
+  }
 }
 
 export async function getMyOfferAcceptance(opts?: { staff_id?: number }): Promise<{ success: boolean; accepted?: boolean; offer?: OfferAcceptance | null; message?: string }> {
@@ -646,6 +701,9 @@ export async function getMyOfferAcceptance(opts?: { staff_id?: number }): Promis
 export async function acceptMyOffer(payload: {
   signature_data_url: string;
   accepted_date: string;
+  jd_read_ack?: boolean;
+  hipaa_ack?: boolean;
+  abuse_ack?: boolean;
 }): Promise<{ success: boolean; message?: string; signature_attachment_id?: number; accepted_date?: string }> {
   try {
     const authToken = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
@@ -696,6 +754,8 @@ export async function initiateOffer(payload: {
   last_name?: string;
   job_title: string;
   pay_rate: string;
+  position_code?: string;
+  offer_letter_body?: string;
   username?: string;
   email?: string;
   send_email?: boolean;

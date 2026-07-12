@@ -307,6 +307,7 @@ export default function StaffView({ userRole }) {
       zipcode: member.zipcode ?? "",
       country: member.country ?? "",
       location: member.location ?? "",
+      taxonomyCode: member.taxonomy_code ?? member.taxonomyCode ?? "",
       email: member.email || "",
       phone: member.phone || "",
       dateOfJoining: member.dateOfJoining?.slice(0, 10) || "",
@@ -925,6 +926,16 @@ export default function StaffView({ userRole }) {
                                               <p className="text-slate-500 text-xs mb-0.5">Major</p>
                                               <p className="font-medium">{member.major || "N/A"}</p>
                                             </div>
+                                          </div>
+                                        </div>
+                                      )}
+                                      {(member.taxonomy_code || member.taxonomyCode) && (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                          <div>
+                                            <p className="text-slate-500 mb-1">Taxonomy Code</p>
+                                            <p className="font-medium">
+                                              {member.taxonomy_code || member.taxonomyCode}
+                                            </p>
                                           </div>
                                         </div>
                                       )}

@@ -1,4 +1,5 @@
 import { expect, type APIRequestContext } from "@playwright/test";
+import { assertNoSchemaDrift, getApiErrorText } from "./schema-errors";
 
 function resolveApiBase(): string {
   const base =
@@ -73,12 +74,13 @@ export class MahaverseApiClient {
           : method === "PUT"
             ? await this.put(path, body)
             : await this.delete(path, body);
-    expect(res.ok(), `${method} ${path} → ${res.status()}`).toBeTruthy();
     const data = await this.json(res);
+    assertNoSchemaDrift(data, path, res.status());
+    expect(res.ok(), `${method} ${path} → ${res.status()} ${getApiErrorText(data)}`).toBeTruthy();
     if (Object.prototype.hasOwnProperty.call(data, "success")) {
-      expect(data.success, `${path} success`).toBeTruthy();
+      expect(data.success, `${path} success: ${getApiErrorText(data)}`).toBeTruthy();
     } else if (data.error) {
-      expect(String(data.error), `${path} error`).toBe("");
+      expect(getApiErrorText(data), `${path} error`).toBe("");
     }
     return { res, data };
   }

@@ -409,21 +409,14 @@ function handleAddStaff($conn)
     $highestDegree = $data['highest_degree'] ?? $data['highestDegree'] ?? null;
     $yearAwarded = $data['year_awarded'] ?? $data['yearAwarded'] ?? null;
     $major = $data['major'] ?? null;
+    $taxonomyCode = $data['taxonomy_code'] ?? $data['taxonomyCode'] ?? null;
+    $taxonomyCode = $taxonomyCode !== null && trim((string)$taxonomyCode) !== '' ? trim((string)$taxonomyCode) : null;
     $dateOfJoining = $data['dateOfJoining'] ?? null;
     $dateOfLeaving = $data['dateOfLeaving'] ?? null;
     $status = $data['status'] ?? 'Active';
     $dob = $data['dob'] ?? null;
     $location = $data['location'] ?? null;
     $archived = $data['archived'] ?? false;
-
-    // Enforce termination rules server-side (UI can be bypassed).
-    if ($status === 'Terminated') {
-        if ($dateOfLeaving === null || trim((string) $dateOfLeaving) === '') {
-            http_response_code(400);
-            echo json_encode(["success" => false, "message" => "Date of Leaving is required when Staff Status is Terminated."]);
-            return;
-        }
-    }
 
     // Enforce termination rules server-side (UI can be bypassed).
     if ($status === 'Terminated') {
@@ -447,6 +440,7 @@ function handleAddStaff($conn)
     $hasEmergency = $conn->query("SHOW COLUMNS FROM staff LIKE 'emergency_contact_name'")->num_rows > 0;
     $hasEducation = $conn->query("SHOW COLUMNS FROM staff LIKE 'highest_degree'")->num_rows > 0;
     $hasLocation = $conn->query("SHOW COLUMNS FROM staff LIKE 'location'")->num_rows > 0;
+    $hasTaxonomy = $conn->query("SHOW COLUMNS FROM staff LIKE 'taxonomy_code'")->num_rows > 0;
 
     $cols = "id, firstName, lastName, fullName, staffType, npiNumber, address, email, phone, dateOfJoining, dateOfLeaving, status, dob";
     $placeholders = "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?";
@@ -484,6 +478,12 @@ function handleAddStaff($conn)
         $placeholders .= ", ?, ?, ?";
         $types .= "sss";
         $params[] = $highestDegree; $params[] = $yearAwarded; $params[] = $major;
+    }
+    if ($hasTaxonomy) {
+        $cols .= ", taxonomy_code";
+        $placeholders .= ", ?";
+        $types .= "s";
+        $params[] = $taxonomyCode;
     }
 
     $sql = "INSERT IGNORE INTO staff ($cols) VALUES ($placeholders)";
@@ -636,6 +636,8 @@ function handleUpdateStaff($conn)
     $highestDegree = $data['highest_degree'] ?? $data['highestDegree'] ?? null;
     $yearAwarded = $data['year_awarded'] ?? $data['yearAwarded'] ?? null;
     $major = $data['major'] ?? null;
+    $taxonomyCode = $data['taxonomy_code'] ?? $data['taxonomyCode'] ?? null;
+    $taxonomyCode = $taxonomyCode !== null && trim((string)$taxonomyCode) !== '' ? trim((string)$taxonomyCode) : null;
     $dateOfJoining = $data['dateOfJoining'] ?? null;
     $dateOfLeaving = $data['dateOfLeaving'] ?? null;
     $status = $data['status'] ?? 'Active';
@@ -695,6 +697,7 @@ function handleUpdateStaff($conn)
     if (array_key_exists('address_line_1', $currentStaffRow) && (($currentStaffRow['address_line_1'] ?? null) !== $addrLine1)) $hasChanged = true;
     if (array_key_exists('emergency_contact_name', $currentStaffRow) && (($currentStaffRow['emergency_contact_name'] ?? null) !== $emergencyName)) $hasChanged = true;
     if (array_key_exists('highest_degree', $currentStaffRow) && (($currentStaffRow['highest_degree'] ?? null) !== $highestDegree || ($currentStaffRow['year_awarded'] ?? null) !== $yearAwarded || ($currentStaffRow['major'] ?? null) !== $major)) $hasChanged = true;
+    if (array_key_exists('taxonomy_code', $currentStaffRow) && (($currentStaffRow['taxonomy_code'] ?? null) !== $taxonomyCode)) $hasChanged = true;
 
     // Compare arrays/objects
     if ($oldAvailability !== $newAvailability) $hasChanged = true;
@@ -769,6 +772,7 @@ function handleUpdateStaff($conn)
     $hasAddrStruct = $conn->query("SHOW COLUMNS FROM staff LIKE 'address_line_1'")->num_rows > 0;
     $hasEmergency = $conn->query("SHOW COLUMNS FROM staff LIKE 'emergency_contact_name'")->num_rows > 0;
     $hasEducation = $conn->query("SHOW COLUMNS FROM staff LIKE 'highest_degree'")->num_rows > 0;
+    $hasTaxonomy = $conn->query("SHOW COLUMNS FROM staff LIKE 'taxonomy_code'")->num_rows > 0;
 
     $set = "firstName=?, lastName=?, fullName=?, staffType=?, npiNumber=?, address=?, email=?, phone=?, dateOfJoining=?, dateOfLeaving=?, status=?, dob=?";
     $types = "ssssssssssss";
@@ -798,6 +802,11 @@ function handleUpdateStaff($conn)
         $set .= ", highest_degree=?, year_awarded=?, major=?";
         $types .= "sss";
         $params[] = $highestDegree; $params[] = $yearAwarded; $params[] = $major;
+    }
+    if ($hasTaxonomy) {
+        $set .= ", taxonomy_code=?";
+        $types .= "s";
+        $params[] = $taxonomyCode;
     }
     $params[] = $id;
     $types .= "s";

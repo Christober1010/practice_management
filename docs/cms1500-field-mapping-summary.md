@@ -57,7 +57,7 @@ This document summarizes:
   Validation reference: `master_diagnosis`
 
 - **Box 23 (Prior Authorization Number)**  
-  Source candidates: `sessions.auth_code` and/or `client_auth.authorization_number`
+  Source (in order): `client_auth.authorization_number` (via session `auth_id` or billing-code match), then `client_insurance.authorization_number`, then auth number parsed from `sessions.auth_code` label (`{billing_codes} - {Auth#}-{dates}`)
 
 - **Box 24A (Date(s) of Service)**  
   Source: `sessions.start_utc`, `sessions.end_utc`
@@ -109,7 +109,7 @@ The following are not fully modeled yet or are inferred:
 - **Box 22 (Resubmission Code / Original Ref):** not modeled
 - **Box 24D (Procedure + Modifiers):** inferred from `sessions.auth_code`, `client_auth.billing_codes`, and/or `reports.service_code_with_modifiers`
 - **Box 24E (Diagnosis Pointer per service line):** not stored line-by-line; must be computed
-- **Box 24F (Charge):** not directly stored on sessions; derived from rate tables
+- **Box 24F (Charge):** `sessions.line_charge` (stored at session create/update from `master_provider_service_code`); fallback lookup at claim build time
 - **Box 24G (Units):** derived from hours + unit rules, not stored as claim-ready units
 - **Box 24C / 24H / 24I:** mostly default/derived formatting unless explicit fields are added
 - **Box 27 (Accept Assignment):** available through `client_insurance.do_not_accept_assignment_box27` logic, needs normalization

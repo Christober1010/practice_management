@@ -13,6 +13,8 @@ interface SignaturePadProps {
   height?: number;
   backgroundColor?: string;
   penColor?: string;
+  /** When true, calls onSave after each completed stroke (no separate Save click required). */
+  saveOnStrokeEnd?: boolean;
 }
 
 export default function SignaturePad({
@@ -23,18 +25,28 @@ export default function SignaturePad({
   height = 200,
   backgroundColor = "#ffffff",
   penColor = "#000000",
+  saveOnStrokeEnd = false,
 }: SignaturePadProps) {
   const sigPadRef = useRef<SignatureCanvas>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [isEmpty, setIsEmpty] = useState(true);
   const [canvasWidth, setCanvasWidth] = useState<number>(width);
+  const latestSignatureRef = useRef<string | null>(existingSignature);
 
   useEffect(() => {
-    if (existingSignature && sigPadRef.current) {
-      sigPadRef.current.fromDataURL(existingSignature);
-      setIsEmpty(false);
-    }
+    latestSignatureRef.current = existingSignature || null;
   }, [existingSignature]);
+
+  useEffect(() => {
+    const pad = sigPadRef.current;
+    if (!pad) return;
+
+    const src = latestSignatureRef.current;
+    if (!src) return;
+
+    pad.fromDataURL(src, { width: canvasWidth, height });
+    setIsEmpty(false);
+  }, [existingSignature, canvasWidth, height]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -42,6 +54,11 @@ export default function SignaturePad({
     if (!el) return;
 
     const compute = () => {
+      const pad = sigPadRef.current;
+      if (pad && !pad.isEmpty()) {
+        latestSignatureRef.current = pad.toDataURL("image/png");
+      }
+
       const w = el.clientWidth || width;
       // Keep a reasonable minimum so controls/layout don't collapse too much.
       const next = Math.max(280, Math.min(width, w));
@@ -64,6 +81,7 @@ export default function SignaturePad({
   const handleClear = () => {
     if (sigPadRef.current) {
       sigPadRef.current.clear();
+      latestSignatureRef.current = null;
       setIsEmpty(true);
       if (onClear) onClear();
     }
@@ -72,6 +90,7 @@ export default function SignaturePad({
   const handleSave = () => {
     if (sigPadRef.current && !sigPadRef.current.isEmpty()) {
       const dataURL = sigPadRef.current.toDataURL("image/png");
+      latestSignatureRef.current = dataURL;
       setIsEmpty(false);
       if (onSave) onSave(dataURL);
     }
@@ -83,7 +102,12 @@ export default function SignaturePad({
 
   const handleEnd = () => {
     if (sigPadRef.current && !sigPadRef.current.isEmpty()) {
+      const dataURL = sigPadRef.current.toDataURL("image/png");
+      latestSignatureRef.current = dataURL;
       setIsEmpty(false);
+      if (saveOnStrokeEnd && onSave) {
+        onSave(dataURL);
+      }
     } else {
       setIsEmpty(true);
     }

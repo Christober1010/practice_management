@@ -86,7 +86,7 @@ if ($ins->execute()) {
     <body>
         <div class='container'>
             <div class='header'>
-                <img src='https://maha-launchpad.mahabehavioralhealth.com/favicon.ico' alt='Maha Launchpad Logo' class='logo' />
+                <img src='https://www.mahabehavioralhealth.com/images/mahalogo_v1_small.jpg' alt='Maha Launchpad Logo' class='logo' />
                 <h1 style='margin: 0 0 10px 0;'>Maha Launchpad</h1>
                 <p style='margin: 0;'>Password Reset Request</p>                                                      
             </div>

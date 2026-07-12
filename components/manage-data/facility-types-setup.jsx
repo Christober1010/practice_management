@@ -118,10 +118,9 @@ export default function FacilityTypesSetup() {
 
   const handleAddFacilityType = async (facilityType) => {
     try {
-      const url = `${baseUrl}/facility-types.php`;
       const method = editingFacilityType ? "PUT" : "POST";
 
-      const res = await fetch(url, {
+      const res = await mahaverseFetch("/facility-types.php", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(facilityType),

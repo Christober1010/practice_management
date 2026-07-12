@@ -5,30 +5,11 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 ob_start();
 
+require_once __DIR__ . '/cors_helpers.php';
+
 // Helper function to set CORS headers (defined early so shutdown function can use it)
 function setCorsHeadersForSubmit() {
-    $allowedOrigins = [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'https://localhost:3000',
-        'https://localhost:3001',
-        'http://launchpad.dev.mahabehavioralhealth.com',
-        'https://launchpad.dev.mahabehavioralhealth.com',
-        'https://launchpad.mahabehavioralhealth.com',
-        'https://maha-launchpad.mahabehavioralhealth.com',
-    ];
-    
-    $origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
-    $requestHost = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
-    $isSameDomain = !empty($origin) && parse_url($origin, PHP_URL_HOST) === $requestHost;
-    
-    if (in_array($origin, $allowedOrigins) || $isSameDomain) {
-        header("Access-Control-Allow-Origin: $origin", true);
-    }
-    header('Access-Control-Allow-Credentials: true', true);
-    header('Access-Control-Allow-Methods: GET, POST, OPTIONS', true);
-    header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, Accept, Origin, Authorization, X-Auth-Token, X-CSRF-Token', true);
-    header('Access-Control-Max-Age: 86400', true);
+    launchpad_apply_cors_headers('GET, POST, OPTIONS');
 }
 
 function getSsnEncryptionKey(): ?string {

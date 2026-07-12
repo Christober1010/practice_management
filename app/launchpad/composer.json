@@ -1,0 +1,11 @@
+{
+  "name": "maha/launchpad",
+  "description": "Maha Launchpad backend dependencies",
+  "require": {
+    "php": ">=8.0",
+    "dompdf/dompdf": "^3.0"
+  },
+  "config": {
+    "sort-packages": true
+  }
+}

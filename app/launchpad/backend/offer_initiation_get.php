@@ -31,6 +31,12 @@ $conn->query("
       INDEX idx_offer_initiated_by_user_id (initiated_by_user_id)
     )
 ");
+// Add new columns if missing – compatible with MySQL 5.7+ (no IF NOT EXISTS).
+$existingCols = [];
+$colRes = $conn->query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'StaffOfferInitiations'");
+if ($colRes) { while ($r = $colRes->fetch_row()) $existingCols[] = $r[0]; }
+if (!in_array('position_code', $existingCols))    $conn->query("ALTER TABLE StaffOfferInitiations ADD COLUMN position_code VARCHAR(50) NULL AFTER pay_rate");
+if (!in_array('offer_letter_body', $existingCols)) $conn->query("ALTER TABLE StaffOfferInitiations ADD COLUMN offer_letter_body TEXT NULL AFTER position_code");
 
 try {
     $currentUserId = isset($authUser['id']) ? (int)$authUser['id'] : 0;
@@ -75,7 +81,8 @@ try {
     }
 
     $stmt = $conn->prepare("
-        SELECT initiation_id, staff_id, initiated_by_user_id, employee_name, job_title, pay_rate, initiated_at, updated_at
+        SELECT initiation_id, staff_id, initiated_by_user_id, employee_name, job_title, pay_rate,
+               position_code, offer_letter_body, initiated_at, updated_at
         FROM StaffOfferInitiations
         WHERE staff_id = ?
         LIMIT 1

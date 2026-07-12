@@ -98,3 +98,70 @@ export interface ApiResponse {
   token?: string;
 }
 
+export interface MedicationEntry {
+  name: string;
+  dosageAdminTime: string;
+  startDate: string;
+  indication: string;
+}
+
+export interface ClientPreferenceCategories {
+  edible: string;
+  tangible: string;
+  social: string;
+  activity: string;
+}
+
+export interface ChildConditions {
+  allergies: boolean;
+  vision: boolean;
+  hearing: boolean;
+  sleep: boolean;
+  feeding: boolean;
+  sensory: boolean;
+  educational: boolean;
+  other: boolean;
+}
+
+export interface ClientIntakeData {
+  childLegalName: string;
+  childDob: string;
+  completedBy: string;
+  childHomeAddress: string;
+  homePhone: string;
+  cellPhone: string;
+  physicianNameLocation: string;
+  neurologistNameLocation: string;
+  familyComposition: string;
+  therapyGoals: string;
+  preferredSchedule: string;
+  preferences: ClientPreferenceCategories;
+  diagnosis: string;
+  medicalConditions: string;
+  specialDiet: string;
+  medications: MedicationEntry[];
+  conditions: ChildConditions;
+  conditionDetails: string;
+  schoolName: string;
+  grade: string;
+  teachers: string;
+  classroomType: string;
+  schoolAddress: string;
+  schoolHours: string;
+  transportation: string;
+  supportiveTherapies: string;
+  previousAbaTherapy: string;
+  consentInformedTreatmentAccepted: boolean;
+  consentReleaseInformationAccepted: boolean;
+  consentAssignmentOfBenefitsAccepted: boolean;
+  consentAdditionalFeesAccepted: boolean;
+  consentTreatmentAuthorizationAccepted: boolean;
+  caregiverGuidelinesAccepted: boolean;
+  parentGuardianSignature: string;
+  parentGuardianSignatureDate: string;
+  providerSignature: string;
+  providerSignatureDate: string;
+  /** Base64 data URL PDF of the completed form (generated client-side before submit). */
+  completedFormPdf?: string;
+}
+

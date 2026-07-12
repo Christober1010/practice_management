@@ -7,12 +7,12 @@ RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
 # Block direct HTTP access to includes (not API entrypoints).
 <IfModule mod_authz_core.c>
-  <FilesMatch "^(config|db|rbac_helpers|behavior_helpers|client_auth_units_helpers|drive_helper)\.php$">
+  <FilesMatch "^(config|db|rbac_helpers|behavior_helpers|client_auth_units_helpers|drive_helper|claims_billing_lib|session_rate_lib|availity_config_helper|availity_sftp_helper|availity_edi837_builder)\.php$">
     Require all denied
   </FilesMatch>
 </IfModule>
 <IfModule !mod_authz_core.c>
-  <FilesMatch "^(config|db|rbac_helpers|behavior_helpers|client_auth_units_helpers|drive_helper)\.php$">
+  <FilesMatch "^(config|db|rbac_helpers|behavior_helpers|client_auth_units_helpers|drive_helper|claims_billing_lib|session_rate_lib|availity_config_helper|availity_sftp_helper|availity_edi837_builder)\.php$">
     Order deny,allow
     Deny from all
   </FilesMatch>

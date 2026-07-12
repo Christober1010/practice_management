@@ -267,7 +267,46 @@ export default function LoginPage() {
           window.location.href = redirectParam;
         }
       } else {
-        setLoginError(data.error || "Login failed. Please try again.");
+        // Fallback: Launchpad-only staff accounts (created via offer initiation)
+        // exist only in the Launchpad backend. Try it before failing.
+        let launchpadOk = false;
+        try {
+          const lpResp = await fetch(`${LAUNCHPAD_API_BASE_URL}/backend/login.php`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              email: email.trim(),
+              password: password,
+            }),
+          });
+          const lpData = await lpResp.json();
+          if (lpResp.ok && lpData.success) {
+            localStorage.setItem("auth_token", lpData.token);
+            localStorage.setItem("auth_user", JSON.stringify(lpData.user));
+            localStorage.setItem("auth_expires_at", lpData.expires_at);
+            launchpadOk = true;
+
+            toast.success(
+              `Welcome, ${lpData.user?.username || "Staff"}!`
+            );
+
+            const params = new URLSearchParams(
+              typeof window !== "undefined" ? window.location.search || "" : ""
+            );
+            const redirectParam = params.get("redirect");
+            window.location.href =
+              redirectParam && redirectParam.startsWith("/launchpad")
+                ? redirectParam
+                : "/launchpad/form/";
+          }
+        } catch (e) {
+          // fall through to error message below
+        }
+
+        if (!launchpadOk) {
+          setLoginError(data.error || "Login failed. Please try again.");
+        }
       }
     } catch (error) {
       console.error("Login error:", error);

@@ -29,3 +29,7 @@ Run all: `pnpm run test:e2e` (both projects).
 - Login UI uses `CardTitle` for “Welcome Back” (not a heading role); specs assert `textbox` “Email Address” instead.
 - If port 3000 has a hung `next dev`, restart before E2E (`curl -m 5 http://localhost:3000/` should return 200 quickly).
 - Setup/docs: `docs/E2E-PLAYWRIGHT.md`
+
+## Schema parity (2026-06-04 update)
+
+Prod `recurring_id` gap was missed because API tests **skipped** on `Unknown column` and UI scheduling never **submits** add-session. Added `e2e/00-schema-readiness.spec.ts` + `assertNoSchemaDrift` — prod API now **fails** on migration drift. After `sessions_add_recurring_id.sql`: `pnpm run test:e2e:api:prod` → 24 passed, 1 skipped (no client activities for trial POST).

@@ -28,25 +28,8 @@ header_remove('X-XSS-Protection');
 header_remove(); // Remove all remaining headers
 
 // Re-apply CORS headers removed above
-$allowedOrigins = [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'https://localhost:3000',
-    'https://localhost:3001',
-    'http://launchpad.dev.mahabehavioralhealth.com',
-    'https://launchpad.dev.mahabehavioralhealth.com',
-    'https://launchpad.mahabehavioralhealth.com',
-    'https://maha-launchpad.mahabehavioralhealth.com',
-];
-$origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
-$requestHost = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
-$isSameDomain = !empty($origin) && parse_url($origin, PHP_URL_HOST) === $requestHost;
-if (in_array($origin, $allowedOrigins) || $isSameDomain) {
-    header("Access-Control-Allow-Origin: $origin");
-}
-header('Access-Control-Allow-Credentials: true');
-header('Access-Control-Allow-Methods: GET, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, Accept, Origin, Authorization, X-Auth-Token, X-CSRF-Token');
+require_once __DIR__ . '/cors_helpers.php';
+launchpad_apply_cors_headers('GET, OPTIONS');
 
 // Only allow GET requests
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
@@ -258,16 +241,12 @@ try {
     }
     
     // Allowed origins for iframe embedding (for CSP)
-    $allowedOrigins = [
-        'http://localhost:3000',
-        'http://localhost:3001',
-        'https://localhost:3000',
-        'https://localhost:3001',
-        'http://launchpad.dev.mahabehavioralhealth.com',
-        'https://launchpad.dev.mahabehavioralhealth.com',
-        'https://launchpad.mahabehavioralhealth.com',
-        'https://maha-launchpad.mahabehavioralhealth.com',
-    ];
+    $allowedOrigins = launchpad_cors_allowed_origins();
+    $requestOrigin = $_SERVER['HTTP_ORIGIN'] ?? '';
+    if ($requestOrigin && launchpad_is_allowed_cors_origin($requestOrigin)
+        && !in_array($requestOrigin, $allowedOrigins, true)) {
+        $allowedOrigins[] = $requestOrigin;
+    }
     
     // Set headers for inline viewing (allow iframe embedding)
     // IMPORTANT: Use no-cache headers to prevent browser from caching old responses with blocking headers

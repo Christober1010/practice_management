@@ -9,7 +9,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
 }
 
 require_once __DIR__ . '/config.php';
-$authUser = requireAuthReadWrite('manage_data.read', 'manage_data.write', 'mahaverse');
+require_once __DIR__ . '/rbac_helpers.php';
+
+$method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+if ($method === 'GET') {
+    requireAuthAny([
+        'manage_data.read',
+        'clients.read',
+        'clients.write',
+        'scheduling.read',
+        'billing.read',
+    ], 'mahaverse');
+} else {
+    requireAuthReadWrite('manage_data.read', 'manage_data.write', 'mahaverse');
+}
 
 $conn->set_charset('utf8mb4');
 
@@ -318,7 +331,6 @@ function handleDeleteLocation($conn, $input)
     echo json_encode(['success' => true, 'message' => 'Location archived successfully']);
 }
 
-$method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents('php://input'), true) ?? [];
 
 switch ($method) {

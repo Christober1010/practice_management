@@ -43,7 +43,7 @@ export default function LoginPage() {
         <div className="flex items-center justify-center space-x-2">
           <div className="bg-teal-600 rounded-full shadow-md h-20 w-20 p-[2px]">
             <img
-              src="/favicon.ico"
+              src="/images/maha-logo.jpg"
               alt="Maha Logo"
               className="rounded-full object-cover h-full w-full bg-white"
             />

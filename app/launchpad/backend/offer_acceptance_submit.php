@@ -38,11 +38,26 @@ function ensureOfferTable(mysqli $conn): void {
           pay_rate VARCHAR(100) NOT NULL,
           signature_attachment_id INT NOT NULL,
           accepted_date DATE NOT NULL,
+          jd_read_ack TINYINT(1) NOT NULL DEFAULT 0,
+          hipaa_ack TINYINT(1) NOT NULL DEFAULT 0,
+          abuse_ack TINYINT(1) NOT NULL DEFAULT 0,
           accepted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
           UNIQUE KEY uniq_staff_offer (staff_id),
           INDEX idx_offer_created_by_user_id (created_by_user_id)
         )
     ");
+
+    // Add ack columns to existing tables that were created without them.
+    $cols = [];
+    $r = $conn->query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'StaffOfferAcceptances'");
+    if ($r) { while ($row = $r->fetch_assoc()) $cols[] = $row['COLUMN_NAME']; }
+    if (!in_array('jd_read_ack', $cols))
+        $conn->query("ALTER TABLE StaffOfferAcceptances ADD COLUMN jd_read_ack TINYINT(1) NOT NULL DEFAULT 0 AFTER accepted_date");
+    if (!in_array('hipaa_ack', $cols))
+        $conn->query("ALTER TABLE StaffOfferAcceptances ADD COLUMN hipaa_ack TINYINT(1) NOT NULL DEFAULT 0 AFTER jd_read_ack");
+    if (!in_array('abuse_ack', $cols))
+        $conn->query("ALTER TABLE StaffOfferAcceptances ADD COLUMN abuse_ack TINYINT(1) NOT NULL DEFAULT 0 AFTER hipaa_ack");
 }
 
 function sendOfferAcceptedEmail(mysqli $conn, array $offer): void {
@@ -69,10 +84,10 @@ function sendOfferAcceptedEmail(mysqli $conn, array $offer): void {
     $subject = "Offer Accepted - Staff #{$staffId}";
     // Follow the same email template used in create_user.php and offer_initiation_submit.php.
     // Avoid warning/danger symbols/emojis to reduce spam risk.
-    $baseUrl = "https://maha-launchpad.mahabehavioralhealth.com";
+    $baseUrl = "https://mahaverse.mahabehavioralhealth.com";
     // Deep-link via login with redirect so that after authentication the user lands directly on the offer letter
-    $offerUrl = $baseUrl . "/login?redirect=" . urlencode("/form/?view=offer-letter");
-    $loginUrl = $baseUrl . "/login";
+    $offerUrl = $baseUrl . "/launchpad/login?redirect=" . urlencode("/launchpad/form/?view=offer-letter");
+    $loginUrl = $baseUrl . "/launchpad/login";
 
     $message = "
         <!DOCTYPE html>
@@ -94,7 +109,7 @@ function sendOfferAcceptedEmail(mysqli $conn, array $offer): void {
         <body>
             <div class='container'>
                 <div class='header'>
-                    <img src='{$baseUrl}/favicon.ico' alt='Maha Launchpad Logo' class='logo' />
+                    <img src='https://www.mahabehavioralhealth.com/images/mahalogo_v1_small.jpg' alt='Maha Launchpad Logo' class='logo' />
                     <h1 style='margin: 0 0 10px 0;'>Maha Launchpad</h1>
                     <p style='margin: 0;'>Offer Accepted</p>
                 </div>
@@ -205,6 +220,9 @@ try {
 
     $signatureDataUrl = trim((string)($payload['signature_data_url'] ?? ''));
     $acceptedDate = trim((string)($payload['accepted_date'] ?? ''));
+    $jdReadAck = !empty($payload['jd_read_ack']) ? 1 : 0;
+    $hipaaAck   = !empty($payload['hipaa_ack'])   ? 1 : 0;
+    $abuseAck   = !empty($payload['abuse_ack'])   ? 1 : 0;
 
     // Offer details must come from Admin/HR initiation (staff cannot edit these fields).
     $initStmt = $conn->prepare("
@@ -340,11 +358,11 @@ try {
     // Insert offer acceptance row
     $ins = $conn->prepare("
         INSERT INTO StaffOfferAcceptances
-            (staff_id, created_by_user_id, employee_name, job_title, pay_rate, signature_attachment_id, accepted_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (staff_id, created_by_user_id, employee_name, job_title, pay_rate, signature_attachment_id, accepted_date, jd_read_ack, hipaa_ack, abuse_ack)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
     if (!$ins) throw new Exception('Offer insert prepare failed');
-    $ins->bind_param("iisssis", $staffId, $currentUserId, $employeeName, $jobTitle, $payRate, $signatureAttachmentId, $acceptedDate);
+    $ins->bind_param("iisssisiii", $staffId, $currentUserId, $employeeName, $jobTitle, $payRate, $signatureAttachmentId, $acceptedDate, $jdReadAck, $hipaaAck, $abuseAck);
     if (!$ins->execute()) throw new Exception('Offer insert failed: ' . $ins->error);
     $ins->close();
 

@@ -62,6 +62,16 @@ const stripSSNFormatting = (value) => (value || "").replace(/\D/g, "").slice(0, 
 
 const popularCountries = ["USA", "Canada", "United Kingdom", "Australia", "Germany", "France", "Italy", "Spain", "Netherlands", "Other"];
 
+const TAXONOMY_CODE_OPTIONS = [
+  { value: "103K00000X", label: "103K00000X - Behavior Analyst" },
+  { value: "103T00000X", label: "103T00000X - Psychologist" },
+  { value: "106H00000X", label: "106H00000X - Marriage & Family Therapist" },
+  { value: "106S00000X", label: "106S00000X - Social Worker" },
+  { value: "225100000X", label: "225100000X - Physical Therapist" },
+  { value: "225Z00000X", label: "225Z00000X - Occupational Therapist" },
+  { value: "235Z00000X", label: "235Z00000X - Speech-Language Pathologist" },
+];
+
 const mapCountryFromShort = (countryShort, countryLong) => {
   if (!countryShort && !countryLong) return "USA";
   const map = {
@@ -177,6 +187,7 @@ const initialStaffState = {
   // Professional Information
   staffType: "",
   npiNumber: "",
+  taxonomyCode: "",
   dateOfJoining: "",
   dateOfLeaving: "",
   status: "",
@@ -427,6 +438,7 @@ export default function AddStaffModal({
         highestDegree: editingStaff.highest_degree ?? editingStaff.highestDegree ?? "",
         yearAwarded: editingStaff.year_awarded ?? editingStaff.yearAwarded ?? "",
         major: editingStaff.major ?? "",
+        taxonomyCode: editingStaff.taxonomy_code ?? editingStaff.taxonomyCode ?? "",
         certifications: editingStaff.certifications
           ? mapCertifications(editingStaff.certifications)
           : initialStaffState.certifications,
@@ -573,6 +585,7 @@ export default function AddStaffModal({
       highest_degree: formData.highestDegree,
       year_awarded: formData.yearAwarded,
       major: formData.major,
+      taxonomy_code: (formData.taxonomyCode && String(formData.taxonomyCode).trim()) || null,
       documents: (formData.documents || []).map((d) => ({
         doc_uuid: d.doc_uuid,
         document_type: d.document_type,
@@ -1418,6 +1431,29 @@ export default function AddStaffModal({
                         (e) => handleInputChange("major", e.target.value),
                         { placeholder: "e.g. Psychology" }
                       )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="taxonomyCode">Taxonomy Code</Label>
+                      <Select
+                        value={formData.taxonomyCode || ""}
+                        onValueChange={(value) => handleInputChange("taxonomyCode", value)}
+                      >
+                        <SelectTrigger id="taxonomyCode">
+                          <SelectValue placeholder="Select taxonomy code..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TAXONOMY_CODE_OPTIONS.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-slate-500 mt-1">
+                        NUCC taxonomy for billing and CMS-1500 provider credentials.
+                      </p>
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

@@ -149,7 +149,10 @@ export default function DashboardLayout({ userRole, onLogout }) {
       case "behaviors":
         return <BehaviorsList />;
       case "reports":
-        return <ReportsView />;
+      case "reportsSessionImport":
+        return <ReportsView initialTab="sessionImport" />;
+      case "reportsInsuranceUtilization":
+        return <ReportsView initialTab="insuranceUtilization" />;
       case "locations":
         return <LocationsView />;
       case "manageData":

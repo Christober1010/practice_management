@@ -324,14 +324,7 @@ function lock_provider_sessions_for_update(mysqli $conn, string $providerId): vo
 
 function build_claim_id($sessionId, $startUtc = null): string
 {
-    $datePart = date('Ymd');
-    if (!empty($startUtc)) {
-        $ts = strtotime((string)$startUtc);
-        if ($ts !== false) {
-            $datePart = gmdate('Ymd', $ts);
-        }
-    }
-    return "CLM-{$datePart}-{$sessionId}";
+    return 'CLM' . (int)$sessionId;
 }
 
 function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = null): void
@@ -738,6 +731,7 @@ function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
+require_once __DIR__ . '/session_rate_lib.php';
 
 $authUser = requireAuthReadWrite('scheduling.read', 'scheduling.write', 'mahaverse');
 
@@ -1112,6 +1106,17 @@ try {
                             'end' => $session['end'],
                         ];
                         file_put_contents('debug.log', "Inserted session_id: {$stmt->insert_id}, start_utc: {$session['start']}, scheduled_hours: $sessionScheduledHours\n", FILE_APPEND);
+                        session_persist_billing_rates(
+                            $conn,
+                            (int)$stmt->insert_id,
+                            $authId,
+                            $clientId,
+                            $authCode,
+                            $sessionScheduledHours,
+                            $renderedHours
+                        );
+                        session_persist_auth_service_fields($conn, (int)$stmt->insert_id, $authId);
+                        session_persist_taxonomy_code($conn, (int)$stmt->insert_id, $provider);
                         if (session_is_completed_status($status)) {
                             ensure_session_claim_ready($conn, (int)$stmt->insert_id, $session['start']);
                         }
@@ -1743,6 +1748,22 @@ try {
                     if (session_is_completed_status($status)) {
                         ensure_session_claim_ready($conn, $sessionId, $startUtc);
                     }
+                    $putAuthId = isset($input['authId']) && $input['authId'] !== null && $input['authId'] !== ''
+                        ? (int)$input['authId']
+                        : (int)($session['auth_id'] ?? $currentSession['auth_id'] ?? 0);
+                    if (!session_row_is_completed(array_merge($currentSession, $session))) {
+                        session_persist_billing_rates(
+                            $conn,
+                            $sessionId,
+                            $putAuthId,
+                            $clientId,
+                            $authCode,
+                            $scheduledHours,
+                            $renderedHours
+                        );
+                        session_persist_auth_service_fields($conn, $sessionId, $putAuthId);
+                        session_persist_taxonomy_code($conn, $sessionId, $provider);
+                    }
                     file_put_contents('debug.log', "Successfully updated session_id: $sessionId\n", FILE_APPEND);
                 }
 
@@ -1902,6 +1923,20 @@ try {
                         if (session_is_completed_status($status)) {
                             ensure_session_claim_ready($conn, $newSessionId, $occStartUtc);
                         }
+                        $recurringPutAuthId = isset($input['authId']) && $input['authId'] !== null && $input['authId'] !== ''
+                            ? (int)$input['authId']
+                            : (int)($currentSession['auth_id'] ?? 0);
+                        session_persist_billing_rates(
+                            $conn,
+                            $newSessionId,
+                            $recurringPutAuthId,
+                            $clientId,
+                            $authCode,
+                            $scheduledHours,
+                            $renderedHours
+                        );
+                        session_persist_auth_service_fields($conn, $newSessionId, $recurringPutAuthId);
+                        session_persist_taxonomy_code($conn, $newSessionId, $provider);
                     }
                     $insertStmt->close();
 

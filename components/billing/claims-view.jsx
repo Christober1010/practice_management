@@ -15,7 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { FileDown, FileText, RefreshCw } from "lucide-react";
+import { FileDown, FileText, RefreshCw, Upload } from "lucide-react";
 import { getMahaverseAuthHeaders } from "@/lib/api-auth";
 import Cms1500Preview from "./cms1500-preview";
 import { createMergedCms1500PdfBlob, downloadMergedCms1500Pdf } from "@/lib/cms1500-pdf";
@@ -121,6 +121,8 @@ export default function ClaimsView() {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [submittingAvaility, setSubmittingAvaility] = useState(false);
+  const [availityStatus, setAvailityStatus] = useState(null);
   const [error, setError] = useState("");
 
   const [selectedClientId, setSelectedClientId] = useState(CLIENT_FILTER_ALL);
@@ -505,6 +507,39 @@ export default function ClaimsView() {
     }
   };
 
+  const handleSubmitAvaility = async () => {
+    if (!canGenerate) return;
+    setSubmittingAvaility(true);
+    setError("");
+    setAvailityStatus(null);
+    try {
+      const resp = await mahaverseFetch("/availity-submit-claims.php", {
+        method: "POST",
+        headers: getMahaverseAuthHeaders({
+          "Content-Type": "application/json",
+        }),
+        body: JSON.stringify({
+          location_id: selectedLocationId,
+          insurance_id: selectedInsuranceId
+            ? Number.parseInt(selectedInsuranceId, 10) || selectedInsuranceId
+            : undefined,
+          session_ids: selectedSessionIds.map((id) => Number.parseInt(String(id), 10) || id),
+        }),
+      });
+      const json = await readJsonSafe(resp);
+      if (!resp.ok || !json?.success) {
+        throw new Error(json?.message || "Availity submission failed");
+      }
+      setAvailityStatus(json);
+      await fetchBootstrapData();
+    } catch (err) {
+      console.error("Availity submit failed", err);
+      setError(err.message || "Failed to submit claims to Availity.");
+    } finally {
+      setSubmittingAvaility(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -753,7 +788,34 @@ export default function ClaimsView() {
                   ? `Download combined PDF (${previewEntries.length} forms)`
                   : "Download PDF"}
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleSubmitAvaility}
+              disabled={!canGenerate || submittingAvaility}
+              className="border-teal-300 text-teal-800 hover:bg-teal-50"
+            >
+              <Upload className="h-4 w-4 mr-2" />
+              {submittingAvaility ? "Uploading to Availity..." : "Submit to Availity (SFTP)"}
+            </Button>
           </div>
+
+          {availityStatus?.success && (
+            <div className="rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900">
+              Uploaded <span className="font-medium">{availityStatus.filename}</span>
+              {availityStatus.remote_path ? ` to ${availityStatus.remote_path}` : ""}
+              {availityStatus.session_ids?.length
+                ? ` (${availityStatus.session_ids.length} session(s) marked Submitted)`
+                : ""}
+              {availityStatus.warnings?.length > 0 && (
+                <ul className="mt-2 list-disc pl-5 text-amber-900">
+                  {availityStatus.warnings.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">

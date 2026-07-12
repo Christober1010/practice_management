@@ -97,12 +97,9 @@ export default function ProviderSetup() {
 
   const handleAddProvider = async (provider) => {
     try {
-      const url = editingProvider
-        ? `${baseUrl}/providers.php`
-        : `${baseUrl}/providers.php`;
       const method = editingProvider ? "PUT" : "POST";
 
-      const res = await fetch(url, {
+      const res = await mahaverseFetch("/providers.php", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(provider),
@@ -270,6 +267,8 @@ export default function ProviderSetup() {
                     <TableHead className="hidden md:table-cell">Phone</TableHead>
                     <TableHead className="hidden lg:table-cell">City</TableHead>
                     <TableHead className="hidden sm:table-cell">Status</TableHead>
+                    <TableHead className="hidden xl:table-cell">EDI Payer</TableHead>
+                    <TableHead className="hidden xl:table-cell">Tech = Rendering</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -301,6 +300,17 @@ export default function ProviderSetup() {
                         >
                           {provider.status}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="hidden xl:table-cell p-2">
+                        {provider.edi_payer === 1 || provider.edi_payer === "1"
+                          ? "Yes"
+                          : "No"}
+                      </TableCell>
+                      <TableCell className="hidden xl:table-cell p-2">
+                        {provider.technician_is_rendering_provider === 1 ||
+                        provider.technician_is_rendering_provider === "1"
+                          ? "Yes"
+                          : "No"}
                       </TableCell>
                       <TableCell className="text-right p-2">
                         <div className="flex justify-end gap-2 p-2">

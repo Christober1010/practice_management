@@ -1,6 +1,7 @@
 import { test as setup, expect } from "@playwright/test";
 import fs from "fs";
 import path from "path";
+import { clearLaunchpadSessionKeys } from "./helpers/navigation";
 
 const authFile =
   process.env.E2E_AUTH_STORAGE ||
@@ -25,6 +26,12 @@ setup("authenticate", async ({ page }) => {
   await page.locator("#password").fill(password);
   await page.getByRole("button", { name: "Sign In Securely" }).click();
 
+  await expect(page.getByRole("heading", { name: "Administrator" })).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await clearLaunchpadSessionKeys(page);
+  await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Administrator" })).toBeVisible({
     timeout: 30_000,
   });

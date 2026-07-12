@@ -2,7 +2,7 @@
 
 import { mahaverseFetch } from "@/lib/mahaverse-api";
 
-import { useState, useEffect, Fragment } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import {
   Dialog,
   DialogContent,
@@ -48,6 +48,7 @@ import {
 import DocumentViewerModal from "./DocumentViewerModal";
 import ClientConfigureDataPanel from "./client-configure-data-panel";
 import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
+import NearbyStaffPanel from "./nearby-staff-panel";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -148,26 +149,6 @@ const getDocumentDisplayName = (doc, index) => {
 
   return `Document #${index + 1}`;
 };
-
-const billingCodeOptions = [
-  { code: "97151", name: "Behavior Identification Assessment" },
-  { code: "97152", name: "Behavior Identification Supporting Assessment" },
-  { code: "97153", name: "Adaptive Behavior Treatment by Protocol" },
-  { code: "97154", name: "Group Adaptive Behavior Treatment by Protocol" },
-  {
-    code: "97155",
-    name: "Adaptive Behavior Treatment with Protocol Modification",
-  },
-  { code: "97156", name: "Family Adaptive Behavior Treatment Guidance" },
-  {
-    code: "97157",
-    name: "Multiple Family Group Adaptive Behavior Treatment Guidance",
-  },
-  {
-    code: "97158",
-    name: "Group Adaptive Behavior Treatment with Protocol Modification",
-  },
-];
 
 const initialClientState = {
   // Personal
@@ -291,13 +272,38 @@ export default function AddClientModal({
   const [providers, setProviders] = useState([]);
   const [diagnosisCodes, setDiagnosisCodes] = useState([]);
   const [providerServiceCodeMappings, setProviderServiceCodeMappings] = useState([]);
-  const [allServiceCodes, setAllServiceCodes] = useState([]);
+  const [providerMappingsLoading, setProviderMappingsLoading] = useState(false);
   const [viewingDocument, setViewingDocument] = useState(null);
   const [expandedAuthKeys, setExpandedAuthKeys] = useState(new Set());
   const [facilityTypes, setFacilityTypes] = useState([]);
   const [treatmentTypes, setTreatmentTypes] = useState([]);
   const [documentTypes, setDocumentTypes] = useState([]);
+  const [locations, setLocations] = useState([]);
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+
+  const getLocationLabel = (loc) =>
+    loc?.location_name || loc?.facility_name || loc?.id || "";
+
+  const selectableLocations = useMemo(() => {
+    const active = locations.filter(
+      (l) => !Number(l.archived) && (l.status || "Active") === "Active",
+    );
+    const currentId = formData.location ? String(formData.location) : "";
+    if (!currentId) {
+      return [...active].sort((a, b) =>
+        getLocationLabel(a).localeCompare(getLocationLabel(b)),
+      );
+    }
+    const current = locations.find((l) => String(l.id) === currentId);
+    if (current && !active.some((l) => String(l.id) === currentId)) {
+      return [current, ...active].sort((a, b) =>
+        getLocationLabel(a).localeCompare(getLocationLabel(b)),
+      );
+    }
+    return [...active].sort((a, b) =>
+      getLocationLabel(a).localeCompare(getLocationLabel(b)),
+    );
+  }, [locations, formData.location]);
 
   const primaryTabs = ["personal", "contact", "insurance"];
   const moreTabs = [
@@ -307,6 +313,7 @@ export default function AddClientModal({
     "availability",
     "documents",
     "notes",
+    "nearbyStaff",
   ];
   const tabOrder = [
     "personal",
@@ -318,6 +325,7 @@ export default function AddClientModal({
     "availability",
     "documents",
     "notes",
+    "nearbyStaff",
   ];
 
   useEffect(() => {
@@ -407,56 +415,121 @@ export default function AddClientModal({
     loadDocumentTypes();
   }, [baseUrl]);
 
+  // Active locations for dropdown; include archived row when editing a legacy client location id
+  useEffect(() => {
+    if (!baseUrl || !isOpen) return;
+
+    const loadLocationsForModal = async () => {
+      try {
+        const res = await mahaverseFetch('/locations.php');
+        const data = await res.json();
+        if (!data?.success) {
+          setLocations([]);
+          return;
+        }
+        let list = data.data || [];
+        const currentId = editingClient?.location
+          ? String(editingClient.location)
+          : "";
+        if (currentId && !list.some((l) => String(l.id) === currentId)) {
+          const oneRes = await mahaverseFetch(
+            `/locations.php?id=${encodeURIComponent(currentId)}`,
+          );
+          const oneData = await oneRes.json();
+          if (oneData?.success && Array.isArray(oneData.data) && oneData.data[0]) {
+            list = [...list, oneData.data[0]];
+          }
+        }
+        setLocations(list);
+      } catch (err) {
+        console.error("Failed to load locations:", err);
+        setLocations([]);
+      }
+    };
+
+    loadLocationsForModal();
+  }, [baseUrl, isOpen, editingClient?.location]);
+
   // Load provider service code mappings when insurance provider changes
   useEffect(() => {
-    if (!baseUrl) return;
-    
+    if (!baseUrl || !isOpen) {
+      setProviderServiceCodeMappings([]);
+      setProviderMappingsLoading(false);
+      return;
+    }
+
+    const providerIds = [
+      ...new Set(
+        formData.insurances
+          .map((ins) => ins.insurance_provider_id)
+          .filter(Boolean)
+          .map(String),
+      ),
+    ];
+
+    if (providerIds.length === 0) {
+      setProviderServiceCodeMappings([]);
+      setProviderMappingsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
     const loadMappings = async () => {
-      const providerIds = formData.insurances
-        .map(ins => ins.insurance_provider_id)
-        .filter(Boolean);
-      
-      if (providerIds.length === 0) {
-        setProviderServiceCodeMappings([]);
-        return;
-      }
-      
+      setProviderMappingsLoading(true);
+      setProviderServiceCodeMappings([]);
+
       try {
-        // Load mappings for all selected providers
         const allMappings = [];
         for (const providerId of providerIds) {
-          const res = await mahaverseFetch(`/provider-service-codes.php?provider_id=${providerId}`);
+          const res = await mahaverseFetch(
+            `/provider-service-codes.php?provider_id=${encodeURIComponent(providerId)}`,
+          );
           const data = await res.json();
-          if (data?.success && data.data) {
+          if (data?.success && Array.isArray(data.data)) {
             allMappings.push(...data.data);
           }
         }
-        setProviderServiceCodeMappings(allMappings);
+        if (!cancelled) {
+          setProviderServiceCodeMappings(allMappings);
+        }
       } catch (err) {
         console.error("Failed to load provider service code mappings:", err);
-        setProviderServiceCodeMappings([]);
-      }
-    };
-    
-    loadMappings();
-  }, [baseUrl, formData.insurances.map(ins => ins.insurance_provider_id).join(',')]);
-
-  // Load all service codes as fallback when provider mappings are empty
-  useEffect(() => {
-    if (!baseUrl) return;
-    const load = async () => {
-      try {
-        const res = await mahaverseFetch('/service-codes.php');
-        const data = await res.json();
-        if (data?.success && data.data) {
-          setAllServiceCodes(data.data);
+        if (!cancelled) {
+          setProviderServiceCodeMappings([]);
         }
-      } catch {
-        setAllServiceCodes([]);
+      } finally {
+        if (!cancelled) {
+          setProviderMappingsLoading(false);
+        }
       }
     };
-    load();
-  }, [baseUrl]);
+
+    loadMappings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    baseUrl,
+    isOpen,
+    formData.insurances.map((ins) => ins.insurance_provider_id).join(","),
+  ]);
+
+  // Map legacy free-text location values to Master Data location ids when possible
+  useEffect(() => {
+    if (!locations.length || !formData.location) return;
+    const stored = String(formData.location);
+    if (locations.some((l) => String(l.id) === stored)) return;
+    const byName = locations.find(
+      (l) =>
+        String(l.location_name || "").toLowerCase() === stored.toLowerCase() ||
+        String(l.facility_name || "").toLowerCase() === stored.toLowerCase(),
+    );
+    if (byName) {
+      setFormData((prev) => ({ ...prev, location: String(byName.id) }));
+    }
+  }, [locations, formData.location]);
 
   useEffect(() => {
   if (editingClient) {
@@ -498,6 +571,7 @@ export default function AddClientModal({
           primary_insurance_notes: ins.primary_insurance_notes || "",
           insured_same_as_client: ins.insured_same_as_client !== undefined ? ins.insured_same_as_client : true,
           insurance_inactive: !!(ins.insurance_inactive === 1 || ins.insurance_inactive === "1" || ins.insurance_inactive === true),
+          primary_diagnosis: ins.primary_diagnosis || "",
           treatment_type: ins.treatment_type || "Behavioral therapy",
           provider_staff_id: ins.provider_staff_id || "",
           // `provider_name` comes from backend joins (read-only), `rendering_provider` is stored text.
@@ -689,7 +763,8 @@ export default function AddClientModal({
             ins.insurance_provider ||
             ins.insurance_id_number ||
             ins.treatment_type ||
-            ins.provider_staff_id
+            ins.provider_staff_id ||
+            ins.primary_diagnosis
         )
         .map((ins, index) => ({
           ...ins,
@@ -770,15 +845,16 @@ export default function AddClientModal({
   };
 
   const handleInsuranceChange = (insuranceId, field, value) => {
+    const matchId = String(insuranceId);
     setFormData((prev) => ({
       ...prev,
       insurances: prev.insurances.map((ins) =>
-        ins.insurance_id === insuranceId ? { ...ins, [field]: value } : ins
+        String(ins.insurance_id) === matchId ? { ...ins, [field]: value } : ins
       ),
     }));
     // Also clear errors
     const index = formData.insurances.findIndex(
-      (ins) => ins.insurance_id === insuranceId
+      (ins) => String(ins.insurance_id) === matchId
     );
     const errorKey = `insurance_${field}_${index}`;
     if (errors[errorKey]) {
@@ -1571,12 +1647,14 @@ export default function AddClientModal({
                           {activeTab === "availability" && <Clock className="h-4 w-4" />}
                           {activeTab === "documents" && <File className="h-4 w-4" />}
                           {activeTab === "notes" && <FileText className="h-4 w-4" />}
+                          {activeTab === "nearbyStaff" && <MapPin className="h-4 w-4" />}
                           {activeTab === "configureData" && "Configure data"}
                           {activeTab === "authorization" && "Authorization"}
                           {activeTab === "guardian" && "Guardian"}
                           {activeTab === "availability" && "Availability"}
                           {activeTab === "documents" && "Documents"}
                           {activeTab === "notes" && "Notes"}
+                          {activeTab === "nearbyStaff" && "Nearby Staff"}
                           <ChevronDown className="h-4 w-4" />
                         </>
                       ) : (
@@ -1627,6 +1705,12 @@ export default function AddClientModal({
                         {tab === "notes" && (
                           <>
                             <FileText className="h-4 w-4 mr-2" /> Notes
+                            {activeTab === tab && <span className="ml-auto">✓</span>}
+                          </>
+                        )}
+                        {tab === "nearbyStaff" && (
+                          <>
+                            <MapPin className="h-4 w-4 mr-2" /> Nearby Staff
                             {activeTab === tab && <span className="ml-auto">✓</span>}
                           </>
                         )}
@@ -1767,12 +1851,23 @@ export default function AddClientModal({
                     )}
                   </div>
                   <div>
-                    {renderInputWithError(
+                    {renderSelectWithError(
                       "location",
                       "Location",
-                      formData.location,
-                      (e) => handleInputChange("location", e.target.value),
-                      { placeholder: "Enter your location" }
+                      formData.location ? String(formData.location) : "",
+                      (value) => handleInputChange("location", value),
+                      selectableLocations.length > 0 ? (
+                        selectableLocations.map((loc) => (
+                          <SelectItem key={loc.id} value={String(loc.id)}>
+                            {getLocationLabel(loc)}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="__no_locations__" disabled>
+                          No locations in Master Data
+                        </SelectItem>
+                      ),
+                      "Select location"
                     )}
                   </div>
                 </CardContent>
@@ -3067,12 +3162,14 @@ export default function AddClientModal({
                           (m) => String(m.provider_id) === String(providerId) && m.status === "Active" &&
                             (m.archived === 0 || m.archived === false) && (m.service_code || m.code)
                         );
-                        const relevantMappings = providerMappings.length > 0
-                          ? providerMappings
-                          : (allServiceCodes || []).map((sc) => ({
-                              service_code: sc.code,
-                              code_description: sc.code_description || "",
-                            }));
+                        const hasProviderMappings =
+                          !providerMappingsLoading && providerMappings.length > 0;
+                        const showMappingMissingMsg =
+                          !providerMappingsLoading &&
+                          Boolean(providerId) &&
+                          !hasProviderMappings;
+                        const providerLabel =
+                          insurance.insurance_provider || `Insurance #${insIdx + 1}`;
 
                         const renderAuthTable = (sectionGroups, sectionLabel) => {
                           if (sectionGroups.length === 0) return null;
@@ -3228,26 +3325,43 @@ export default function AddClientModal({
                                                         className="grid grid-cols-12 gap-3 items-start py-2"
                                                       >
                                                         <div className="col-span-2">
-                                                          <Select
-                                                            value={auth.billing_codes || ""}
-                                                            onValueChange={(v) =>
-                                                              handleAuthorizationChange(flatIndex, "billing_codes", v)
-                                                            }
-                                                          >
-                                                            <SelectTrigger className="h-9 text-xs bg-white">
-                                                              <SelectValue placeholder="Code" />
-                                                            </SelectTrigger>
-                                                            <SelectContent>
-                                                              {relevantMappings.map((m) => (
-                                                                <SelectItem
-                                                                  key={m.id || m.service_code}
-                                                                  value={m.service_code}
-                                                                >
-                                                                  {m.service_code} - {m.code_description || "N/A"}
-                                                                </SelectItem>
-                                                              ))}
-                                                            </SelectContent>
-                                                          </Select>
+                                                          {providerMappingsLoading ? (
+                                                            <p className="text-[11px] leading-snug text-slate-500">
+                                                              Loading service codes…
+                                                            </p>
+                                                          ) : hasProviderMappings ? (
+                                                            <Select
+                                                              value={auth.billing_codes || ""}
+                                                              onValueChange={(v) =>
+                                                                handleAuthorizationChange(flatIndex, "billing_codes", v)
+                                                              }
+                                                            >
+                                                              <SelectTrigger className="h-9 text-xs bg-white">
+                                                                <SelectValue placeholder="Code" />
+                                                              </SelectTrigger>
+                                                              <SelectContent>
+                                                                {providerMappings.map((m) => (
+                                                                  <SelectItem
+                                                                    key={m.id || m.service_code}
+                                                                    value={m.service_code}
+                                                                  >
+                                                                    {m.service_code} - {m.code_description || "N/A"}
+                                                                  </SelectItem>
+                                                                ))}
+                                                              </SelectContent>
+                                                            </Select>
+                                                          ) : auth.billing_codes ? (
+                                                            <Input
+                                                              value={auth.billing_codes}
+                                                              readOnly
+                                                              className="h-9 text-xs bg-slate-100"
+                                                              title="Saved service code; no active provider mapping"
+                                                            />
+                                                          ) : (
+                                                            <p className="text-[11px] leading-snug text-amber-800">
+                                                              Service code mapping missing
+                                                            </p>
+                                                          )}
                                                         </div>
                                                         <div className="col-span-2">
                                                           <Input
@@ -3318,15 +3432,17 @@ export default function AddClientModal({
                                                       </div>
                                                     );
                                                   })}
-                                                  <Button
-                                                    type="button"
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="mt-3 h-9 flex items-center gap-1 bg-white"
-                                                    onClick={() => addServiceCodeToAuth(insIdx, groupKey)}
-                                                  >
-                                                    <Plus className="h-3.5 w-3.5" /> Add Service Code
-                                                  </Button>
+                                                  {hasProviderMappings && (
+                                                    <Button
+                                                      type="button"
+                                                      variant="outline"
+                                                      size="sm"
+                                                      className="mt-3 h-9 flex items-center gap-1 bg-white"
+                                                      onClick={() => addServiceCodeToAuth(insIdx, groupKey)}
+                                                    >
+                                                      <Plus className="h-3.5 w-3.5" /> Add Service Code
+                                                    </Button>
+                                                  )}
                                                 </div>
                                               </td>
                                             </tr>
@@ -3347,7 +3463,7 @@ export default function AddClientModal({
                             <div className="flex items-center justify-between">
                               <div className="space-y-1">
                                 <h4 className="font-semibold text-teal-800">
-                                  {insurance.insurance_provider || `Insurance #${insIdx + 1}`}
+                                  {providerLabel}
                                 </h4>
                                 <p className="text-xs text-slate-500">
                                   Manage authorization groups and service code limits.
@@ -3363,6 +3479,14 @@ export default function AddClientModal({
                                 <Plus className="h-4 w-4" /> Add Authorization
                               </Button>
                             </div>
+                            {showMappingMissingMsg && (
+                              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                                Service code mapping missing for{" "}
+                                <span className="font-medium">{providerLabel}</span>. Add
+                                mappings in Manage Data → Provider Service Code Setup before
+                                assigning service codes.
+                              </div>
+                            )}
                             {groups.length === 0 ? (
                               <p className="text-slate-500 text-sm py-4">
                                 No authorizations yet. Click &quot;Add Authorization&quot; to add one.
@@ -3712,6 +3836,22 @@ export default function AddClientModal({
                       rows={4}
                     />
                   </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="nearbyStaff" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <MapPin className="h-5 w-5 text-teal-600" /> Nearby Staff
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <NearbyStaffPanel
+                    client={formData}
+                    staffList={filteredStaff ?? []}
+                  />
                 </CardContent>
               </Card>
             </TabsContent>

@@ -13,6 +13,7 @@ import {
   tomorrowSessionWindow,
   type ApiJson,
 } from "./helpers/api-client";
+import { assertNoSchemaDrift, getApiErrorText } from "./helpers/schema-errors";
 
 test.describe.configure({ mode: "serial" });
 test.setTimeout(120_000);
@@ -269,7 +270,7 @@ test("programs POST (domain + program + target)", async () => {
 
 test("facility-types + service-codes + providers POST", async () => {
   const api = ctx.api!;
-  const posCode = `9${ctx.ts.slice(-2)}`;
+  const posCode = String(900 + (parseInt(ctx.ts, 10) % 99));
   await api.expectOk("facility-types.php", "POST", {
     pos_code: posCode,
     facility_name: `E2E Facility ${ctx.ts}`,
@@ -386,14 +387,9 @@ test("add-session GET + POST (schedule session)", async () => {
 
   const res = await api.post("add-session.php", payload);
   const data = await api.json(res);
+  assertNoSchemaDrift(data, "add-session.php", res.status());
   if (!res.ok()) {
-    const err = String(data.error || data.message || "");
-    if (/recurring_id|Unknown column/i.test(err)) {
-      test.skip(
-        true,
-        `add-session blocked on ${process.env.E2E_TARGET}: DB schema behind test — apply session migrations on prod`
-      );
-    }
+    const err = getApiErrorText(data);
     expect(res.ok(), `POST add-session.php → ${res.status()} ${err}`).toBeTruthy();
   }
   expect(data.success, String(data.error || "")).toBeTruthy();

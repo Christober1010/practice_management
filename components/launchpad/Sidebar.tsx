@@ -13,7 +13,7 @@ import {
   Bars3Icon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
-import { LayoutDashboard, FileText, UserPlus, File, ChevronDown } from 'lucide-react';
+import { ClipboardList, LayoutDashboard, FileText, UserPlus, File, ChevronDown } from 'lucide-react';
 import { ensureAuth } from '@/lib/launchpad/api';
 import {
   DropdownMenu,
@@ -106,7 +106,7 @@ export default function Sidebar({
             <DropdownMenuTrigger asChild>
               <button className="flex items-center space-x-3 hover:bg-slate-100 rounded-lg p-2 transition-colors -ml-2 flex-1">
                 <img
-                  src="/favicon.ico"
+                  src="/images/maha-logo.jpg"
                   alt="Maha Logo"
                   className="rounded-full object-cover h-12 w-12 shadow-md"
                 />
@@ -184,6 +184,22 @@ export default function Sidebar({
               <span>Offer Letter</span>
             </button>
           </li>
+
+          {canEditProfile && (
+            <li>
+              <button
+                onClick={() => onNavigate('client-intake')}
+                className={`w-full text-left px-3 py-2 text-sm font-medium rounded-lg transition-colors flex items-center space-x-3 ${
+                  currentView === 'client-intake'
+                    ? 'bg-teal-50 text-teal-700'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                }`}
+              >
+                <ClipboardList className={`h-5 w-5 ${currentView === 'client-intake' ? 'text-teal-600' : 'text-slate-400'}`} />
+                <span>Client Intake</span>
+              </button>
+            </li>
+          )}
           
           {canEditProfile && (
             <li

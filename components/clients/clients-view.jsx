@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -104,6 +105,17 @@ const MASTER_DATA_ROW_MENU_ITEMS = [
   },
 ];
 
+const CLIENT_STATUS_OPTIONS = [
+  "New",
+  "Benefits Verification",
+  "Prior Authorization",
+  "Client Assessment",
+  "Pending Authorization",
+  "Initial Authorization",
+  "Active Treatment",
+  "Reauthorization",
+];
+
 function generateUUID() {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
@@ -116,6 +128,20 @@ function generateClientUUID() {
   return Math.floor(Math.random() * 9999999999999999)
     .toString()
     .padStart(16, "0");
+}
+
+/** City/zip for list column — clients row or first saved address. */
+function clientListCityZip(client) {
+  const addresses = Array.isArray(client?.addresses) ? client.addresses : [];
+  const primary =
+    addresses.find((a) => String(a?.address_line_1 ?? "").trim() !== "") ||
+    addresses[0] ||
+    null;
+  const city = String(client?.city || primary?.city || "").trim();
+  const zip = String(
+    client?.zipcode || client?.zip || primary?.zipcode || ""
+  ).trim();
+  return { city, zip };
 }
 
 export default function ClientsView({ userRole }) {
@@ -140,7 +166,7 @@ export default function ClientsView({ userRole }) {
 
   // UI-only state
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilters, setStatusFilters] = useState([]);
   const [activeInactiveFilter, setActiveInactiveFilter] = useState("all");
   const [modalInitialTab, setModalInitialTab] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -151,6 +177,7 @@ export default function ClientsView({ userRole }) {
   const [isSessionNotesModalOpen, setIsSessionNotesModalOpen] = useState(false);
   const [viewingDocument, setViewingDocument] = useState(null);
   const [staffList, setStaffList] = useState([]); // Initialize as empty array
+  const [locations, setLocations] = useState([]);
 
   // Redux
   const dispatch = useAppDispatch();
@@ -160,6 +187,17 @@ export default function ClientsView({ userRole }) {
   const loading = useAppSelector((s) => s.clients.loading);
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+
+  const getClientLocationLabel = (locationValue) => {
+    if (!locationValue) return "N/A";
+    const match = locations.find(
+      (loc) => String(loc.id) === String(locationValue),
+    );
+    if (match) {
+      return match.location_name || match.facility_name || locationValue;
+    }
+    return locationValue;
+  };
 
   const activeClientCount = useMemo(
     () => clients.filter((c) => !c.archived).length,
@@ -180,7 +218,8 @@ export default function ClientsView({ userRole }) {
             : false,
       );
       const matchesStatus =
-        statusFilter === "all" || client.client_status === statusFilter;
+        statusFilters.length === 0 ||
+        statusFilters.includes(String(client.client_status || ""));
       const isClientActive =
         client.is_active !== false &&
         client.is_active !== 0 &&
@@ -197,7 +236,36 @@ export default function ClientsView({ userRole }) {
         matchesArchived
       );
     });
-  }, [clients, searchTerm, statusFilter, activeInactiveFilter, showArchived]);
+  }, [clients, searchTerm, statusFilters, activeInactiveFilter, showArchived]);
+
+  const statusOptionCounts = useMemo(() => {
+    const counts = Object.fromEntries(CLIENT_STATUS_OPTIONS.map((s) => [s, 0]));
+    for (const client of clients) {
+      const matchesSearch = Object.values(client).some((value) =>
+        typeof value === "string"
+          ? value.toLowerCase().includes(searchTerm.toLowerCase())
+          : typeof value === "number"
+            ? String(value).includes(searchTerm)
+            : false,
+      );
+      const isClientActive =
+        client.is_active !== false &&
+        client.is_active !== 0 &&
+        client.is_active !== "0";
+      const matchesActiveInactive =
+        activeInactiveFilter === "all" ||
+        (activeInactiveFilter === "active" && isClientActive) ||
+        (activeInactiveFilter === "inactive" && !isClientActive);
+      const matchesArchived = client.archived === showArchived;
+      if (!(matchesSearch && matchesActiveInactive && matchesArchived)) continue;
+
+      const status = String(client.client_status || "");
+      if (Object.prototype.hasOwnProperty.call(counts, status)) {
+        counts[status] += 1;
+      }
+    }
+    return counts;
+  }, [clients, searchTerm, activeInactiveFilter, showArchived]);
 
   const handleAddClient = async (clientData) => {
     if (!allowCreate) {
@@ -477,9 +545,47 @@ export default function ClientsView({ userRole }) {
     fetchStaff();
   }, [baseUrl]);
 
+  useEffect(() => {
+    const fetchLocations = async () => {
+      try {
+        const response = await mahaverseFetch("/locations.php");
+        const result = await response.json();
+        if (result.success) {
+          setLocations(result.data || []);
+        }
+      } catch (error) {
+        console.error("Error fetching locations:", error);
+      }
+    };
+
+    if (baseUrl) fetchLocations();
+  }, [baseUrl]);
+
   const filteredStaff = staffList.filter(
     (staff) => staff.staffType === "BCBA" || staff.staffType === "BCaBA",
   );
+
+  const assignedStaffByClientId = useMemo(() => {
+    const map = new Map();
+    for (const staff of staffList) {
+      const staffId = String(staff?.id ?? "").trim();
+      const first = String(staff?.firstName ?? "").trim();
+      const last = String(staff?.lastName ?? "").trim();
+      const displayName = `${first} ${last}`.trim() || staffId || "Staff";
+      const assignedClients = Array.isArray(staff?.assignedClients)
+        ? staff.assignedClients
+        : [];
+      for (const clientIdRaw of assignedClients) {
+        const clientId = String(clientIdRaw ?? "").trim();
+        if (!clientId) continue;
+        if (!map.has(clientId)) map.set(clientId, []);
+        const names = map.get(clientId);
+        if (!names.includes(displayName)) names.push(displayName);
+      }
+    }
+    return map;
+  }, [staffList]);
+
   const toggleExpanded = (clientId) => {
     if (!allowReadDetails) return;
     setExpandedClient((prev) => (prev === clientId ? null : clientId));
@@ -838,36 +944,63 @@ export default function ClientsView({ userRole }) {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-full sm:w-52 border-slate-200">
-                <SelectValue placeholder="Workflow status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="New">New</SelectItem>
-                <SelectItem value="Benefits Verification">
-                  Benefits Verification
-                </SelectItem>
-                <SelectItem value="Prior Authorization">
-                  Prior Authorization
-                </SelectItem>
-                <SelectItem value="Client Assessment">
-                  Client Assessment
-                </SelectItem>
-                <SelectItem value="Pending Authorization">
-                  Pending Authorization
-                </SelectItem>
-                <SelectItem value="Initial Authorization">
-                  Initial Authorization
-                </SelectItem>
-                <SelectItem value="Active Treatment">
-                  Active Treatment
-                </SelectItem>
-                <SelectItem value="Reauthorization">
-                  Reauthorization
-                </SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex w-full items-center gap-1 sm:w-auto">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-between sm:w-56 border-slate-200 font-normal"
+                  >
+                    {statusFilters.length === 0
+                      ? "All Statuses"
+                      : `Statuses (${statusFilters.length})`}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-72 p-0">
+                  <DropdownMenuCheckboxItem
+                    checked={statusFilters.length === CLIENT_STATUS_OPTIONS.length}
+                    onCheckedChange={(checked) =>
+                      setStatusFilters(checked ? [...CLIENT_STATUS_OPTIONS] : [])
+                    }
+                    onSelect={(e) => e.preventDefault()}
+                    className="rounded-none border-b border-slate-100"
+                  >
+                    Select All ({CLIENT_STATUS_OPTIONS.reduce((sum, s) => sum + (statusOptionCounts[s] || 0), 0)})
+                  </DropdownMenuCheckboxItem>
+                  <div className="max-h-60 overflow-y-auto">
+                    {CLIENT_STATUS_OPTIONS.map((status) => (
+                      <DropdownMenuCheckboxItem
+                        key={status}
+                        checked={statusFilters.includes(status)}
+                        onCheckedChange={(checked) => {
+                          setStatusFilters((prev) => {
+                            if (checked) {
+                              return prev.includes(status) ? prev : [...prev, status];
+                            }
+                            return prev.filter((s) => s !== status);
+                          });
+                        }}
+                        onSelect={(e) => e.preventDefault()}
+                        className="rounded-none"
+                      >
+                        {status} ({statusOptionCounts[status] || 0})
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </div>
+                  <DropdownMenuSeparator className="my-0" />
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      setStatusFilters([]);
+                    }}
+                    className="rounded-none sticky bottom-0 bg-white font-medium"
+                  >
+                    Clear All
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
             <Select
               value={activeInactiveFilter}
               onValueChange={setActiveInactiveFilter}
@@ -928,6 +1061,9 @@ export default function ClientsView({ userRole }) {
                     <TableHead className="hidden xl:table-cell font-semibold text-slate-700">
                       Insurance ID
                     </TableHead>
+                    <TableHead className="hidden xl:table-cell font-semibold text-slate-700">
+                      Assigned Staff
+                    </TableHead>
                     <TableHead className="font-semibold text-slate-700 lg:text-center text-right">
                       Actions
                     </TableHead>
@@ -947,6 +1083,11 @@ export default function ClientsView({ userRole }) {
                         ) ||
                         insurances[0] ||
                         null;
+                      const assignedStaffNames =
+                        assignedStaffByClientId.get(
+                          String(client.client_id || client.id || "").trim(),
+                        ) || [];
+                      const { city: listCity, zip: listZip } = clientListCityZip(client);
                       return (
                         <Fragment key={client.id}>
                           {/* Main Row */}
@@ -1001,14 +1142,12 @@ export default function ClientsView({ userRole }) {
                             </TableCell>
                             <TableCell className="hidden md:table-cell py-4">
                               <div className="text-sm text-slate-700">
-                                {client.city || client.zipcode ? (
+                                {listCity || listZip ? (
                                   <div className="flex items-center gap-1">
                                     <MapPin className="h-3 w-3 text-slate-400" />
                                     <span>
-                                      {client.city || "—"}
-                                      {client.zipcode
-                                        ? `, ${client.zipcode}`
-                                        : ""}
+                                      {listCity || "—"}
+                                      {listZip ? `, ${listZip}` : ""}
                                     </span>
                                   </div>
                                 ) : (
@@ -1055,6 +1194,18 @@ export default function ClientsView({ userRole }) {
                               <span className="text-sm text-slate-700">
                                 {primaryInsurance?.insurance_id_number || "—"}
                               </span>
+                            </TableCell>
+                            <TableCell className="hidden xl:table-cell py-4">
+                              {assignedStaffNames.length > 0 ? (
+                                <span
+                                  className="block max-w-[220px] truncate text-sm text-slate-700"
+                                  title={assignedStaffNames.join(", ")}
+                                >
+                                  {assignedStaffNames.join(", ")}
+                                </span>
+                              ) : (
+                                <span className="text-sm text-slate-500">—</span>
+                              )}
                             </TableCell>
                             <TableCell className="py-4">
                               <div className="flex items-center justify-center gap-2">
@@ -1292,7 +1443,7 @@ export default function ClientsView({ userRole }) {
                                             Location
                                           </p>
                                           <p className="font-medium">
-                                            {client.location || "N/A"}
+                                            {getClientLocationLabel(client.location)}
                                           </p>
                                         </div>
                                       </div>
@@ -2322,6 +2473,7 @@ export default function ClientsView({ userRole }) {
                                         </CardContent>
                                       </Card>
                                     )}
+
                                 </div>
                               </TableCell>
                             </TableRow>

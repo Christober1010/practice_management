@@ -36,6 +36,12 @@ $conn->query("
       INDEX idx_offer_initiated_by_user_id (initiated_by_user_id)
     )
 ");
+// Add new columns if missing – compatible with MySQL 5.7+ (no IF NOT EXISTS).
+$existingCols = [];
+$colRes = $conn->query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'StaffOfferInitiations'");
+if ($colRes) { while ($r = $colRes->fetch_row()) $existingCols[] = $r[0]; }
+if (!in_array('position_code', $existingCols))    $conn->query("ALTER TABLE StaffOfferInitiations ADD COLUMN position_code VARCHAR(50) NULL AFTER pay_rate");
+if (!in_array('offer_letter_body', $existingCols)) $conn->query("ALTER TABLE StaffOfferInitiations ADD COLUMN offer_letter_body TEXT NULL AFTER position_code");
 
 function sendOfferInitiatedEmail(string $toEmail, array $offer): void {
     if (!filter_var($toEmail, FILTER_VALIDATE_EMAIL)) return;
@@ -46,10 +52,10 @@ function sendOfferInitiatedEmail(string $toEmail, array $offer): void {
     $payRate = htmlspecialchars((string)($offer['pay_rate'] ?? ''), ENT_QUOTES, 'UTF-8');
     $username = isset($offer['username']) ? htmlspecialchars((string)$offer['username'], ENT_QUOTES, 'UTF-8') : '';
     $tempPassword = isset($offer['temp_password']) ? htmlspecialchars((string)$offer['temp_password'], ENT_QUOTES, 'UTF-8') : '';
-    $baseUrl = "https://maha-launchpad.mahabehavioralhealth.com";
-    $loginUrl = $baseUrl . "/login";
+    $baseUrl = "https://mahaverse.mahabehavioralhealth.com";
+    $loginUrl = $baseUrl . "/launchpad/login";
     // Deep-link via login with redirect so that after authentication the user lands directly on the offer letter
-    $offerUrl = $baseUrl . "/login?redirect=" . urlencode("/form/?view=offer-letter");
+    $offerUrl = $baseUrl . "/launchpad/login?redirect=" . urlencode("/launchpad/form/?view=offer-letter");
 
     $subject = "Job offer for {$employeeName}-Maha Behavioral Health Services";
     $hasCreds = ($username !== '' && $tempPassword !== '');
@@ -89,7 +95,7 @@ function sendOfferInitiatedEmail(string $toEmail, array $offer): void {
         <body>
             <div class='container'>
                 <div class='header'>
-                    <img src='{$baseUrl}/favicon.ico' alt='Maha Launchpad Logo' class='logo' />
+                    <img src='https://www.mahabehavioralhealth.com/images/mahalogo_v1_small.jpg' alt='Maha Launchpad Logo' class='logo' />
                     <h1 style='margin: 0 0 10px 0;'>Maha Launchpad</h1>
                     <p style='margin: 0;'>Your Offer Letter</p>
                 </div>
@@ -181,6 +187,8 @@ try {
     $lastNamePayload = trim((string)($payload['last_name'] ?? ''));
     $jobTitle = trim((string)($payload['job_title'] ?? ''));
     $payRate = trim((string)($payload['pay_rate'] ?? ''));
+    $positionCode = trim((string)($payload['position_code'] ?? ''));
+    $offerLetterBody = trim((string)($payload['offer_letter_body'] ?? ''));
     $sendEmail = isset($payload['send_email']) ? (int)!!$payload['send_email'] : 1;
     $username = trim((string)($payload['username'] ?? ''));
     $email = trim((string)($payload['email'] ?? ''));
@@ -434,11 +442,13 @@ try {
 
     // Insert initiation (no upsert; only once)
     $ins = $conn->prepare("
-        INSERT INTO StaffOfferInitiations (staff_id, initiated_by_user_id, employee_name, job_title, pay_rate)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO StaffOfferInitiations (staff_id, initiated_by_user_id, employee_name, job_title, pay_rate, position_code, offer_letter_body)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     ");
     if (!$ins) throw new Exception('Offer insert failed');
-    $ins->bind_param("iisss", $staffId, $currentUserId, $employeeName, $jobTitle, $payRate);
+    $pcVal = $positionCode !== '' ? $positionCode : null;
+    $bodyVal = $offerLetterBody !== '' ? $offerLetterBody : null;
+    $ins->bind_param("iisssss", $staffId, $currentUserId, $employeeName, $jobTitle, $payRate, $pcVal, $bodyVal);
     if (!$ins->execute()) throw new Exception('Offer insert failed: ' . $ins->error);
     $ins->close();
 

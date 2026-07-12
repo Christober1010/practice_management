@@ -157,7 +157,7 @@ E2E_TARGET=prod PLAYWRIGHT_SKIP_WEBSERVER=1 pnpm exec playwright test
 | test | `playwright-report-test/` | `e2e/.auth/user-test.json` |
 | prod | `playwright-report-prod/` | `e2e/.auth/user-prod.json` |
 
-**Prod E2E warning:** specs **write** to the live prod DB (E2E clients, users, staff, etc.). Only run when intentional. If prod DB is missing session migrations (e.g. `recurring_id`), add-session / session-notes API tests skip — see [docs/MIGRATIONS-CHECKLIST.md](docs/MIGRATIONS-CHECKLIST.md).
+**Prod E2E warning:** specs **write** to the live prod DB (E2E clients, users, staff, etc.). Only run when intentional. If prod DB is missing migrations (e.g. `sessions.recurring_id`), `test:e2e:api:prod` **fails** (schema-readiness probes) — see [docs/MIGRATIONS-CHECKLIST.md](docs/MIGRATIONS-CHECKLIST.md).
 
 ---
 

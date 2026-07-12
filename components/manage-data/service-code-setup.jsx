@@ -80,10 +80,9 @@ export default function ServiceCodeSetup() {
 
   const handleAddServiceCode = async (code) => {
     try {
-      const url = `${baseUrl}/service-codes.php`;
       const method = editingCode ? "PUT" : "POST";
 
-      const res = await fetch(url, {
+      const res = await mahaverseFetch("/service-codes.php", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(code),

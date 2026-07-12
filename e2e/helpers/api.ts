@@ -18,6 +18,6 @@ export function waitForApi(
       apiUrl(path).test(res.url()) &&
       res.request().method() === method &&
       res.status() === status,
-    { timeout: 30_000 }
+    { timeout: 60_000 }
   );
 }

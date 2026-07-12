@@ -44,42 +44,76 @@ if (file_exists(__DIR__ . '/.env')) {
 // GOOGLE_SERVICE_ACCOUNT_JSON=/path/to/service-account.json
 // GOOGLE_DRIVE_SHARED_DRIVE_ID=your_shared_drive_id (optional)
 
-// CORS Configuration
-// Configure allowed origins (comma-separated for multiple origins)
-// For production, set this to your actual frontend domain(s)
-$allowedOrigins = [
-    'http://localhost:3000',
-    'http://localhost:3001',
-    'https://localhost:3000',
-    'https://localhost:3001',
-    // Mahaverse (frontend) origins that call Launchpad backend cross-origin
-    'https://mahaverse-dev.mahabehavioralhealth.com',
-    'https://mahaverse.mahabehavioralhealth.com',
-    'http://launchpad.dev.mahabehavioralhealth.com',
-    'https://launchpad.dev.mahabehavioralhealth.com',
-    'https://launchpad.mahabehavioralhealth.com',
-    'https://maha-launchpad.mahabehavioralhealth.com',
-];
+// CORS helpers (standalone file; inline fallback if missing on server after partial deploy)
+$corsHelpersPath = __DIR__ . '/cors_helpers.php';
+if (is_readable($corsHelpersPath)) {
+    require_once $corsHelpersPath;
+} elseif (!function_exists('launchpad_apply_cors_headers')) {
+    function launchpad_cors_allowed_origins(): array
+    {
+        return [
+            'http://localhost:3000',
+            'http://localhost:3001',
+            'https://localhost:3000',
+            'https://localhost:3001',
+            'http://mahaverse-dev.mahabehavioralhealth.com',
+            'https://mahaverse-dev.mahabehavioralhealth.com',
+            'http://mahaverse.mahabehavioralhealth.com',
+            'https://mahaverse.mahabehavioralhealth.com',
+            'http://www.mahabehavioralhealth.com',
+            'https://www.mahabehavioralhealth.com',
+            'http://launchpad.dev.mahabehavioralhealth.com',
+            'https://launchpad.dev.mahabehavioralhealth.com',
+            'https://launchpad.mahabehavioralhealth.com',
+            'https://maha-launchpad.mahabehavioralhealth.com',
+        ];
+    }
 
-// Get the origin from the request
-$origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
-$requestHost = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
+    function launchpad_is_allowed_cors_origin(?string $origin): bool
+    {
+        if ($origin === null || $origin === '') {
+            return false;
+        }
+        if (in_array($origin, launchpad_cors_allowed_origins(), true)) {
+            return true;
+        }
+        $host = parse_url($origin, PHP_URL_HOST);
+        $scheme = parse_url($origin, PHP_URL_SCHEME);
+        if (!$host || !in_array($scheme, ['http', 'https'], true)) {
+            return false;
+        }
+        return preg_match('/(^|\.)mahabehavioralhealth\.com$/i', $host) === 1;
+    }
 
-// Check if origin matches the request host (same domain)
-$isSameDomain = !empty($origin) && parse_url($origin, PHP_URL_HOST) === $requestHost;
+    function launchpad_origin_is_allowed(?string $origin, ?string $requestHost = null): bool
+    {
+        $requestHost = $requestHost ?? ($_SERVER['HTTP_HOST'] ?? '');
+        $isSameDomain = !empty($origin)
+            && !empty($requestHost)
+            && parse_url($origin, PHP_URL_HOST) === $requestHost;
+        return $isSameDomain || launchpad_is_allowed_cors_origin($origin);
+    }
 
-// Check if the origin is allowed (whitelist or same domain)
-if (in_array($origin, $allowedOrigins) || $isSameDomain) {
-    header("Access-Control-Allow-Origin: $origin");
-} elseif (!empty($origin)) {
-    // If origin is set but not in whitelist and not same domain, don't set CORS header
+    function launchpad_apply_cors_headers(string $methods = 'GET, POST, OPTIONS'): void
+    {
+        $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+        $requestHost = $_SERVER['HTTP_HOST'] ?? '';
+        if (launchpad_origin_is_allowed($origin, $requestHost)) {
+            header("Access-Control-Allow-Origin: $origin");
+        }
+        header('Access-Control-Allow-Credentials: true');
+        header("Access-Control-Allow-Methods: $methods");
+        header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, Accept, Origin, Authorization, X-Auth-Token, X-CSRF-Token, X-SSO-Secret');
+        header('Access-Control-Max-Age: 86400');
+    }
 }
 
-// CORS headers for credentials (needed for sessions/cookies)
-header('Access-Control-Allow-Credentials: true');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, X-Requested-With, Accept, Origin, Authorization, X-Auth-Token, X-CSRF-Token, X-SSO-Secret');
-header('Access-Control-Max-Age: 86400'); // 24 hours
+// CORS Configuration (see cors_helpers.php)
+$origin = isset($_SERVER['HTTP_ORIGIN']) ? $_SERVER['HTTP_ORIGIN'] : '';
+$requestHost = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : '';
+$isSameDomain = !empty($origin) && parse_url($origin, PHP_URL_HOST) === $requestHost;
+
+launchpad_apply_cors_headers('GET, POST, OPTIONS');
 
 // Handle preflight OPTIONS request
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -326,7 +360,69 @@ function requireUser() {
     return $user;
 }
 
-require_once __DIR__ . '/rbac_helpers.php';
+$rbacHelpersPath = __DIR__ . '/rbac_helpers.php';
+if (is_readable($rbacHelpersPath)) {
+    require_once $rbacHelpersPath;
+} elseif (!function_exists('rbac_get_effective_permissions')) {
+    // Minimal legacy fallback when rbac_helpers.php was not deployed (SSO + login still work).
+    function rbac_launchpad_perm_keys() {
+        return [
+            'launchpad.dashboard', 'launchpad.offer_letter', 'launchpad.profile_form',
+            'launchpad.users', 'launchpad.profile_submit',
+        ];
+    }
+
+    function rbac_legacy_launchpad($role) {
+        $r = strtolower(trim((string) $role));
+        if ($r === 'admin') {
+            return rbac_launchpad_perm_keys();
+        }
+        if ($r === 'hr' || $r === 'staff') {
+            return [
+                'launchpad.dashboard', 'launchpad.offer_letter',
+                'launchpad.profile_form', 'launchpad.profile_submit',
+            ];
+        }
+        if ($r === 'viewer' || $r === 'reader') {
+            return ['launchpad.dashboard', 'launchpad.offer_letter'];
+        }
+        return rbac_legacy_launchpad('staff');
+    }
+
+    function rbac_get_effective_permissions($roleName, $scope = 'mahaverse') {
+        if ($scope === 'launchpad') {
+            return rbac_legacy_launchpad($roleName);
+        }
+        return [];
+    }
+
+    function rbac_user_has_permission_key($roleName, $permKey, $scope = 'mahaverse') {
+        return in_array($permKey, rbac_get_effective_permissions($roleName, $scope), true);
+    }
+
+    function rbac_require_permission_user($user, $permKey, $scope = 'mahaverse') {
+        if (!$user || empty($user['role'])) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Permission denied']);
+            exit;
+        }
+        if (!rbac_user_has_permission_key($user['role'], $permKey, $scope)) {
+            http_response_code(403);
+            echo json_encode(['success' => false, 'message' => 'Permission denied']);
+            exit;
+        }
+    }
+
+    function rbac_enforce_if_authenticated($permKey, $scope = 'mahaverse') {
+        if (!function_exists('getAuthenticatedUser')) {
+            return;
+        }
+        $user = getAuthenticatedUser();
+        if ($user) {
+            rbac_require_permission_user($user, $permKey, $scope);
+        }
+    }
+}
 
 // Helper function to sanitize input
 function sanitizeInput($data) {

@@ -64,6 +64,7 @@ export default function AppSidebar({
   const [showMasterDataMenu, setShowMasterDataMenu] = useState(false);
   const [showManageDataMenu, setShowManageDataMenu] = useState(false);
   const [showBillingMenu, setShowBillingMenu] = useState(false);
+  const [showReportsMenu, setShowReportsMenu] = useState(false);
   const lastScrollY = useRef(0);
   const { isMobile, setOpenMobile, setOpen } = useSidebar();
 
@@ -171,6 +172,20 @@ export default function AppSidebar({
       color: "text-blue-600",
     },
   ];
+  const reportsSubItems = [
+    {
+      id: "reportsSessionImport",
+      label: "Session Import",
+      icon: FileText,
+      color: "text-teal-600",
+    },
+    {
+      id: "reportsInsuranceUtilization",
+      label: "Insurance Utilization",
+      icon: Shield,
+      color: "text-indigo-600",
+    },
+  ];
 
   const { can, canAny } = usePermissions(userRole);
 
@@ -183,6 +198,9 @@ export default function AppSidebar({
   const masterDataSubItemsFiltered = masterDataSubItems.filter((s) => canSubmenu(s.id));
   const manageDataSubItemsFiltered = manageDataSubItems.filter((s) => canSubmenu(s.id));
   const billingSubItemsFiltered = billingSubItems.filter((s) =>
+    can(subPermMap[s.id])
+  );
+  const reportsSubItemsFiltered = reportsSubItems.filter((s) =>
     can(subPermMap[s.id])
   );
 
@@ -251,12 +269,14 @@ export default function AppSidebar({
         subItems: manageDataSubItemsFiltered,
       });
     }
-    if (can(PERM.VIEW_REPORTS)) {
+    if (can(PERM.VIEW_REPORTS) && reportsSubItemsFiltered.length > 0) {
       push({
         id: "reports",
         label: "Reports",
         icon: UserPlus,
         color: "text-orange-600",
+        hasSubmenu: true,
+        subItems: reportsSubItemsFiltered,
       });
     }
     if (can(PERM.VIEW_LAUNCHPAD)) {
@@ -358,6 +378,7 @@ export default function AppSidebar({
     setShowMasterDataMenu(false);
     setShowManageDataMenu(false);
     setShowBillingMenu(false);
+    setShowReportsMenu(false);
     // Desktop: do not call setOpen(false) here — that collapses the rail to icon-only.
     // Mobile: close the sheet drawer only.
     if (isMobile) {
@@ -393,6 +414,18 @@ export default function AppSidebar({
       });
       setShowManageDataMenu(false);
       setShowMasterDataMenu(false);
+      setShowReportsMenu(false);
+      return;
+    }
+    if (menuId === "reports") {
+      setShowReportsMenu((v) => {
+        const next = !v;
+        if (next) setOpen(true);
+        return next;
+      });
+      setShowManageDataMenu(false);
+      setShowMasterDataMenu(false);
+      setShowBillingMenu(false);
     }
   };
 
@@ -489,9 +522,13 @@ export default function AppSidebar({
               const isBillingSubitem = billingSubItemsFiltered.some(
                 (subItem) => subItem.id === currentView
               );
+              const isReportsSubitem = reportsSubItemsFiltered.some(
+                (subItem) => subItem.id === currentView
+              );
               const isActiveParent = item.id === "manageData" && isManageDataSubitem;
               const isActiveMasterParent = item.id === "masterData" && isMasterDataSubitem;
               const isActiveBillingParent = item.id === "billing" && isBillingSubitem;
+              const isActiveReportsParent = item.id === "reports" && isReportsSubitem;
 
               if (item.hasSubmenu) {
                 const subItems = item.subItems || [];
@@ -500,6 +537,8 @@ export default function AppSidebar({
                     ? showManageDataMenu
                     : item.id === "masterData"
                     ? showMasterDataMenu
+                    : item.id === "reports"
+                    ? showReportsMenu
                     : showBillingMenu;
 
                 return (
@@ -511,7 +550,8 @@ export default function AppSidebar({
                           isActive ||
                           isActiveParent ||
                           isActiveMasterParent ||
-                          isActiveBillingParent
+                          isActiveBillingParent ||
+                          isActiveReportsParent
                         }
                         tooltip={item.label}
                       >
@@ -525,7 +565,8 @@ export default function AppSidebar({
                             isActive ||
                             isActiveParent ||
                             isActiveMasterParent ||
-                            isActiveBillingParent
+                            isActiveBillingParent ||
+                            isActiveReportsParent
                               ? "bg-teal-50 text-teal-700"
                               : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                           }`}
@@ -536,7 +577,8 @@ export default function AppSidebar({
                                 isActive ||
                                 isActiveParent ||
                                 isActiveMasterParent ||
-                                isActiveBillingParent
+                                isActiveBillingParent ||
+                                isActiveReportsParent
                                   ? "text-teal-600"
                                   : item.color
                               }`}

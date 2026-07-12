@@ -27,11 +27,25 @@ $conn->query("
       pay_rate VARCHAR(100) NOT NULL,
       signature_attachment_id INT NOT NULL,
       accepted_date DATE NOT NULL,
+      jd_read_ack TINYINT(1) NOT NULL DEFAULT 0,
+      hipaa_ack TINYINT(1) NOT NULL DEFAULT 0,
+      abuse_ack TINYINT(1) NOT NULL DEFAULT 0,
       accepted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       UNIQUE KEY uniq_staff_offer (staff_id),
       INDEX idx_offer_created_by_user_id (created_by_user_id)
     )
 ");
+// Add ack columns to existing tables that were created without them.
+$_cols = [];
+$_cr = $conn->query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'StaffOfferAcceptances'");
+if ($_cr) { while ($_row = $_cr->fetch_assoc()) $_cols[] = $_row['COLUMN_NAME']; }
+if (!in_array('jd_read_ack', $_cols))
+    $conn->query("ALTER TABLE StaffOfferAcceptances ADD COLUMN jd_read_ack TINYINT(1) NOT NULL DEFAULT 0 AFTER accepted_date");
+if (!in_array('hipaa_ack', $_cols))
+    $conn->query("ALTER TABLE StaffOfferAcceptances ADD COLUMN hipaa_ack TINYINT(1) NOT NULL DEFAULT 0 AFTER jd_read_ack");
+if (!in_array('abuse_ack', $_cols))
+    $conn->query("ALTER TABLE StaffOfferAcceptances ADD COLUMN abuse_ack TINYINT(1) NOT NULL DEFAULT 0 AFTER hipaa_ack");
 
 try {
     $currentUserId = isset($authUser['id']) ? (int)$authUser['id'] : 0;
@@ -80,7 +94,7 @@ try {
 
     $stmt = $conn->prepare("
         SELECT offer_id, staff_id, created_by_user_id, employee_name, job_title, pay_rate,
-               signature_attachment_id, accepted_date, accepted_at
+               signature_attachment_id, accepted_date, jd_read_ack, hipaa_ack, abuse_ack, accepted_at
         FROM StaffOfferAcceptances
         WHERE staff_id = ?
         LIMIT 1
@@ -101,6 +115,9 @@ try {
     $offer['staff_id'] = (int)$offer['staff_id'];
     $offer['created_by_user_id'] = (int)$offer['created_by_user_id'];
     $offer['signature_attachment_id'] = (int)$offer['signature_attachment_id'];
+    $offer['jd_read_ack'] = (bool)$offer['jd_read_ack'];
+    $offer['hipaa_ack'] = (bool)$offer['hipaa_ack'];
+    $offer['abuse_ack'] = (bool)$offer['abuse_ack'];
 
     // Include signature image as a data URL so the frontend can render/download it without cross-origin tainting.
     // This is limited to ~2MB in submit endpoint; keep a safety cap here too.

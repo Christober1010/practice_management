@@ -83,10 +83,9 @@ export default function DiagnosisCodeSetup() {
 
   const handleAddDiagnosisCode = async (code) => {
     try {
-      const url = `${baseUrl}/diagnosis-codes.php`;
       const method = editingCode ? "PUT" : "POST";
 
-      const res = await fetch(url, {
+      const res = await mahaverseFetch("/diagnosis-codes.php", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(code),

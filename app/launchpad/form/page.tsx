@@ -9,6 +9,7 @@ import OfferLetterView from '@/components/launchpad/OfferLetterView';
 import SubmissionModal from '@/components/launchpad/SubmissionModal';
 import LogoutConfirmationModal from '@/components/launchpad/LogoutConfirmationModal';
 import AdminUsers from '@/components/launchpad/AdminUsers';
+import ClientIntakeView from '@/components/launchpad/ClientIntakeView';
 import { useFormState } from '@/components/launchpad/form/useFormState';
 import { useProgress } from '@/components/launchpad/form/useProgress';
 import { checkAuth, ensureAuth, submitForm, getCsrfToken, logout, listMyStaff, getAttachmentViewUrl, type StaffListItem } from '@/lib/launchpad/api';
@@ -375,7 +376,25 @@ export default function FormPage() {
               />
             )}
 
-            {currentView !== 'dashboard' && currentView !== 'users' && currentView !== 'offer-letter' && (
+            {currentView === 'client-intake' && (
+              <ClientIntakeView
+                onSubmitted={(result) => {
+                  setModalData({
+                    isSuccess: result.success,
+                    title: result.title || (result.success ? 'Client Intake Submitted' : 'Submission Failed'),
+                    message: result.message || '',
+                  });
+                  setIsModalOpen(true);
+                  if (result.success) {
+                    setTimeout(() => {
+                      setCurrentView('dashboard');
+                    }, 2000);
+                  }
+                }}
+              />
+            )}
+
+            {currentView !== 'dashboard' && currentView !== 'users' && currentView !== 'offer-letter' && currentView !== 'client-intake' && (
               <FormView
                 key={formKey}
                 formData={formData}

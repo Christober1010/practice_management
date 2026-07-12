@@ -105,6 +105,31 @@ export const SCHEDULE_TRACKER_EXCEL_COLUMNS = [
   "Misc Hrs",
 ];
 
+/** Schedule Tracker workflow tabs / reports.tracker_status values */
+export const SCHEDULE_TRACKER_STATUSES = [
+  "Pending",
+  "Reviewed",
+  "Excluded",
+  "Pending Payment",
+  "Received Payment",
+];
+
+const TRACKER_STATUS_LEGACY = {
+  "payment posted": "Pending Payment",
+  "payment cleared": "Received Payment",
+};
+
+export function normalizeTrackerStatus(value) {
+  const s = value != null ? String(value).trim() : "";
+  if (!s) return "Pending";
+  const legacy = TRACKER_STATUS_LEGACY[s.toLowerCase()];
+  if (legacy) return legacy;
+  const found = SCHEDULE_TRACKER_STATUSES.find(
+    (st) => st.toLowerCase() === s.toLowerCase()
+  );
+  return found ?? "Pending";
+}
+
 export function stripExcludedReportFields(row) {
   if (!row || typeof row !== "object") return row;
   const out = { ...row };

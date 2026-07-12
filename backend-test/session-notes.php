@@ -270,15 +270,7 @@ function sessions_has_authorized_hours_column_notes(mysqli $conn): bool
 
 function build_claim_id_notes(int $sessionId, $startUtc = null): string
 {
-    $datePart = date('Ymd');
-    if (!empty($startUtc)) {
-        $ts = strtotime((string)$startUtc);
-        if ($ts !== false) {
-            $datePart = gmdate('Ymd', $ts);
-        }
-    }
-
-    return "CLM-{$datePart}-{$sessionId}";
+    return 'CLM' . (int)$sessionId;
 }
 
 /**

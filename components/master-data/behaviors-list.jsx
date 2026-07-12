@@ -199,11 +199,11 @@ export default function BehaviorsList() {
   }, [allRows, searchTerm, categoryFilter, recordingFilter]);
 
   const handleSave = async (payload, isClient) => {
-    const url = isClient ? `${baseUrl}/client-behaviors.php` : `${baseUrl}/behaviors.php`;
+    const path = isClient ? "/client-behaviors.php" : "/behaviors.php";
     const body = isClient
       ? { client_id: payload.client_id, behaviors: [payload] }
       : { behaviors: [payload] };
-    const res = await fetch(url, {
+    const res = await mahaverseFetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -221,11 +221,11 @@ export default function BehaviorsList() {
   const handleArchive = async (row) => {
     try {
       const isClient = row.source === "client";
-      const url = isClient ? `${baseUrl}/client-behaviors.php` : `${baseUrl}/behaviors.php`;
+      const path = isClient ? "/client-behaviors.php" : "/behaviors.php";
       const body = isClient
         ? { type: "behavior", id: row.id, client_id: row.client_id }
         : { type: "behavior", id: row.id };
-      const res = await fetch(url, {
+      const res = await mahaverseFetch(path, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -262,12 +262,12 @@ export default function BehaviorsList() {
   const handleRestoreBehavior = async (row) => {
     try {
       const isClient = row.source === "client";
-      const url = isClient ? `${baseUrl}/client-behaviors.php` : `${baseUrl}/behaviors.php`;
+      const path = isClient ? "/client-behaviors.php" : "/behaviors.php";
       const payload = behaviorToRestorePayload(row);
       const body = isClient
         ? { client_id: String(row.client_id), behaviors: [payload] }
         : { behaviors: [payload] };
-      const res = await fetch(url, {
+      const res = await mahaverseFetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

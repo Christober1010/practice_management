@@ -27,6 +27,7 @@ import { Calendar, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fetchClientsUtil } from "@/app/utils/fetchClients";
 import { formatReportDos, formatReportDosDate, reportDosKey } from "@/lib/report-dos-format";
+import { normalizeTrackerStatus } from "@/components/reports/report-column-exclusions";
 
 const PAYMENT_STATUS = {
   NOT_PAID: "Not Paid",
@@ -116,6 +117,14 @@ export default function PayerPaymentsView() {
   const [filterPaymentStatus, setFilterPaymentStatus] = useState("all");
   const [tableSearch, setTableSearch] = useState("");
   const [savedRows, setSavedRows] = useState([]);
+  const [markingClearedId, setMarkingClearedId] = useState(null);
+
+  const paymentEligibleRows = useMemo(() => {
+    return allReportRows.filter((r) => {
+      const st = normalizeTrackerStatus(r.tracker_status);
+      return st === "Reviewed" || st === "Pending Payment";
+    });
+  }, [allReportRows]);
 
   const selectedClient = useMemo(
     () => clients.find((c) => String(c.client_id) === String(clientId)),
@@ -128,9 +137,11 @@ export default function PayerPaymentsView() {
   }, [selectedClient]);
 
   const reportLines = useMemo(() => {
-    if (!clientId) return allReportRows;
-    return allReportRows.filter((r) => String(r.client_id ?? "").trim() === String(clientId).trim());
-  }, [allReportRows, clientId]);
+    if (!clientId) return paymentEligibleRows;
+    return paymentEligibleRows.filter(
+      (r) => String(r.client_id ?? "").trim() === String(clientId).trim()
+    );
+  }, [paymentEligibleRows, clientId]);
 
   const filteredReportLines = useMemo(() => {
     const q = filterDos.trim();
@@ -174,7 +185,12 @@ export default function PayerPaymentsView() {
         { headers: { ...authHeaders() } }
       );
       const repJson = await repRes.json();
-      const lines = repJson.success && Array.isArray(repJson.data) ? repJson.data : [];
+      const lines = repJson.success && Array.isArray(repJson.data)
+        ? repJson.data.map((r) => ({
+            ...r,
+            tracker_status: normalizeTrackerStatus(r.tracker_status),
+          }))
+        : [];
       if (!repJson.success) {
         toast.error(repJson.message || "Failed to load report index");
       }
@@ -182,6 +198,8 @@ export default function PayerPaymentsView() {
 
       const idSet = new Set();
       for (const r of lines) {
+        const st = normalizeTrackerStatus(r.tracker_status);
+        if (st !== "Reviewed" && st !== "Pending Payment") continue;
         const cid = r.client_id != null && String(r.client_id).trim() !== "" ? String(r.client_id).trim() : "";
         if (cid) idSet.add(cid);
       }
@@ -235,8 +253,9 @@ export default function PayerPaymentsView() {
 
   const loadSaved = useCallback(async () => {
     try {
-      const q = clientId ? new URLSearchParams({ client_id: clientId }) : new URLSearchParams();
-      const res = await mahaverseFetch(`/payer-payment-entries.php?${q}`, {
+      const q = new URLSearchParams({ context: "schedule_tracker" });
+      if (clientId) q.set("client_id", clientId);
+      const res = await mahaverseFetch(`/payer-payment-entries.php?${q.toString()}`, {
         headers: { ...authHeaders() },
       });
       const json = await res.json();
@@ -266,13 +285,13 @@ export default function PayerPaymentsView() {
   }
 
   useEffect(() => {
-    if (!allReportRows.length) {
+    if (!paymentEligibleRows.length) {
       setAmounts({});
       return;
     }
     const lines = clientId
-      ? allReportRows.filter((r) => String(r.client_id ?? "").trim() === String(clientId).trim())
-      : allReportRows;
+      ? paymentEligibleRows.filter((r) => String(r.client_id ?? "").trim() === String(clientId).trim())
+      : paymentEligibleRows;
     const fromSaved = {};
     for (const s of savedRows) {
       if (s.report_id != null && String(s.report_id) !== "") {
@@ -297,7 +316,7 @@ export default function PayerPaymentsView() {
       }
       return next;
     });
-  }, [clientId, allReportRows, savedRows]);
+  }, [clientId, paymentEligibleRows, savedRows]);
 
   const setField = (reportPk, field, value) => {
     setAmounts((prev) => ({
@@ -366,11 +385,36 @@ export default function PayerPaymentsView() {
       }
       toast.success(`Saved ${entries.length} payment line(s)`);
       await loadSaved();
+      await loadPayerIndex();
     } catch (e) {
       console.error(e);
       toast.error("Save failed");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const markPaymentCleared = async (reportId) => {
+    setMarkingClearedId(reportId);
+    try {
+      const res = await mahaverseFetch("/payer-payment-entries.php", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ action: "mark_cleared", report_ids: [reportId] }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        toast.error(json.message || "Update failed");
+        return;
+      }
+      toast.success("Payment marked cleared");
+      await loadPayerIndex();
+      await loadSaved();
+    } catch (e) {
+      console.error(e);
+      toast.error("Update failed");
+    } finally {
+      setMarkingClearedId(null);
     }
   };
 
@@ -417,9 +461,8 @@ export default function PayerPaymentsView() {
       <div>
         <h2 className="text-2xl font-bold text-slate-800">Payer Payments</h2>
         <p className="text-slate-600 mt-1 text-sm">
-          By default all imported report lines are shown. Use Client to narrow to one client. Search,
-          DOS, and Check # filters apply to whatever is on screen. To post A/R, select that client and
-          an insurance, then save.
+          Shows <strong>Reviewed</strong> and <strong>Pending Payment</strong> schedule tracker rows.
+          Payment posting is also available on the Schedule Tracker Reviewed tab.
         </p>
       </div>
 
@@ -513,9 +556,9 @@ export default function PayerPaymentsView() {
                     )}
                     value={filterDos}
                     onChange={(e) => setFilterDos(e.target.value)}
-                    disabled={allReportRows.length === 0}
+                    disabled={paymentEligibleRows.length === 0}
                   />
-                  {allReportRows.length > 0 && filterDos.trim() !== "" && (
+                  {paymentEligibleRows.length > 0 && filterDos.trim() !== "" && (
                     <button
                       type="button"
                       aria-label="Clear date filter"
@@ -538,7 +581,7 @@ export default function PayerPaymentsView() {
                 <Select
                   value={filterCheckNumber}
                   onValueChange={setFilterCheckNumber}
-                  disabled={allReportRows.length === 0}
+                  disabled={paymentEligibleRows.length === 0}
                 >
                   <SelectTrigger className="border-slate-200">
                     <SelectValue placeholder="Check number" />
@@ -561,7 +604,7 @@ export default function PayerPaymentsView() {
                 <Select
                   value={filterPaymentStatus}
                   onValueChange={setFilterPaymentStatus}
-                  disabled={allReportRows.length === 0}
+                  disabled={paymentEligibleRows.length === 0}
                 >
                   <SelectTrigger className="border-slate-200">
                     <SelectValue placeholder="Payment status" />
@@ -585,7 +628,7 @@ export default function PayerPaymentsView() {
                   variant="outline"
                   size="sm"
                   className="border-slate-200 text-slate-700"
-                  disabled={!hasActiveFilters || allReportRows.length === 0}
+                  disabled={!hasActiveFilters || paymentEligibleRows.length === 0}
                   onClick={clearAllFilters}
                 >
                   Clear filters
@@ -600,12 +643,25 @@ export default function PayerPaymentsView() {
             </p>
           )}
 
+          {!loadingIndex && allReportRows.length > 0 && paymentEligibleRows.length === 0 && (
+            <p className="text-sm text-slate-500">
+              No reviewed report rows yet. Mark rows as Reviewed in Schedule Tracker first.
+            </p>
+          )}
+
+          {!loadingIndex && paymentEligibleRows.length > 0 && allReportRows.length > paymentEligibleRows.length && (
+            <p className="text-sm text-slate-500">
+              {allReportRows.length - paymentEligibleRows.length} imported row(s) are not Reviewed and
+              are hidden here.
+            </p>
+          )}
+
           {!loadingIndex &&
             clientId &&
-            allReportRows.length > 0 &&
+            paymentEligibleRows.length > 0 &&
             reportLines.length === 0 && (
             <p className="text-sm text-slate-500">
-              No report rows for this client — confirm imports include a matching{" "}
+              No reviewed report rows for this client — confirm imports include a matching{" "}
               <span className="font-mono text-xs">client_id</span>.
             </p>
           )}
@@ -637,6 +693,7 @@ export default function PayerPaymentsView() {
                     <TableHead className="font-semibold">Code</TableHead>
                     <TableHead className="font-semibold">Payer (report)</TableHead>
                     <TableHead className="font-semibold">Staff</TableHead>
+                    <TableHead className="font-semibold">Tracker status</TableHead>
                     <TableHead className="font-semibold">Payment status</TableHead>
                     <TableHead className="font-semibold text-right">Dur. hrs</TableHead>
                     <TableHead>Co-insurance $</TableHead>
@@ -644,12 +701,13 @@ export default function PayerPaymentsView() {
                     <TableHead>Deductible $</TableHead>
                     <TableHead>Payer paid $</TableHead>
                     <TableHead>Check #</TableHead>
+                    <TableHead className="font-semibold">Bank</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {displayReportLines.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={13} className="text-center text-sm text-slate-500 py-10">
+                      <TableCell colSpan={15} className="text-center text-sm text-slate-500 py-10">
                         No rows match your search. Clear the search box or try different keywords.
                       </TableCell>
                     </TableRow>
@@ -690,6 +748,11 @@ export default function PayerPaymentsView() {
                             </TableCell>
                             <TableCell className="max-w-[8rem] truncate text-xs" title={staff}>
                               {staff || "—"}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-xs">
+                              <span className="inline-flex rounded-full px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-700">
+                                {normalizeTrackerStatus(row.tracker_status)}
+                              </span>
                             </TableCell>
                             <TableCell className="whitespace-nowrap text-xs">
                               <span
@@ -743,11 +806,27 @@ export default function PayerPaymentsView() {
                                 onChange={(e) => setField(pk, "check_number", e.target.value)}
                               />
                             </TableCell>
+                            <TableCell>
+                              {normalizeTrackerStatus(row.tracker_status) === "Pending Payment" ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-slate-200 text-xs"
+                                  disabled={markingClearedId === row.id}
+                                  onClick={() => markPaymentCleared(row.id)}
+                                >
+                                  {markingClearedId === row.id ? "…" : "Mark cleared"}
+                                </Button>
+                              ) : (
+                                <span className="text-xs text-slate-400">—</span>
+                              )}
+                            </TableCell>
                           </TableRow>
                         );
                       })}
                       <TableRow className="bg-slate-50 border-t-2">
-                        <TableCell colSpan={8} className="text-right font-medium text-slate-700">
+                        <TableCell colSpan={9} className="text-right font-medium text-slate-700">
                           Totals (visible rows)
                         </TableCell>
                         <TableCell className="text-right tabular-nums font-medium">
@@ -762,6 +841,7 @@ export default function PayerPaymentsView() {
                         <TableCell className="text-right tabular-nums font-medium">
                           {visibleAmountTotals.payerPaid.toFixed(2)}
                         </TableCell>
+                        <TableCell>—</TableCell>
                         <TableCell>—</TableCell>
                       </TableRow>
                     </>

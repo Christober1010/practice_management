@@ -348,6 +348,34 @@ function reports_strip_excluded_fields_schedule_tracker(array $row): array
     return $row;
 }
 
+/** Allowed values for reports.tracker_status (Schedule Tracker workflow). */
+function reports_tracker_status_allowed(): array
+{
+    return ['Pending', 'Reviewed', 'Excluded', 'Pending Payment', 'Received Payment'];
+}
+
+function reports_normalize_tracker_status($value): string
+{
+    $s = trim((string)($value ?? ''));
+    if ($s === '') {
+        return 'Pending';
+    }
+    $legacy = [
+        'payment posted' => 'Pending Payment',
+        'payment cleared' => 'Received Payment',
+    ];
+    $lower = strtolower($s);
+    if (isset($legacy[$lower])) {
+        return $legacy[$lower];
+    }
+    foreach (reports_tracker_status_allowed() as $allowed) {
+        if (strcasecmp($s, $allowed) === 0) {
+            return $allowed;
+        }
+    }
+    return 'Pending';
+}
+
 /**
  * Build the INSERT SQL string for a pending row.
  * Extracted to avoid duplicating the large SQL block.
@@ -389,6 +417,12 @@ function reports_build_insert_sql(mysqli $conn, array $p): string
         }
     }
 
+    $trackerStatus = $p['trackerStatus'] ?? null;
+    if ($trackerStatus === null || $trackerStatus === '') {
+        $trackerStatus = $isExcelFormat ? ($row['Status'] ?? null) : ($row['status'] ?? null);
+    }
+    $trackerStatus = reports_normalize_tracker_status($trackerStatus);
+
     return "
         INSERT INTO reports (
             client_id, provider_id,
@@ -414,6 +448,7 @@ function reports_build_insert_sql(mysqli $conn, array $p): string
             make_up_session, make_up_session_hours,
             exclude_from_payroll, exclude_from_mileage,
             misc_hrs,
+            tracker_status,
             archived
         ) VALUES (
             " . sqlValue($conn, $linkClientId) . ",
@@ -480,6 +515,7 @@ function reports_build_insert_sql(mysqli $conn, array $p): string
             " . $p['excludePayroll'] . ",
             " . $p['excludeMileage'] . ",
             " . sqlValue($conn, $miscHrs) . ",
+            " . sqlValue($conn, $trackerStatus) . ",
             0
         )
     ";
@@ -562,6 +598,12 @@ function handleGet($conn)
             $types .= 's';
             $params[] = $fdos;
         }
+        $trackerStatus = isset($_GET['tracker_status']) ? trim((string)$_GET['tracker_status']) : '';
+        if ($trackerStatus !== '') {
+            $where[] = 'tracker_status = ?';
+            $types .= 's';
+            $params[] = reports_normalize_tracker_status($trackerStatus);
+        }
 
         $sql = 'SELECT * FROM reports WHERE ' . implode(' AND ', $where) . ' ORDER BY dos DESC, id DESC';
         $stmt = $conn->prepare($sql);
@@ -601,6 +643,7 @@ function handleGet($conn)
         if (isset($row['duration_render_in_hrs']) && $row['duration_render_in_hrs'] !== null) {
             $row['duration_render_in_hrs'] = (float)$row['duration_render_in_hrs'];
         }
+        $row['tracker_status'] = reports_normalize_tracker_status($row['tracker_status'] ?? null);
         $rows[] = $scheduleTracker
             ? reports_strip_excluded_fields_schedule_tracker($row)
             : reports_strip_excluded_fields($row);
@@ -612,9 +655,15 @@ function handleGet($conn)
 // ---------- POST (create single report or bulk from Excel) ----------
 function handlePost($conn, $input)
 {
-    $isSingleReport = isset($input['id']) || (isset($input['client_first_name']) && !isset($input[0]));
-    $items = $isSingleReport ? [$input] : (isset($input[0]) ? $input : [$input]);
-    $isBulk = is_array($input) && isset($input[0]) && is_array($input[0]);
+    $scheduleTrackerImport = !empty($input['schedule_tracker']);
+    if ($scheduleTrackerImport) {
+        $items = isset($input['rows']) && is_array($input['rows']) ? $input['rows'] : [];
+        $isBulk = count($items) > 0;
+    } else {
+        $isSingleReport = isset($input['id']) || (isset($input['client_first_name']) && !isset($input[0]));
+        $items = $isSingleReport ? [$input] : (isset($input[0]) ? $input : [$input]);
+        $isBulk = is_array($input) && isset($input[0]) && is_array($input[0]);
+    }
 
     $pending = [];
     $lineNo = 0;
@@ -702,9 +751,21 @@ function handlePost($conn, $input)
             'sl'               => $sl,
             'svc'              => $svc,
             'fp'               => $fp,
+            'trackerStatus'    => $scheduleTrackerImport ? 'Pending' : null,
         ];
     }
 
+    // ---- Schedule Tracker import: no duplicate checks; all rows Pending ----
+    if ($scheduleTrackerImport) {
+        $warnings = ['duplicatesWithinFile' => [], 'duplicatesInDb' => []];
+        $toInsertFinal = [];
+        foreach ($pending as $p) {
+            $p['trackerStatus'] = 'Pending';
+            $p['_sql'] = reports_build_insert_sql($conn, $p);
+            $p['_insertOk'] = true;
+            $toInsertFinal[] = $p;
+        }
+    } else {
     // ---- Detect within-file duplicates by fingerprint ----
     $warnings   = ['duplicatesWithinFile' => [], 'duplicatesInDb' => []];
     $fpToLines  = [];
@@ -767,6 +828,7 @@ function handlePost($conn, $input)
             $toInsertFinal[] = $p;
         }
     }
+    }
 
     // ---- Execute inserts inside a transaction ----
     $conn->begin_transaction();
@@ -795,6 +857,51 @@ function handlePost($conn, $input)
 // ---------- PUT (update by id) ----------
 function handlePut($conn, $input)
 {
+    if (!empty($input['bulk']) && !empty($input['ids']) && is_array($input['ids'])) {
+        $ids = array_values(array_filter(array_map('intval', $input['ids']), static function ($id) {
+            return $id > 0;
+        }));
+        if (count($ids) === 0) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'message' => 'ids array is required for bulk update']);
+            return;
+        }
+        if (!array_key_exists('tracker_status', $input)) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'message' => 'tracker_status is required for bulk update']);
+            return;
+        }
+        $status = reports_normalize_tracker_status($input['tracker_status']);
+        if (!in_array($status, reports_tracker_status_allowed(), true)) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'message' => 'Invalid tracker_status']);
+            return;
+        }
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $sql = "UPDATE reports SET tracker_status = ? WHERE id IN ($placeholders)";
+        $types = 's' . str_repeat('i', count($ids));
+        $params = array_merge([$status], $ids);
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'message' => $conn->error]);
+            return;
+        }
+        $stmt->bind_param($types, ...$params);
+        if ($stmt->execute()) {
+            echo json_encode([
+                'success' => true,
+                'message' => 'Reports updated',
+                'updated' => $stmt->affected_rows,
+                'tracker_status' => $status,
+            ]);
+        } else {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'message' => $stmt->error]);
+        }
+        return;
+    }
+
     if (empty($input['id'])) {
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'id is required']);
@@ -826,7 +933,8 @@ function handlePut($conn, $input)
         "make_up_session","make_up_session_hours",
         "exclude_from_payroll","exclude_from_mileage",
         "archived",
-        "misc_hrs"
+        "misc_hrs",
+        "tracker_status"
     ];
 
     $fields = [];
@@ -847,6 +955,9 @@ function handlePut($conn, $input)
                 $params[] = $val ? 1 : 0;
             } else {
                 $types .= "s";
+                if ($col === 'tracker_status') {
+                    $val = reports_normalize_tracker_status($val);
+                }
                 $params[] = $val;
             }
         }

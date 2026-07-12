@@ -229,6 +229,33 @@ try {
         // Add location field at top level (from the location column in client_addresses table)
         $client['location'] = $primaryLocation;
 
+        // List views read city/zip from the clients row; data may live only in client_addresses.
+        $primaryAddr = null;
+        foreach ($client['addresses'] as $addr) {
+            if (trim((string)($addr['address_line_1'] ?? '')) !== '') {
+                $primaryAddr = $addr;
+                break;
+            }
+        }
+        if ($primaryAddr === null && count($client['addresses']) > 0) {
+            $primaryAddr = $client['addresses'][0];
+        }
+        if ($primaryAddr !== null) {
+            foreach (['address_line_1', 'address_line_2', 'city', 'state', 'zipcode'] as $field) {
+                if (trim((string)($client[$field] ?? '')) === '' && trim((string)($primaryAddr[$field] ?? '')) !== '') {
+                    $client[$field] = $primaryAddr[$field];
+                }
+            }
+        }
+        if (trim((string)($client['zipcode'] ?? '')) === '') {
+            foreach (['zip', 'postal_code', 'post_code'] as $zipKey) {
+                if (trim((string)($client[$zipKey] ?? '')) !== '') {
+                    $client['zipcode'] = $client[$zipKey];
+                    break;
+                }
+            }
+        }
+
         // Add availability
         if (isset($availabilityByClient[$clientId])) {
             $client['availability'] = $availabilityByClient[$clientId];

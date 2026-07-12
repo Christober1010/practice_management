@@ -10,9 +10,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Download, ExternalLink, FileText, FileSignature, CheckCircle2, Mail } from 'lucide-react';
-import { acceptMyOffer, getAttachmentViewUrl, getMyOfferAcceptance, getMyOfferInitiation, initiateOffer, uploadMySignedOfferLetterPdf, sendReminder } from '@/lib/launchpad/api';
+import { acceptMyOffer, getAttachmentViewUrl, getMyOfferAcceptance, getMyOfferInitiation, getOfferPositions, initiateOffer, uploadMySignedOfferLetterPdf, sendReminder } from '@/lib/launchpad/api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { StaffListItem } from '@/lib/launchpad/api';
+import type { OfferPosition, StaffListItem } from '@/lib/launchpad/api';
 import { toast } from '@/components/launchpad/ui/toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
@@ -71,7 +71,7 @@ export default function OfferLetterView(props: {
   const [offerSignature, setOfferSignature] = useState<string>('');
   const [offerSignatureDate, setOfferSignatureDate] = useState<string>(() => new Date().toISOString().slice(0, 10)); // default today
 
-  const [activeTab, setActiveTab] = useState<'offer' | 'job'>('offer');
+  const [activeTab, setActiveTab] = useState<'offer' | 'job' | 'compliance'>('offer');
   const [offerLoading, setOfferLoading] = useState(true);
   const [offerAccepted, setOfferAccepted] = useState(false);
   const [acceptedAt, setAcceptedAt] = useState<string | null>(null);
@@ -82,7 +82,16 @@ export default function OfferLetterView(props: {
   const [isUploadingPdf, setIsUploadingPdf] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const [jdReadAck, setJdReadAck] = useState(false);
+  const [hipaaAck, setHipaaAck] = useState(false);
+  const [abuseAck, setAbuseAck] = useState(false);
   const [sendingReminder, setSendingReminder] = useState<number | null>(null);
+
+  // Offer letter positions (from DB)
+  const [positions, setPositions] = useState<OfferPosition[]>([]);
+  const [initPositionCode, setInitPositionCode] = useState('');
+  const [editableOfferBody, setEditableOfferBody] = useState('');
+  // Stored offer body from DB (set after initiation loads)
+  const [storedOfferBody, setStoredOfferBody] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -93,6 +102,13 @@ export default function OfferLetterView(props: {
     } catch {
       setAuthRole('');
     }
+  }, []);
+
+  // Load offer positions once on mount.
+  useEffect(() => {
+    getOfferPositions().then((res) => {
+      if (res.success && res.positions) setPositions(res.positions);
+    });
   }, []);
 
   useEffect(() => {
@@ -113,6 +129,10 @@ export default function OfferLetterView(props: {
     setJobTitle(staff.job_title || '');
     // Pay rate is not part of Staff list; reset until initiation/acceptance loads or admin fills it.
     setPayRate('');
+    // Reset all acknowledgements so a new staff selection always starts unchecked.
+    setJdReadAck(false);
+    setHipaaAck(false);
+    setAbuseAck(false);
   }, [isAdminLike, effectiveStaffId, props.staffList]);
 
   useEffect(() => {
@@ -129,6 +149,8 @@ export default function OfferLetterView(props: {
     setInitEmployeeName('');
     setInitJobTitle('');
     setInitPayRate('');
+    setInitPositionCode('');
+    setEditableOfferBody('');
   }, [isAdminLike, isInitModalOpen]);
 
   useEffect(() => {
@@ -154,6 +176,10 @@ export default function OfferLetterView(props: {
           setAcceptedSignatureDataUrl(null);
           // keep defaults/prefill from staff profile
           setOfferSignatureDate(new Date().toISOString().slice(0, 10));
+          // Always start with unchecked acknowledgements for a fresh offer.
+          setJdReadAck(false);
+          setHipaaAck(false);
+          setAbuseAck(false);
         }
       } finally {
         if (!cancelled) setOfferLoading(false);
@@ -180,8 +206,13 @@ export default function OfferLetterView(props: {
             setJobTitle(res.offer.job_title);
             setPayRate(res.offer.pay_rate);
           }
+          setStoredOfferBody(res.offer.offer_letter_body ?? null);
         } else {
           setOfferInitiated(false);
+          setStoredOfferBody(null);
+          setJdReadAck(false);
+          setHipaaAck(false);
+          setAbuseAck(false);
         }
       } catch (e: any) {
         setInitiationError(e?.message || 'Failed to load offer initiation.');
@@ -199,6 +230,15 @@ export default function OfferLetterView(props: {
     return getAttachmentViewUrl(acceptedSignatureAttachmentId);
   }, [acceptedSignatureAttachmentId]);
 
+  const isBehaviorConsultant = jobTitle.trim().toLowerCase() === 'behavior consultant';
+
+  /** Replace {{placeholders}} in a stored offer body template for display. */
+  const resolveOfferBody = (body: string, opts: { firstName: string; payRate: string; position: string }) =>
+    body
+      .replace(/\{\{first_name\}\}/gi, opts.firstName || '[Name]')
+      .replace(/\{\{pay_rate\}\}/gi, opts.payRate || '[Pay Rate]')
+      .replace(/\{\{position\}\}/gi, opts.position || '[Position]');
+
   const canAccept =
     !offerAccepted &&
     offerInitiated &&
@@ -206,6 +246,8 @@ export default function OfferLetterView(props: {
     jobTitle.trim() &&
     payRate.trim() &&
     jdReadAck &&
+    hipaaAck &&
+    abuseAck &&
     offerSignature &&
     offerSignature.startsWith('data:image') &&
     offerSignatureDate;
@@ -352,6 +394,9 @@ export default function OfferLetterView(props: {
       const res = await acceptMyOffer({
         signature_data_url: offerSignature,
         accepted_date: offerSignatureDate,
+        jd_read_ack: jdReadAck,
+        hipaa_ack: hipaaAck,
+        abuse_ack: abuseAck,
       });
       if (!res.success) {
         setAcceptError(res.message || 'Failed to accept offer.');
@@ -425,6 +470,8 @@ export default function OfferLetterView(props: {
         ...(initCreateNewStaff ? { first_name: initFirstName.trim(), last_name: initLastName.trim() } : {}),
         job_title: initJobTitle.trim(),
         pay_rate: initPayRate.trim(),
+        ...(initPositionCode ? { position_code: initPositionCode } : {}),
+        ...(editableOfferBody.trim() ? { offer_letter_body: editableOfferBody.trim() } : {}),
         ...(staffHasAccount ? {} : { username: initUsername.trim() }),
         email: initEmail.trim(),
         send_email: true, // always email on initiation
@@ -789,14 +836,51 @@ export default function OfferLetterView(props: {
                   </div>
                 )}
                 <div className="space-y-2">
-                  <Label htmlFor="jobTitle">Job Title</Label>
-                  <Input
-                    id="jobTitle"
-                    value={initJobTitle}
-                    onChange={(e) => setInitJobTitle(e.target.value)}
-                    placeholder="Job title"
-                    autoComplete="off"
-                  />
+                  <Label htmlFor="initPosition">Position</Label>
+                  {positions.length > 0 ? (
+                    <Select
+                      value={initPositionCode}
+                      onValueChange={(code) => {
+                        setInitPositionCode(code);
+                        const pos = positions.find((p) => p.position_code === code);
+                        if (pos) {
+                          setInitJobTitle(pos.position_name);
+                          // Pre-fill editable body from template (placeholders left intact for admin to review)
+                          setEditableOfferBody(pos.offer_letter_template);
+                        }
+                      }}
+                    >
+                      <SelectTrigger id="initPosition">
+                        <SelectValue placeholder="Select position…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {positions.map((p) => (
+                          <SelectItem key={p.position_code} value={p.position_code}>
+                            {p.position_name} <span className="text-slate-400 text-xs ml-1">({p.position_code})</span>
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="__custom__">Custom / Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id="initPosition"
+                      value={initJobTitle}
+                      onChange={(e) => setInitJobTitle(e.target.value)}
+                      placeholder="Job title"
+                      autoComplete="off"
+                    />
+                  )}
+                  {/* Always show the free-text title input so admin can override */}
+                  {positions.length > 0 && (
+                    <Input
+                      value={initJobTitle}
+                      onChange={(e) => setInitJobTitle(e.target.value)}
+                      placeholder="Job title (auto-filled from position, editable)"
+                      autoComplete="off"
+                      className="mt-1"
+                    />
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="payRate">Pay Rate</Label>
@@ -808,6 +892,24 @@ export default function OfferLetterView(props: {
                     autoComplete="off"
                   />
                 </div>
+              </div>
+
+              {/* Editable offer letter body */}
+              <div className="space-y-2">
+                <Label htmlFor="editableOfferBody">
+                  Offer Letter Body{' '}
+                  <span className="text-slate-400 font-normal text-xs">
+                    — edit freely before sending. Use {'{{pay_rate}}'}, {'{{first_name}}'}, {'{{position}}'} as placeholders.
+                  </span>
+                </Label>
+                <textarea
+                  id="editableOfferBody"
+                  rows={12}
+                  className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 leading-6 resize-y focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                  value={editableOfferBody}
+                  onChange={(e) => setEditableOfferBody(e.target.value)}
+                  placeholder="Select a position above to auto-fill the offer letter template, or type a custom offer body here…"
+                />
               </div>
 
               {initiationError && <div className="text-sm text-red-600">{initiationError}</div>}
@@ -876,24 +978,61 @@ export default function OfferLetterView(props: {
                     />
                   </div>
 
-                  <div className="flex items-start gap-2">
-                    <Checkbox
-                      id="jdReadAck"
-                      checked={jdReadAck}
-                      onChange={(e) => setJdReadAck((e.target as HTMLInputElement).checked)}
-                      disabled={!offerInitiated}
-                    />
-                    <div className="space-y-1">
-                      <Label htmlFor="jdReadAck" className="text-sm">
-                        I have read the Job Description completely.
-                      </Label>
-                      <div className="text-xs text-slate-500">
-                        Please open and review the “Job Description” tab before accepting.
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-2">
+                      <Checkbox
+                        id="jdReadAck"
+                        checked={jdReadAck}
+                        onCheckedChange={(checked) => setJdReadAck(checked === true)}
+                        disabled={!offerInitiated}
+                      />
+                      <div className="space-y-1">
+                        <Label htmlFor="jdReadAck" className="text-sm">
+                          I have read and understand the Job Responsibilities requirements completely.
+                        </Label>
+                        <div>
+                          <Button type="button" variant="outline" size="sm" onClick={() => setActiveTab('job')}>
+                            Job Responsibilities
+                          </Button>
+                        </div>
                       </div>
-                      <div>
-                        <Button type="button" variant="outline" size="sm" onClick={() => setActiveTab('job')}>
-                          Open Job Description Tab
-                        </Button>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <Checkbox
+                        id="hipaaAck"
+                        checked={hipaaAck}
+                        onCheckedChange={(checked) => setHipaaAck(checked === true)}
+                        disabled={!offerInitiated}
+                      />
+                      <div className="space-y-1">
+                        <Label htmlFor="hipaaAck" className="text-sm">
+                          I have read and understand the Confidentiality & HIPAA Agreement requirements completely.
+                        </Label>
+                        <div>
+                          <Button type="button" variant="outline" size="sm" onClick={() => setActiveTab('compliance')}>
+                            Confidentiality & HIPAA
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <Checkbox
+                        id="abuseAck"
+                        checked={abuseAck}
+                        onCheckedChange={(checked) => setAbuseAck(checked === true)}
+                        disabled={!offerInitiated}
+                      />
+                      <div className="space-y-1">
+                        <Label htmlFor="abuseAck" className="text-sm">
+                          I have read and understand the Child Abuse & Neglect Reporting requirements completely.
+                        </Label>
+                        <div>
+                          <Button type="button" variant="outline" size="sm" onClick={() => setActiveTab('compliance')}>
+                            Child Abuse Reporting
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -947,12 +1086,20 @@ export default function OfferLetterView(props: {
                 >
                   Job Description
                 </Button>
+                <Button
+                  type="button"
+                  variant={activeTab === 'compliance' ? 'default' : 'outline'}
+                  className={activeTab === 'compliance' ? 'bg-teal-600 hover:bg-teal-700' : ''}
+                  onClick={() => setActiveTab('compliance')}
+                >
+                  Compliance Policies
+                </Button>
                 <div className="flex-1" />
                 <Button
                   type="button"
                   variant="outline"
                   onClick={downloadActiveDoc}
-                  disabled={isDownloading || (activeTab === 'offer' && !offerAccepted && !isAdminLike)}
+                  disabled={isDownloading || (activeTab === 'offer' && !offerAccepted && !isAdminLike) || activeTab === 'compliance'}
                   title={!isAdminLike && activeTab === 'offer' && !offerAccepted ? 'Accept the offer to enable download' : undefined}
                 >
                   <Download className="h-4 w-4 mr-2" />
@@ -960,7 +1107,9 @@ export default function OfferLetterView(props: {
                     ? offerAccepted
                       ? 'Download Signed Offer'
                       : isAdminLike ? 'Download Draft Offer' : 'Download Signed Offer'
-                    : 'Download Job Description'}
+                    : activeTab === 'compliance'
+                      ? 'Download'
+                      : 'Download Job Description'}
                 </Button>
                 {activeTab === 'job' && (
                   <Button type="button" variant="outline" onClick={() => window.open(JOB_DESCRIPTION_PATH, '_blank')}>
@@ -987,7 +1136,7 @@ export default function OfferLetterView(props: {
                     <div className="text-center mb-8">
                       <div className="flex items-center justify-center gap-3">
                         <img
-                          src="/favicon.ico"
+                          src="/images/maha-logo.jpg"
                           alt="Maha logo"
                           className="h-12 w-12 rounded-full bg-white border border-slate-200"
                         />
@@ -1004,32 +1153,94 @@ export default function OfferLetterView(props: {
                         Dear {employeeName?.trim() ? employeeName.trim().split(' ')[0] : 'First Name'},
                       </div>
 
-                      <p className="text-start">
-                        We are pleased to formally offer you the position of <strong>&quot;{jobTitle?.trim() ? jobTitle.trim() : 'Job Title'}&quot;</strong> on a part-time basis at{' '}
-                        <strong>&quot;Maha Behavioral Health Services&quot;</strong>.
-                      </p>
+                      {storedOfferBody ? (
+                        /* Admin-customised body stored in DB – render as pre-formatted plain text */
+                        <div className="whitespace-pre-wrap text-sm text-slate-800 leading-7">
+                          {resolveOfferBody(storedOfferBody, {
+                            firstName: employeeName?.trim() ? employeeName.trim().split(' ')[0] : '',
+                            payRate: payRate?.trim() || '',
+                            position: jobTitle?.trim() || '',
+                          })}
+                        </div>
+                      ) : isBehaviorConsultant ? (
+                        <>
+                          <p className="text-start">
+                            On behalf of Maha Behavioral Health, I am absolutely thrilled to offer you the position of <strong>Behavior Consultant</strong>. We have been incredibly impressed by your background, your dedication to clinical excellence, and your upcoming readiness to sit for the Board Certified Behavior Analyst® (BCBA®) exam. We are confident that your skills will be a wonderful asset to our team and the families we serve.
+                          </p>
 
-                      <p className="text-start">
-                        The starting compensation for this role is <strong>{payRate?.trim() ? payRate.trim() : '[Amount] per [Hour/Year]'}</strong>, with payments processed on a biweekly
-                        basis. Please note that this offer is contingent upon the successful completion of a background check.
-                      </p>
+                          <p className="text-start">Please find the details of your employment offer outlined below:</p>
 
-                      <p className="text-start">
-                        We believe your skills and experience will be a valuable asset to our team, and we look forward to your contributions.
-                      </p>
+                          <ul className="list-none space-y-1 pl-2">
+                            <li><strong>Position:</strong> Behavior Consultant</li>
+                            <li><strong>Company:</strong> Maha Behavioral Health</li>
+                            <li><strong>Compensation:</strong> {payRate?.trim() ? payRate.trim() : '[Amount] per [Hour/Year]'}</li>
+                            <li><strong>Classification:</strong> [Insert Exempt/Non-Exempt or Full-Time/Part-Time status]</li>
+                            <li><strong>Start Date:</strong> [Insert Target Start Date]</li>
+                          </ul>
 
-                      <p className="text-start">
-                        Should you have any questions or require further clarification, please contact me at{' '}
-                        <a className="text-blue-600 underline" href="mailto:info@mahabehavioralhealth.com">
-                          info@mahabehavioralhealth.com
-                        </a>.
-                      </p>
+                          <div>
+                            <div className="font-semibold text-slate-900 mb-1">Contingencies of Employment</div>
+                            <p>This offer of employment is contingent upon the successful completion of a comprehensive background check, reference checks, and verification of your legal right to work in the United States.</p>
+                          </div>
 
-                      <div className="pt-2">
-                        <div>Thank you,</div>
-                        <div className="mt-4 font-semibold text-red-600">Harini Chandramouli, MS, BCBA (She/her)</div>
-                        <div className="text-slate-700">Founder and Clinical Director</div>
-                      </div>
+                          <div>
+                            <div className="font-semibold text-slate-900 mb-1">BCBA Certification &amp; Compensation Adjustment</div>
+                            <p>We recognize that you are preparing to take your BCBA exam in the near future. Upon your successful passing of the BCBA exam and official verification of your certification with the Behavior Analyst Certification Board (BACB®), your position, responsibilities, and compensation will be adjusted. Specifically, your hourly rate will increase from {payRate?.trim() ? payRate.trim() : '[current rate]'} to the New BCBA Hourly Rate, effective on the first pay period following the submission of your official BCBA certification to Human Resources.</p>
+                          </div>
+
+                          <div>
+                            <div className="font-semibold text-slate-900 mb-1">At-Will Employment</div>
+                            <p>Please note that this offer letter is not a contract or guarantee of employment for a definitive period of time. Your employment with Maha Behavioral Health is &quot;at-will,&quot; meaning that either you or the company may terminate the employment relationship at any time, with or without cause or advance notice.</p>
+                          </div>
+
+                          <p className="text-start">
+                            To accept this offer, please sign and date this letter below and return it to{' '}
+                            <a className="text-blue-600 underline" href="mailto:info@mahabehavioralhealth.com">
+                              info@mahabehavioralhealth.com
+                            </a>.
+                          </p>
+
+                          <p className="text-start">
+                            If you have any questions regarding these terms, please don&apos;t hesitate to reach out. We are incredibly excited about the prospect of you joining Maha Behavioral Health and growing your clinical career with us!
+                          </p>
+
+                          <div className="pt-2">
+                            <div>Warmly,</div>
+                            <div className="mt-4 font-semibold text-red-600">Harini Chandramouli, MS, BCBA (She/her)</div>
+                            <div className="text-slate-700">Founder and Clinical Director</div>
+                            <div className="text-slate-700">Maha Behavioral Health</div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-start">
+                            We are pleased to formally offer you the position of <strong>&quot;{jobTitle?.trim() ? jobTitle.trim() : 'Job Title'}&quot;</strong> on a part-time basis at{' '}
+                            <strong>&quot;Maha Behavioral Health Services&quot;</strong>.
+                          </p>
+
+                          <p className="text-start">
+                            The starting compensation for this role is <strong>{payRate?.trim() ? payRate.trim() : '[Amount] per [Hour/Year]'}</strong>, with payments processed on a biweekly
+                            basis. Please note that this offer is contingent upon the successful completion of a background check.
+                          </p>
+
+                          <p className="text-start">
+                            We believe your skills and experience will be a valuable asset to our team, and we look forward to your contributions.
+                          </p>
+
+                          <p className="text-start">
+                            Should you have any questions or require further clarification, please contact me at{' '}
+                            <a className="text-blue-600 underline" href="mailto:info@mahabehavioralhealth.com">
+                              info@mahabehavioralhealth.com
+                            </a>.
+                          </p>
+
+                          <div className="pt-2">
+                            <div>Thank you,</div>
+                            <div className="mt-4 font-semibold text-red-600">Harini Chandramouli, MS, BCBA (She/her)</div>
+                            <div className="text-slate-700">Founder and Clinical Director</div>
+                          </div>
+                        </>
+                      )}
 
                       {/* Acceptance block (kept for legal acceptance in-app) */}
                       <div className="pt-8 border-t border-slate-200">
@@ -1073,7 +1284,7 @@ export default function OfferLetterView(props: {
                   <div className="max-w-3xl mx-auto">
                     <div className="text-start mb-8">
                       <div className="flex items-center justify-center gap-3">
-                        <img src="/favicon.ico" alt="Maha logo" className="h-10 w-10 rounded-full bg-white border border-slate-200" />
+                        <img src="/images/maha-logo.jpg" alt="Maha logo" className="h-10 w-10 rounded-full bg-white border border-slate-200" />
                         <div>
                           <div className="text-xl font-bold text-slate-900">Maha Behavioral Health Services</div>
                           <div className="text-xs text-slate-600">Engage, Empower, Excel</div>
@@ -1081,57 +1292,157 @@ export default function OfferLetterView(props: {
                       </div>
 
                       <div className="mt-6 font-bold text-slate-900">
-                        Registered Behavior Technician Requirements and Job Description
+                        {isBehaviorConsultant
+                          ? 'Behavior Consultant Requirements and Job Description'
+                          : 'Registered Behavior Technician Requirements and Job Description'}
                       </div>
                     </div>
 
-                    <div className="text-sm text-slate-800 leading-6 space-y-4">
-                      <p>
-                        Registered Behavior Technicians considered for employment by <strong>MAHA BEHAVIORAL HEALTH SERVICES</strong> will meet the following requirements:
-                      </p>
-                      <ul className="list-disc list-inside space-y-1">
-                        <li>Must have a high school diploma at a minimum, bachelor’s degree preferred with coursework in behavior analysis or other related field.</li>
-                        <li>Complete 40 hour Registered Behavior Technician.</li>
-                        <li>Maintain recertification of RBT training annually.</li>
-                        <li>Complete all necessary Medicaid Waiver training and documents.</li>
-                      </ul>
+                    {isBehaviorConsultant ? (
+                      <div className="text-sm text-slate-800 leading-6 space-y-4">
+                        <p>
+                          Behavior Consultants considered for employment by <strong>MAHA BEHAVIORAL HEALTH SERVICES</strong> will meet the following requirements:
+                        </p>
+                        <ul className="list-disc list-inside space-y-1">
+                          <li>Must hold at minimum a bachelor&apos;s degree in behavior analysis, psychology, education, or a related field; master&apos;s degree strongly preferred.</li>
+                          <li>Must be eligible to sit for the Board Certified Behavior Analyst® (BCBA®) exam or have recently completed the required supervised fieldwork hours.</li>
+                          <li>Maintain active registration/certification status with the Behavior Analyst Certification Board (BACB®) throughout employment.</li>
+                          <li>Complete all required Medicaid Waiver training and documentation as applicable.</li>
+                        </ul>
 
-                      <div className="pt-2 font-semibold">Job Responsibilities and Expectations:</div>
-                      <ul className="list-disc list-inside space-y-1">
-                        <li>Receive training on Behavior Analysis Service Plans (BASPs) for each consumer on their case load.</li>
-                        <li>Implement BASPs as written.</li>
-                        <li>Provide services to consumers based on hours set by the Behavior Analyst.</li>
-                        <li>Collect data on a daily basis and provide it to the Behavior Analyst on a weekly basis.</li>
-                        <li>Communicate regularly with the Behavior Analyst.</li>
-                        <li>Train caregivers to implement the BASPs.</li>
-                        <li>Implement the BASP in all relevant settings.</li>
-                        <li>Attend meetings regarding consumer’s behavior services as necessary.</li>
-                      </ul>
+                        <div className="pt-2 font-semibold">Job Responsibilities and Expectations:</div>
+                        <ul className="list-disc list-inside space-y-2">
+                          <li><strong>Assessment Assistance:</strong> Conduct functional behavior assessments (FBAs) and skills assessments (such as the VB-MAPP, AFLS, or Vineland) under the direct supervision of a credentialed BCBA.</li>
+                          <li><strong>Program Development:</strong> Draft behavior intervention plans (BIPs) and skill acquisition programs based on assessment data for supervisor review and approval.</li>
+                          <li><strong>Data System Management:</strong> Set up and maintain data collection systems (electronic or paper-based) to track client progress accurately.</li>
+                          <li><strong>Direct Therapy Implementation:</strong> Provide high-quality, direct Applied Behavior Analysis (ABA) therapy to clients during scheduled sessions if needed.</li>
+                          <li><strong>Progress Monitoring:</strong> Regularly review client data to evaluate the effectiveness of current interventions and suggest program modifications to the supervising BCBA.</li>
+                          <li><strong>Crisis Intervention:</strong> Implement approved safety and crisis management protocols when challenging behaviors escalate.</li>
+                          <li><strong>RBT Support &amp; Mentorship:</strong> Provide peer modeling, guidance, and fidelity checks to Registered Behavior Technicians (RBTs) on behavior plans and data collection techniques.</li>
+                          <li><strong>Caregiver Training:</strong> Assist in conducting parent/caregiver training sessions to teach strategies that promote behavior generalization at home.</li>
+                          <li><strong>Interdisciplinary Collaboration:</strong> Coordinate with the supervising BCBA and multi-disciplinary team members (speech therapists, occupational therapists, teachers) to ensure consistency in client care.</li>
+                          <li><strong>Clinical Documentation:</strong> Complete timely, professional, and accurate session notes, progress reports, and insurance authorization updates.</li>
+                          <li><strong>Supervision Compliance:</strong> Proactively schedule, track, and document monthly supervised fieldwork hours in strict accordance with BACB requirements as applicable.</li>
+                          <li><strong>Ethical &amp; Regulatory Adherence:</strong> Maintain strict adherence to the BACB&apos;s <em>Ethics Code for Behavior Analysts</em> and HIPAA confidentiality guidelines.</li>
+                        </ul>
 
-                      <div className="pt-10 grid grid-cols-1 md:grid-cols-2 gap-10">
-                        <div>
-                          <div className="h-10 border-b border-slate-400" />
-                          <div className="text-xs text-slate-600 mt-2">Registered Behavior Technician Signature</div>
-                        </div>
-                        <div>
-                          <div className="h-10 border-b border-slate-400" />
-                          <div className="text-xs text-slate-600 mt-2">Date</div>
+                        <div className="pt-10 grid grid-cols-1 md:grid-cols-2 gap-10">
+                          <div>
+                            <div className="h-10 border-b border-slate-400" />
+                            <div className="text-xs text-slate-600 mt-2">Behavior Consultant Signature</div>
+                          </div>
+                          <div>
+                            <div className="h-10 border-b border-slate-400" />
+                            <div className="text-xs text-slate-600 mt-2">Date</div>
+                          </div>
+
+                          <div>
+                            <div className="h-10 border-b border-slate-400" />
+                            <div className="text-xs text-slate-600 mt-2">Supervisor Signature</div>
+                          </div>
+                          <div>
+                            <div className="h-10 border-b border-slate-400" />
+                            <div className="text-xs text-slate-600 mt-2">Date</div>
+                          </div>
                         </div>
 
-                        <div>
-                          <div className="h-10 border-b border-slate-400" />
-                          <div className="text-xs text-slate-600 mt-2">Supervisor Signature</div>
-                        </div>
-                        <div>
-                          <div className="h-10 border-b border-slate-400" />
-                          <div className="text-xs text-slate-600 mt-2">Date</div>
+                        <div className="pt-6 text-xs text-slate-500">
+                          Need the original PDF? Use the &quot;PDF&quot; download button above.
                         </div>
                       </div>
+                    ) : (
+                      <div className="text-sm text-slate-800 leading-6 space-y-4">
+                        <p>
+                          Registered Behavior Technicians considered for employment by <strong>MAHA BEHAVIORAL HEALTH SERVICES</strong> will meet the following requirements:
+                        </p>
+                        <ul className="list-disc list-inside space-y-1">
+                          <li>Must have a high school diploma at a minimum, bachelor&apos;s degree preferred with coursework in behavior analysis or other related field.</li>
+                          <li>Complete 40 hour Registered Behavior Technician.</li>
+                          <li>Maintain recertification of RBT training annually.</li>
+                          <li>Complete all necessary Medicaid Waiver training and documents.</li>
+                        </ul>
 
-                      <div className="pt-6 text-xs text-slate-500">
-                        Need the original PDF? Use the “PDF” download button above.
+                        <div className="pt-2 font-semibold">Job Responsibilities and Expectations:</div>
+                        <ul className="list-disc list-inside space-y-1">
+                          <li>Receive training on Behavior Analysis Service Plans (BASPs) for each consumer on their case load.</li>
+                          <li>Implement BASPs as written.</li>
+                          <li>Provide services to consumers based on hours set by the Behavior Analyst.</li>
+                          <li>Collect data on a daily basis and provide it to the Behavior Analyst on a weekly basis.</li>
+                          <li>Communicate regularly with the Behavior Analyst.</li>
+                          <li>Train caregivers to implement the BASPs.</li>
+                          <li>Implement the BASP in all relevant settings.</li>
+                          <li>Attend meetings regarding consumer&apos;s behavior services as necessary.</li>
+                        </ul>
+
+                        <div className="pt-10 grid grid-cols-1 md:grid-cols-2 gap-10">
+                          <div>
+                            <div className="h-10 border-b border-slate-400" />
+                            <div className="text-xs text-slate-600 mt-2">Registered Behavior Technician Signature</div>
+                          </div>
+                          <div>
+                            <div className="h-10 border-b border-slate-400" />
+                            <div className="text-xs text-slate-600 mt-2">Date</div>
+                          </div>
+
+                          <div>
+                            <div className="h-10 border-b border-slate-400" />
+                            <div className="text-xs text-slate-600 mt-2">Supervisor Signature</div>
+                          </div>
+                          <div>
+                            <div className="h-10 border-b border-slate-400" />
+                            <div className="text-xs text-slate-600 mt-2">Date</div>
+                          </div>
+                        </div>
+
+                        <div className="pt-6 text-xs text-slate-500">
+                          Need the original PDF? Use the &quot;PDF&quot; download button above.
+                        </div>
                       </div>
-                    </div>
+                    )}
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="compliance" className="mt-0">
+                <div className="rounded-lg border border-slate-200 bg-white p-5 space-y-8 text-sm text-slate-700 leading-6">
+                  <div>
+                    <h4 className="font-bold text-slate-800 mb-2 text-base">CONFIDENTIALITY & HIPAA AGREEMENT</h4>
+                    <p className="mb-2">
+                      The Health Insurance Portability and Accountability Act of 1996 (HIPAA) is federal legislation covering three areas: Insurance Portability, Fraud Enforcement, and Administrative Simplification. A client's right to have health information kept private is both an ethical obligation and the law. Punishment for HIPAA violations can result in large fines and possible jail time.
+                    </p>
+                    <p className="font-semibold mt-4 mb-2">Client Privacy Rules:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-4">
+                      <li>Client care and discussions are kept private by closing room doors.</li>
+                      <li>Confidential information is not left on an answering machine accessible to others.</li>
+                      <li>Client records are kept in a locked location; only authorized personnel have access.</li>
+                      <li>Shred documents containing client information when purging records.</li>
+                    </ul>
+                    <p className="mt-4">
+                      <strong>Limits to Confidentiality:</strong> Confidentiality may be breached in certain situations, including: reporting communicable diseases, reporting suspected child abuse or neglect to the state protection agency at <strong>1-800-96 ABUSE (962-2873)</strong>, warning potential victims of homicidal intent, and when ordered by the court.
+                    </p>
+                    <p className="mt-4 font-semibold">CONFIDENTIALITY NOTICE (Email/Fax):</p>
+                    <p className="text-xs italic p-2 bg-slate-100 rounded">
+                      This email/fax message, including any attachments, is for the sole use of the intended recipient(s) and may contain confidential and privileged information. Any unauthorized review, use, disclosure, or distribution is prohibited.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="font-bold text-slate-800 mb-2 text-base">Child Abuse &amp; Neglect Reporting Requirements Acknowledgement</h4>
+                    <p className="mb-2">
+                      All child care personnel are mandated by law to report their suspicions of child abuse, neglect, or abandonment to the Florida Abuse Hotline in accordance with section 415.504(1)(e) of the Florida Statutes (F.S.).
+                    </p>
+                    <p className="mb-2">
+                      <strong>"Child Abuse or Neglect"</strong> is defined in s.415.503.(3).F.S. as "harm or threatened harm" to a child's mental or physical health or welfare by the acts or omissions of a parent, adult household member, or other person responsible for the child's welfare.
+                    </p>
+                    <p className="font-semibold mt-4 mb-2">Key Requirements:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-4">
+                      <li>Reports must be made immediately to the Florida Abuse Hotline at <strong>1-800-96 ABUSE (962-2873)</strong>.</li>
+                      <li>All reports are confidential. Mandated reporters are required to give their name.</li>
+                      <li>Any person acting in good faith is immune from liability.</li>
+                    </ul>
+                    <p className="mt-4">
+                      Categories of indicators include: <strong>Physical Abuse</strong> (unexplained bruises, burns), <strong>Physical Neglect</strong> (hunger, poor hygiene), and <strong>Sexual Abuse</strong> (withdrawal, excessive crying, physical symptoms).
+                    </p>
                   </div>
                 </div>
               </TabsContent>

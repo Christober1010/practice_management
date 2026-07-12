@@ -11,6 +11,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
+require_once __DIR__ . '/session_rate_lib.php';
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     http_response_code(405);
@@ -101,12 +102,149 @@ function cms1500_insurance_flag_true($raw)
     return in_array($v, ['1', 'true', 'yes', 'y', 'on'], true);
 }
 
-function cms1500_prior_auth_number($authInfo)
+function cms1500_auth_billing_date_fragment($value)
 {
-    if (!$authInfo || !isset($authInfo['authorization_number'])) {
+    $s = trim(substr((string)$value, 0, 10));
+    if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $s, $m)) {
+        return $m[2] . '/' . $m[3] . '/' . $m[1];
+    }
+    return $s !== '' ? $s : '…';
+}
+
+function cms1500_auth_row_matches_session_code(array $auth, string $storedCode)
+{
+    $code = trim($storedCode);
+    if ($code === '') {
+        return false;
+    }
+    $billing = trim((string)($auth['billing_codes'] ?? ''));
+    $authNum = trim((string)($auth['authorization_number'] ?? ''));
+    $start = cms1500_auth_billing_date_fragment($auth['start_date'] ?? '');
+    $end = cms1500_auth_billing_date_fragment($auth['end_date'] ?? '');
+    $suffix = $authNum !== '' ? "{$authNum}-{$start}-{$end}" : '';
+    $candidates = array_filter([
+        $billing !== '' && $suffix !== '' ? "{$billing} - {$suffix}" : '',
+        $suffix,
+        $billing,
+        $authNum,
+    ]);
+    return in_array($code, $candidates, true);
+}
+
+/**
+ * CMS-1500 Box 24E: pointers are letters A–L (Box 21 diagnosis positions), not digits.
+ *
+ * @return string[] e.g. ['A'] or ['A','B']
+ */
+function cms1500_parse_diagnosis_pointers($raw)
+{
+    $raw = trim((string)$raw);
+    if ($raw === '') {
+        return ['A'];
+    }
+    $parts = preg_split('/[\s,;]+/', strtoupper($raw), -1, PREG_SPLIT_NO_EMPTY);
+    $out = [];
+    foreach ($parts as $p) {
+        if (preg_match('/^[A-L]$/', $p)) {
+            $out[] = $p;
+            continue;
+        }
+        if (preg_match('/^(\d+)$/', $p, $m)) {
+            $i = (int)$m[1];
+            if ($i >= 1 && $i <= 12) {
+                $out[] = chr(ord('A') + $i - 1);
+            }
+        }
+    }
+    return count($out) > 0 ? $out : ['A'];
+}
+
+function cms1500_rendering_id_qualifier(array $session): string
+{
+    $q = strtoupper(trim((string)($session['rendering_id_qualifier'] ?? '')));
+    return $q !== '' ? substr($q, 0, 4) : 'ZZ';
+}
+
+function cms1500_prior_auth_from_session_auth_code($authCode)
+{
+    $raw = trim((string)$authCode);
+    if ($raw === '') {
         return '';
     }
-    return trim((string)$authInfo['authorization_number']);
+    if (preg_match('/\s-\s([^-]+)-\d{2}\/\d{2}\/\d{4}/', $raw, $m)) {
+        $n = trim($m[1]);
+        return $n !== '' && $n !== '—' ? $n : '';
+    }
+    if (preg_match('/^([^-]+)-\d{2}\/\d{2}\/\d{4}/', $raw, $m)) {
+        $n = trim($m[1]);
+        return $n !== '' && $n !== '—' ? $n : '';
+    }
+    return '';
+}
+
+function cms1500_fetch_auth_for_session(mysqli $conn, array $session, int $insuranceId)
+{
+    if (!empty($session['auth_id'])) {
+        $row = cms1500_fetch_auth_info($conn, $session['auth_id']);
+        if ($row) {
+            return $row;
+        }
+    }
+    $authCode = trim((string)($session['auth_code'] ?? ''));
+    if ($insuranceId <= 0 || $authCode === '') {
+        return null;
+    }
+    $stmt = $conn->prepare('SELECT * FROM client_auth WHERE insurance_id = ? ORDER BY created_at DESC');
+    if (!$stmt) {
+        return null;
+    }
+    $stmt->bind_param('i', $insuranceId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    while ($row = $res->fetch_assoc()) {
+        if (cms1500_auth_row_matches_session_code($row, $authCode)) {
+            $stmt->close();
+            return $row;
+        }
+    }
+    $stmt->close();
+    return null;
+}
+
+function cms1500_prior_auth_number($authInfo, $insurance = null, $session = null)
+{
+    if (is_array($authInfo)) {
+        $n = trim((string)($authInfo['authorization_number'] ?? ''));
+        if ($n !== '') {
+            return $n;
+        }
+    }
+    if (is_array($insurance)) {
+        $n = trim((string)($insurance['authorization_number'] ?? ''));
+        if ($n !== '') {
+            return $n;
+        }
+    }
+    if (is_array($session)) {
+        $n = cms1500_prior_auth_from_session_auth_code($session['auth_code'] ?? '');
+        if ($n !== '') {
+            return $n;
+        }
+    }
+    return '';
+}
+
+function cms1500_resolve_claim_prior_auth_number(mysqli $conn, array $sessions, array $insurance)
+{
+    $insuranceId = (int)($insurance['insurance_id'] ?? 0);
+    foreach ($sessions as $session) {
+        $authInfo = cms1500_fetch_auth_for_session($conn, $session, $insuranceId);
+        $n = cms1500_prior_auth_number($authInfo, $insurance, $session);
+        if ($n !== '') {
+            return $n;
+        }
+    }
+    return cms1500_prior_auth_number(null, $insurance);
 }
 
 /**
@@ -213,6 +351,46 @@ function cms1500_float_or_null($raw)
         return null;
     }
     return round((float)$raw, 2);
+}
+
+function cms1500_session_line_charges(mysqli $conn, array $session, ?array $insurance, ?float $units): ?float
+{
+    if (isset($session['line_charge']) && $session['line_charge'] !== '' && $session['line_charge'] !== null) {
+        return cms1500_float_or_null($session['line_charge']);
+    }
+
+    $hours = session_rate_billing_hours($session['scheduled_hours'] ?? null, $session['rendered_hours'] ?? null);
+
+    $providerId = trim((string)($insurance['insurance_provider_id'] ?? ''));
+    if ($providerId === '' && !empty($session['auth_id']) && !empty($session['client_id'])) {
+        $resolved = session_rate_fetch_insurance_provider_for_auth(
+            $conn,
+            (int)$session['auth_id'],
+            (string)$session['client_id']
+        );
+        $providerId = $resolved ?? '';
+    }
+    if ($providerId === '' || $hours === null) {
+        return null;
+    }
+
+    $billingCodes = !empty($session['auth_id'])
+        ? session_rate_fetch_auth_billing_codes($conn, (int)$session['auth_id'])
+        : null;
+    $candidates = session_rate_procedure_candidates((string)($session['auth_code'] ?? ''), $billingCodes);
+    foreach ($candidates as $procedureCode) {
+        $mapping = session_rate_lookup_provider_mapping($conn, $providerId, $procedureCode);
+        if ($mapping) {
+            return session_rate_calc_line_charge(
+                $mapping['rate'],
+                $mapping['unit_type'],
+                $mapping['unit_duration'],
+                $hours
+            );
+        }
+    }
+
+    return null;
 }
 
 function cms1500_fetch_client(mysqli $conn, $clientId)
@@ -366,6 +544,69 @@ function cms1500_fetch_location(mysqli $conn, $locationId)
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     return $row ?: null;
+}
+
+function cms1500_fetch_master_provider(mysqli $conn, $providerId)
+{
+    $pid = trim((string)$providerId);
+    if ($pid === '') {
+        return null;
+    }
+    $stmt = $conn->prepare('SELECT * FROM master_providers WHERE id = ? AND (archived IS NULL OR archived = 0) LIMIT 1');
+    if (!$stmt) {
+        return null;
+    }
+    $stmt->bind_param('s', $pid);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row ?: null;
+}
+
+/**
+ * CMS-1500 top header: insurance carrier from Manage Providers (master_providers).
+ *
+ * @return array{name:string,id:string,address_line_1:string,address_line_2:string,city:string,state:string,zip:string}
+ */
+function cms1500_payer_for_claim(mysqli $conn, array $insurance, array $session, array &$warnings)
+{
+    $providerId = trim((string)($insurance['insurance_provider_id'] ?? ''));
+    if ($providerId === '' && !empty($session['auth_id']) && !empty($session['client_id'])) {
+        $resolved = session_rate_fetch_insurance_provider_for_auth(
+            $conn,
+            (int)$session['auth_id'],
+            (string)$session['client_id']
+        );
+        $providerId = $resolved ?? '';
+    }
+
+    $masterProvider = $providerId !== '' ? cms1500_fetch_master_provider($conn, $providerId) : null;
+    if ($providerId !== '' && !$masterProvider) {
+        $warnings[] = 'Insurance provider master record not found; header address may be incomplete.';
+    }
+
+    $name = $masterProvider ? trim((string)($masterProvider['provider_name'] ?? '')) : '';
+    if ($name === '') {
+        $name = trim((string)($insurance['insurance_provider'] ?? ($insurance['insurance_plan_name'] ?? '')));
+    }
+
+    $payer = [
+        'id' => trim((string)($insurance['carrier_payer_id'] ?? '')),
+        'name' => $name,
+        'address_line_1' => $masterProvider ? trim((string)($masterProvider['address1'] ?? '')) : '',
+        'address_line_2' => $masterProvider ? trim((string)($masterProvider['address2'] ?? '')) : '',
+        'city' => $masterProvider ? trim((string)($masterProvider['city'] ?? '')) : '',
+        'state' => $masterProvider ? trim((string)($masterProvider['state'] ?? '')) : '',
+        'zip' => $masterProvider ? trim((string)($masterProvider['zip_code'] ?? '')) : '',
+    ];
+
+    if ($providerId === '') {
+        $warnings[] = 'Client insurance is missing insurance provider; CMS-1500 header address cannot be resolved.';
+    } elseif ($masterProvider && $payer['address_line_1'] === '' && $payer['city'] === '') {
+        $warnings[] = 'Insurance provider is missing address in Manage Providers.';
+    }
+
+    return $payer;
 }
 
 function cms1500_fetch_sessions(mysqli $conn, $clientId, $sessionIds)
@@ -615,15 +856,14 @@ try {
 
     $lines = [];
     $totalUnits = 0.0;
+    $totalCharges = 0.0;
     $seenAuthWarnings = [];
+    $resolvedInsuranceId = (int)($insurance['insurance_id'] ?? 0);
     foreach ($sessions as $s) {
-        $authInfo = null;
-        if (!empty($s['auth_id'])) {
-            $authInfo = cms1500_fetch_auth_info($conn, $s['auth_id']);
-            if (!$authInfo && !isset($seenAuthWarnings[$s['auth_id']])) {
-                $warnings[] = "No client_auth row matched auth_id {$s['auth_id']} for one or more sessions.";
-                $seenAuthWarnings[$s['auth_id']] = true;
-            }
+        $authInfo = cms1500_fetch_auth_for_session($conn, $s, $resolvedInsuranceId);
+        if (!$authInfo && !empty($s['auth_id']) && !isset($seenAuthWarnings[$s['auth_id']])) {
+            $warnings[] = "No client_auth row matched auth_id {$s['auth_id']} for one or more sessions.";
+            $seenAuthWarnings[$s['auth_id']] = true;
         }
 
         $pm = cms1500_procedure_and_modifiers($s['auth_code'] ?? '');
@@ -649,6 +889,13 @@ try {
             $provider = $staffMap[(string)$s['provider_id']];
         }
 
+        $charges = cms1500_session_line_charges($conn, $s, $insurance, $units);
+        if ($charges === null && $units !== null) {
+            $warnings[] = "Session {$s['session_id']} is missing line charge (Box 24F); check payer service code rate mapping.";
+        } elseif ($charges !== null) {
+            $totalCharges += $charges;
+        }
+
         $lines[] = [
             'dos_from' => substr((string)($s['start_utc'] ?? ''), 0, 10),
             'dos_to' => substr((string)($s['end_utc'] ?? ''), 0, 10),
@@ -656,11 +903,14 @@ try {
             'emergency_indicator' => false,
             'procedure_code' => $pm['procedure'],
             'modifiers' => $pm['modifiers'],
-            'diagnosis_pointers' => count($dxCodes) > 0 ? [1] : [],
+            'diagnosis_pointers' => count($dxCodes) > 0
+                ? cms1500_parse_diagnosis_pointers($s['diagnosis_pointer'] ?? 'A')
+                : [],
             'units' => $units,
             'unit_type' => 'UN',
-            'charges' => null,
-            'authorization_number' => cms1500_prior_auth_number($authInfo),
+            'charges' => $charges,
+            'authorization_number' => cms1500_prior_auth_number($authInfo, $insurance, $s),
+            'rendering_provider_id_qualifier' => cms1500_rendering_id_qualifier($s),
             'rendering_provider_name' => $provider ? trim(($provider['firstName'] ?? '') . ' ' . ($provider['lastName'] ?? '')) : ($s['provider_name'] ?? ''),
             'rendering_provider_npi' => $provider['npiNumber'] ?? null,
             'source' => [
@@ -672,13 +922,9 @@ try {
 
     $firstSession = $sessions[0];
 
-    $firstAuthInfo = null;
-    if (!empty($firstSession['auth_id'])) {
-        $firstAuthInfo = cms1500_fetch_auth_info($conn, $firstSession['auth_id']);
-    }
-    $priorAuthNumber = cms1500_prior_auth_number($firstAuthInfo);
-    if ($priorAuthNumber === '' && !empty($firstSession['auth_id'])) {
-        $warnings[] = 'Prior authorization number (Box 23) is empty; enter authorization_number on the linked client authorization.';
+    $priorAuthNumber = cms1500_resolve_claim_prior_auth_number($conn, $sessions, $insurance);
+    if ($priorAuthNumber === '') {
+        $warnings[] = 'Prior authorization number (Box 23) is empty; enter authorization_number on the client authorization or insurance record.';
     }
 
     $renderingProvider = null;
@@ -720,6 +966,8 @@ try {
         ?: trim((string)($insurance['insured_street'] ?? ''));
     $insuredZipSeparate = trim((string)($insurance['insured_zipcode'] ?? ''))
         ?: trim((string)($insurance['insured_zip'] ?? ''));
+
+    $payer = cms1500_payer_for_claim($conn, $insurance, $firstSession, $warnings);
 
     $payload = [
         'meta' => [
@@ -792,12 +1040,13 @@ try {
         ],
         'patient_account_number' => trim((string)($firstSession['claim_id'] ?? '')) !== ''
             ? trim((string)$firstSession['claim_id'])
-            : (string)$firstSession['session_id'],
+            : ('CLM' . (int)($firstSession['session_id'] ?? 0)),
         'lines' => $lines,
         'amounts' => [
             'total_units' => round($totalUnits, 2),
-            'total_charge' => null,
+            'total_charge' => $totalCharges > 0 ? round($totalCharges, 2) : null,
         ],
+        'payer' => $payer,
     ];
 
     echo json_encode([

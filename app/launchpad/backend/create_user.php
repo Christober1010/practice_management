@@ -115,7 +115,7 @@ try {
 
     if (!empty($email)) {
         $subject = "Your account info to get set up in Maha Launchpad";
-        $loginUrl = "https://maha-launchpad.mahabehavioralhealth.com/login?view=forgotPassword";
+        $loginUrl = "https://mahaverse.mahabehavioralhealth.com/launchpad/login?view=forgotPassword";
         $message = "
         <!DOCTYPE html>
         <html>
@@ -140,7 +140,7 @@ try {
         <body>
             <div class='container'>
                 <div class='header'>
-                    <img src='https://maha-launchpad.mahabehavioralhealth.com/favicon.ico' alt='Maha Launchpad Logo' class='logo' />
+                    <img src='https://www.mahabehavioralhealth.com/images/mahalogo_v1_small.jpg' alt='Maha Launchpad Logo' class='logo' />
                     <h1 style='margin: 0 0 10px 0;'>Maha Launchpad</h1>
                     <p style='margin: 0;'>Welcome to Maha Behavioral Health Services, LLC</p>
                 </div>

@@ -33,6 +33,8 @@ export default function AddProviderModal({
 }) {
   const isEditing = !!editingProvider;
 
+  const yesNoFromDb = (value) => (value === 1 || value === "1" || value === true ? "Yes" : "No");
+
   const [form, setForm] = useState({
     provider_name: "",
     provider_code: "",
@@ -45,6 +47,8 @@ export default function AddProviderModal({
     state: "",
     country: "",
     zip_code: "",
+    edi_payer: "No",
+    technician_is_rendering_provider: "No",
     status: "Active",
   });
 
@@ -62,6 +66,10 @@ export default function AddProviderModal({
         state: editingProvider.state || "",
         country: editingProvider.country || "",
         zip_code: editingProvider.zip_code || "",
+        edi_payer: yesNoFromDb(editingProvider.edi_payer),
+        technician_is_rendering_provider: yesNoFromDb(
+          editingProvider.technician_is_rendering_provider
+        ),
         status: editingProvider.status || "Active",
       });
     } else {
@@ -77,6 +85,8 @@ export default function AddProviderModal({
         state: "",
         country: "",
         zip_code: "",
+        edi_payer: "No",
+        technician_is_rendering_provider: "No",
         status: "Active",
       });
     }
@@ -98,6 +108,9 @@ export default function AddProviderModal({
     const payload = {
       ...(isEditing ? { id: editingProvider.id } : {}),
       ...form,
+      edi_payer: form.edi_payer === "Yes" ? 1 : 0,
+      technician_is_rendering_provider:
+        form.technician_is_rendering_provider === "Yes" ? 1 : 0,
     };
 
     try {
@@ -275,6 +288,47 @@ export default function AddProviderModal({
                 onChange={handleChange}
                 disabled={loading}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>EDI Payer</Label>
+              <Select
+                value={form.edi_payer}
+                onValueChange={(value) =>
+                  setForm((prev) => ({ ...prev, edi_payer: value }))
+                }
+                disabled={loading}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Yes">Yes</SelectItem>
+                  <SelectItem value="No">No</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Technician is Rendering Provider</Label>
+              <Select
+                value={form.technician_is_rendering_provider}
+                onValueChange={(value) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    technician_is_rendering_provider: value,
+                  }))
+                }
+                disabled={loading}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Yes">Yes</SelectItem>
+                  <SelectItem value="No">No</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {isEditing && (

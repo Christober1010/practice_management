@@ -96,12 +96,8 @@ export default function LocationsSetup() {
 
   const handleAddLocation = async (location) => {
     try {
-      const url = editingLocation
-        ? `${baseUrl}/locations.php`
-        : `${baseUrl}/locations.php`;
       const method = editingLocation ? "PUT" : "POST";
-
-      const res = await fetch(url, {
+      const res = await mahaverseFetch("/locations.php", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(location),

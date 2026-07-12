@@ -15,6 +15,11 @@
     "test:e2e": "pnpm run test:e2e:test && pnpm run test:e2e:prod",
     "test:e2e:test": "E2E_TARGET=test playwright test",
     "test:e2e:prod": "E2E_TARGET=prod playwright test",
+    "test:e2e:launchpad-prod": "dotenv -e e2e/.env -- env PLAYWRIGHT_SKIP_WEBSERVER=1 PLAYWRIGHT_BASE_URL=https://mahaverse.mahabehavioralhealth.com E2E_LAUNCHPAD_API_URL=https://launchpad.mahabehavioralhealth.com playwright test e2e/client-intake.spec.ts --project=launchpad-prod",
+    "test:e2e:client-intake": "dotenv -e e2e/.env -- playwright test e2e/client-intake.spec.ts --grep \"submits client intake via Launchpad API\" --project=launchpad-dev",
+    "test:e2e:launchpad-dev": "dotenv -e e2e/.env -- env E2E_TARGET=test PLAYWRIGHT_SKIP_WEBSERVER=1 PLAYWRIGHT_BASE_URL=https://mahaverse-dev.mahabehavioralhealth.com E2E_LAUNCHPAD_API_URL=https://launchpad.mahabehavioralhealth.com E2E_API_BASE=https://www.mahabehavioralhealth.com/mahaverse-backend-test playwright test e2e/client-intake.spec.ts --project=launchpad-dev",
+    "test:e2e:launchpad-dev-local": "dotenv -e e2e/.env -- env E2E_TARGET=test PLAYWRIGHT_SKIP_WEBSERVER=1 PLAYWRIGHT_BASE_URL=http://localhost:3000 E2E_LAUNCHPAD_API_URL=https://launchpad.mahabehavioralhealth.com E2E_API_BASE=https://www.mahabehavioralhealth.com/mahaverse-backend-test playwright test e2e/client-intake.spec.ts --project=launchpad-dev",
+    "test:e2e:launchpad-local": "dotenv -e e2e/.env -- playwright test e2e/client-intake.spec.ts --project=launchpad-local",
     "test:e2e:api": "pnpm run test:e2e:api:test && pnpm run test:e2e:api:prod",
     "test:e2e:api:test": "E2E_TARGET=test playwright test --project=api-test",
     "test:e2e:api:prod": "E2E_TARGET=prod playwright test --project=api-prod",
@@ -22,7 +27,8 @@
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:report": "playwright show-report",
     "test:e2e:report:test": "playwright show-report playwright-report-test",
-    "test:e2e:report:prod": "playwright show-report playwright-report-prod"
+    "test:e2e:report:prod": "playwright show-report playwright-report-prod",
+    "test:e2e:scheduling": "E2E_TARGET=test playwright test e2e/scheduling-flows.spec.ts --project=test-chromium"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",

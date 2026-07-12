@@ -76,10 +76,10 @@ $fullName = trim(($staff['first_name'] ?? '') . ' ' . ($staff['middle_name'] ?? 
 $firstName = $staff['first_name'] ?? 'there';
 $email = trim($staff['email']);
 $jobTitle = htmlspecialchars($staff['job_title'] ?? 'your position', ENT_QUOTES, 'UTF-8');
-$baseUrl = "https://maha-launchpad.mahabehavioralhealth.com";
-$loginUrl = $baseUrl . "/login";
-$offerUrl = $baseUrl . "/login?redirect=" . urlencode("/form/?view=offer-letter");
-$dashboardUrl = $baseUrl . "/login?redirect=" . urlencode("/form/?view=dashboard");
+$baseUrl = "https://mahaverse.mahabehavioralhealth.com";
+$loginUrl = $baseUrl . "/launchpad/login";
+$offerUrl = $baseUrl . "/launchpad/login?redirect=" . urlencode("/launchpad/form/?view=offer-letter");
+$dashboardUrl = $baseUrl . "/launchpad/login?redirect=" . urlencode("/launchpad/form/?view=dashboard");
 
 // Determine reminder message based on offer status
 $offerInitiated = !empty($staff['offer_initiated_at']);
@@ -136,7 +136,7 @@ $message = "
     <body>
         <div class='container'>
             <div class='header'>
-                <img src='{$baseUrl}/favicon.ico' alt='Maha Launchpad Logo' class='logo' />
+                <img src='https://www.mahabehavioralhealth.com/images/mahalogo_v1_small.jpg' alt='Maha Launchpad Logo' class='logo' />
                 <h1 style='margin: 0 0 10px 0;'>Maha Launchpad</h1>
                 <p style='margin: 0;'>Reminder</p>
             </div>

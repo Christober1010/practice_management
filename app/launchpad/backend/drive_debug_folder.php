@@ -106,9 +106,10 @@ try {
 
     $rootMeta = null;
     if ($rootFolderId !== '') {
-        $params = ['fields' => 'id,name,mimeType,driveId'];
-        if ($useSharedDrive) $params['supportsAllDrives'] = true;
-        $rootMeta = $drive->files->get($rootFolderId, $params);
+        $rootMeta = $drive->files->get($rootFolderId, [
+            'supportsAllDrives' => true,
+            'fields' => 'id,name,mimeType,driveId,capabilities/canAddChildren',
+        ]);
     }
 
     // Try to create a test folder under the root folder (or Drive root if rootFolderId is empty)
@@ -121,12 +122,10 @@ try {
         $fileMetadata->setParents([$rootFolderId]);
     }
 
-    $createParams = ['fields' => 'id,name,parents'];
-    if ($useSharedDrive) {
-        $createParams['supportsAllDrives'] = true;
-    }
-
-    $created = $drive->files->create($fileMetadata, $createParams);
+    $created = $drive->files->create($fileMetadata, [
+        'supportsAllDrives' => true,
+        'fields' => 'id,name,parents',
+    ]);
 
     echo json_encode([
         'success' => true,

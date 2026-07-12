@@ -5,7 +5,7 @@
  */
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Methods: GET, POST, PUT, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Auth-Token, X-CSRF-Token, X-Requested-With');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -193,14 +193,47 @@ function payer_payment_candidates(mysqli $conn, $clientId, $insuranceId, $dos)
     return $rows;
 }
 
-function payer_payment_list_entries(mysqli $conn, $clientId = null, $insuranceId = null, $startDos = null, $endDos = null)
-{
+function payer_payment_list_entries(
+    mysqli $conn,
+    $clientId = null,
+    $insuranceId = null,
+    $startDos = null,
+    $endDos = null,
+    $context = null,
+    $reportIds = null
+) {
+    $scheduleTracker = ($context === 'schedule_tracker');
     $sql = 'SELECT id, report_id, client_id, insurance_id, dos, service_code,
         coinsurance_amount, copay_amount, deductible_amount, payer_paid_amount, check_number,
+        ap_invoice, ap_date,
+        bank_deposited_at,
         created_at, created_by
         FROM payer_payment_entries WHERE 1=1';
     $types = '';
     $params = [];
+
+    if ($scheduleTracker) {
+        $sql .= ' AND report_id IS NOT NULL';
+    }
+
+    if (is_array($reportIds) && count($reportIds) > 0) {
+        $ids = [];
+        foreach ($reportIds as $rid) {
+            $n = (int)$rid;
+            if ($n > 0) {
+                $ids[] = $n;
+            }
+        }
+        if (count($ids) > 0) {
+            $placeholders = implode(',', array_fill(0, count($ids), '?'));
+            $sql .= ' AND report_id IN (' . $placeholders . ')';
+            $types .= str_repeat('i', count($ids));
+            foreach ($ids as $n) {
+                $params[] = $n;
+            }
+        }
+    }
+
     if ($clientId !== null && $clientId !== '') {
         $sql .= ' AND client_id = ?';
         $types .= 's';
@@ -221,7 +254,10 @@ function payer_payment_list_entries(mysqli $conn, $clientId = null, $insuranceId
         $types .= 's';
         $params[] = $endDos;
     }
-    $sql .= ' ORDER BY dos DESC, id DESC LIMIT 500';
+    $sql .= ' ORDER BY dos DESC, id DESC';
+    if (!$scheduleTracker && !(is_array($reportIds) && count($reportIds) > 0)) {
+        $sql .= ' LIMIT 500';
+    }
 
     $stmt = $conn->prepare($sql);
     if (!$stmt) {
@@ -270,6 +306,83 @@ function payer_payment_report_dos_string($dos)
     return trim((string)$dos);
 }
 
+function payer_payment_has_posted_amounts($paid, $check): bool
+{
+    $paidOk = $paid !== null && $paid !== '' && is_numeric($paid) && (float)$paid > 0;
+    $checkOk = $check !== null && trim((string)$check) !== '';
+    return $paidOk && $checkOk;
+}
+
+
+function payer_payment_report_entry_exists(mysqli $conn, int $reportId): bool
+{
+    if ($reportId <= 0) {
+        return false;
+    }
+    $st = $conn->prepare('SELECT id FROM payer_payment_entries WHERE report_id = ? LIMIT 1');
+    if (!$st) {
+        return false;
+    }
+    $st->bind_param('i', $reportId);
+    $st->execute();
+    $row = $st->get_result()->fetch_assoc();
+    $st->close();
+    return !empty($row);
+}
+
+function payer_payment_mark_report_posted(mysqli $conn, int $reportId): void
+{
+    if ($reportId <= 0) {
+        return;
+    }
+    $st = $conn->prepare(
+        "UPDATE reports SET tracker_status = 'Pending Payment'
+         WHERE id = ? AND tracker_status IN ('Reviewed', 'Pending Payment', 'Payment Posted')"
+    );
+    if (!$st) {
+        return;
+    }
+    $st->bind_param('i', $reportId);
+    $st->execute();
+    $st->close();
+}
+
+function payer_payment_mark_reports_cleared(mysqli $conn, array $reportIds): int
+{
+    $updated = 0;
+    $now = date('Y-m-d H:i:s');
+    $markEntry = $conn->prepare(
+        'UPDATE payer_payment_entries SET bank_deposited_at = ? WHERE report_id = ?'
+    );
+    $markReport = $conn->prepare(
+        "UPDATE reports SET tracker_status = 'Received Payment'
+         WHERE id = ? AND tracker_status IN ('Pending Payment', 'Received Payment', 'Payment Posted', 'Payment Cleared')"
+    );
+    if (!$markEntry || !$markReport) {
+        if ($markEntry) {
+            $markEntry->close();
+        }
+        if ($markReport) {
+            $markReport->close();
+        }
+        return 0;
+    }
+    foreach ($reportIds as $rid) {
+        $reportId = (int)$rid;
+        if ($reportId <= 0) {
+            continue;
+        }
+        $markEntry->bind_param('si', $now, $reportId);
+        $markEntry->execute();
+        $markReport->bind_param('i', $reportId);
+        $markReport->execute();
+        $updated += $markReport->affected_rows;
+    }
+    $markEntry->close();
+    $markReport->close();
+    return $updated;
+}
+
 try {
     if ($method === 'GET') {
         $action = isset($_GET['action']) ? trim((string)$_GET['action']) : 'entries';
@@ -288,7 +401,12 @@ try {
         $insuranceId = isset($_GET['insurance_id']) ? trim((string)$_GET['insurance_id']) : null;
         $startDos = isset($_GET['start_dos']) ? trim((string)$_GET['start_dos']) : null;
         $endDos = isset($_GET['end_dos']) ? trim((string)$_GET['end_dos']) : null;
-        $data = payer_payment_list_entries($conn, $clientId, $insuranceId, $startDos, $endDos);
+        $context = isset($_GET['context']) ? trim((string)$_GET['context']) : null;
+        $reportIds = null;
+        if (!empty($_GET['report_ids'])) {
+            $reportIds = array_filter(array_map('intval', explode(',', (string)$_GET['report_ids'])));
+        }
+        $data = payer_payment_list_entries($conn, $clientId, $insuranceId, $startDos, $endDos, $context, $reportIds);
         echo json_encode(['success' => true, 'data' => $data]);
         exit;
     }
@@ -299,6 +417,7 @@ try {
         if (count($entries) === 0) {
             json_fail(400, 'entries array is required');
         }
+        $saveOnly = !empty($input['save_only']);
         $createdBy = !empty($authUser['username']) ? (string)$authUser['username'] : null;
 
         $conn->begin_transaction();
@@ -385,6 +504,17 @@ try {
                     if (!$reportUpsert->execute()) {
                         throw new Exception($reportUpsert->error);
                     }
+                    if (!payer_payment_report_entry_exists($conn, $reportId)) {
+                        throw new Exception(
+                            'Payment line conflict detected for report #' . $reportId
+                            . '. This database still has the legacy unique key on '
+                            . '(client_id, insurance_id, dos, service_code). '
+                            . 'Run migration to drop uq_payer_payment_line, then retry.'
+                        );
+                    }
+                    if (!$saveOnly && payer_payment_has_posted_amounts($paid, $check)) {
+                        payer_payment_mark_report_posted($conn, $reportId);
+                    }
                 } else {
                     $legacyIns->bind_param(
                         'sissssssss',
@@ -419,6 +549,83 @@ try {
             if (isset($reportUpsert) && $reportUpsert) {
                 $reportUpsert->close();
             }
+            json_fail(500, $e->getMessage());
+        }
+        exit;
+    }
+
+    if ($method === 'PUT') {
+        $input = json_decode(file_get_contents('php://input'), true) ?? [];
+        $action = isset($input['action']) ? trim((string)$input['action']) : '';
+        if ($action === 'save_ap') {
+            $entries = isset($input['entries']) && is_array($input['entries']) ? $input['entries'] : [];
+            if (count($entries) === 0) {
+                json_fail(400, 'entries array is required');
+            }
+            $conn->begin_transaction();
+            try {
+                $upd = $conn->prepare(
+                    'UPDATE payer_payment_entries SET ap_invoice = ?, ap_date = ? WHERE report_id = ?'
+                );
+                if (!$upd) {
+                    throw new Exception($conn->error);
+                }
+                $saved = 0;
+                foreach ($entries as $row) {
+                    $reportId = isset($row['report_id']) ? (int)$row['report_id'] : 0;
+                    if ($reportId <= 0) {
+                        continue;
+                    }
+                    $apInvoice = isset($row['ap_invoice']) ? trim((string)$row['ap_invoice']) : '';
+                    if ($apInvoice === '') {
+                        $apInvoice = null;
+                    }
+                    $apDateRaw = isset($row['ap_date']) ? trim((string)$row['ap_date']) : '';
+                    $apDate = $apDateRaw !== '' ? $apDateRaw : null;
+                    $upd->bind_param('ssi', $apInvoice, $apDate, $reportId);
+                    if (!$upd->execute()) {
+                        throw new Exception($upd->error);
+                    }
+                    if ($upd->affected_rows > 0) {
+                        $saved += 1;
+                    }
+                }
+                $upd->close();
+                $conn->commit();
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'AP values saved',
+                    'updated' => $saved,
+                ]);
+            } catch (Exception $e) {
+                $conn->rollback();
+                if (isset($upd) && $upd) {
+                    $upd->close();
+                }
+                json_fail(500, $e->getMessage());
+            }
+            exit;
+        }
+        if ($action !== 'mark_cleared') {
+            json_fail(400, 'Unsupported action');
+        }
+        $reportIds = isset($input['report_ids']) && is_array($input['report_ids'])
+            ? $input['report_ids']
+            : [];
+        if (count($reportIds) === 0) {
+            json_fail(400, 'report_ids array is required');
+        }
+        $conn->begin_transaction();
+        try {
+            $updated = payer_payment_mark_reports_cleared($conn, $reportIds);
+            $conn->commit();
+            echo json_encode([
+                'success' => true,
+                'message' => 'Payment marked cleared',
+                'updated' => $updated,
+            ]);
+        } catch (Exception $e) {
+            $conn->rollback();
             json_fail(500, $e->getMessage());
         }
         exit;

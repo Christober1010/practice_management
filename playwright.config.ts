@@ -54,7 +54,7 @@ function buildTargetProjects(target: E2eTarget) {
     },
     {
       name: `api-${target}`,
-      testMatch: /api-endpoints\.spec\.ts/,
+      testMatch: /(?:00-schema-readiness|api-endpoints)\.spec\.ts/,
       timeout: 120_000,
       env: projectEnv(target),
     },
@@ -62,6 +62,61 @@ function buildTargetProjects(target: E2eTarget) {
 }
 
 const projects = runTargets.flatMap(buildTargetProjects);
+
+const LAUNCHPAD_DEV_BASE =
+  process.env.PLAYWRIGHT_BASE_URL || "https://mahaverse-dev.mahabehavioralhealth.com";
+
+projects.push({
+  name: "launchpad-dev",
+  testMatch: /client-intake\.spec\.ts/,
+  use: {
+    ...devices["Desktop Chrome"],
+    storageState: { cookies: [], origins: [] },
+    baseURL: LAUNCHPAD_DEV_BASE,
+  },
+  timeout: 120_000,
+  env: projectEnv("test"),
+  webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER
+    ? undefined
+    : {
+        command: `dotenv -e .env.test -- next dev -p ${process.env.E2E_LAUNCHPAD_DEV_PORT || "3010"}`,
+        url: `http://localhost:${process.env.E2E_LAUNCHPAD_DEV_PORT || "3010"}`,
+        reuseExistingServer: !process.env.CI,
+        timeout: 180_000,
+      },
+});
+
+projects.push({
+  name: "launchpad-prod",
+  testMatch: /client-intake\.spec\.ts/,
+  use: {
+    ...devices["Desktop Chrome"],
+    storageState: { cookies: [], origins: [] },
+    baseURL:
+      process.env.PLAYWRIGHT_BASE_URL ||
+      "https://mahaverse.mahabehavioralhealth.com",
+  },
+  timeout: 120_000,
+});
+
+projects.push({
+  name: "launchpad-local",
+  testMatch: /client-intake\.spec\.ts/,
+  use: {
+    ...devices["Desktop Chrome"],
+    storageState: { cookies: [], origins: [] },
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || "http://127.0.0.1:4173",
+  },
+  timeout: 120_000,
+  webServer: process.env.PLAYWRIGHT_SKIP_WEBSERVER
+    ? undefined
+    : {
+        command: "npx serve out -s -l 4173",
+        url: "http://127.0.0.1:4173",
+        reuseExistingServer: true,
+        timeout: 60_000,
+      },
+});
 
 const active = singleTarget ? E2E_TARGETS[singleTarget] : null;
 

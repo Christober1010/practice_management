@@ -42,6 +42,41 @@ function normalizeOptionalText($value)
     return $trimmed === '' ? null : $trimmed;
 }
 
+function providers_edi_columns_exist(mysqli $conn): array
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $cached = ['edi_payer' => false, 'technician_is_rendering_provider' => false];
+    $r = @$conn->query('SHOW COLUMNS FROM `master_providers`');
+    if ($r) {
+        while ($row = $r->fetch_assoc()) {
+            $f = (string)($row['Field'] ?? '');
+            if ($f === 'edi_payer') {
+                $cached['edi_payer'] = true;
+            }
+            if ($f === 'technician_is_rendering_provider') {
+                $cached['technician_is_rendering_provider'] = true;
+            }
+        }
+        $r->free();
+    }
+    return $cached;
+}
+
+function providers_normalize_yes_no($value): int
+{
+    if ($value === true || $value === 1 || $value === '1') {
+        return 1;
+    }
+    $s = strtoupper(trim((string)$value));
+    if ($s === 'YES' || $s === 'Y' || $s === 'TRUE') {
+        return 1;
+    }
+    return 0;
+}
+
 function handleGetProviders($conn)
 {
     $id = $_GET['id'] ?? null;
@@ -99,22 +134,14 @@ function handlePostProvider($conn, $input)
     $country = $input['country'] ?? null;
     $zip_code = $input['zip_code'] ?? null;
     $status = $input['status'] ?? 'Active';
+    $ediCols = providers_edi_columns_exist($conn);
+    $ediPayer = providers_normalize_yes_no($input['edi_payer'] ?? 0);
+    $technicianIsRendering = providers_normalize_yes_no($input['technician_is_rendering_provider'] ?? 0);
 
-    $stmt = $conn->prepare("
-        INSERT INTO master_providers (
-            id, provider_name, provider_code, email, phone, fax,
-            address1, address2, city, state, country, zip_code, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ");
-
-    if (!$stmt) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Failed to prepare statement']);
-        return;
-    }
-
-    $stmt->bind_param(
-        "sssssssssssss",
+    $cols = 'id, provider_name, provider_code, email, phone, fax, address1, address2, city, state, country, zip_code, status';
+    $placeholders = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?';
+    $types = 'sssssssssssss';
+    $params = [
         $id,
         $provider_name,
         $provider_code,
@@ -127,8 +154,31 @@ function handlePostProvider($conn, $input)
         $state,
         $country,
         $zip_code,
-        $status
-    );
+        $status,
+    ];
+    if ($ediCols['edi_payer']) {
+        $cols .= ', edi_payer';
+        $placeholders .= ', ?';
+        $types .= 'i';
+        $params[] = $ediPayer;
+    }
+    if ($ediCols['technician_is_rendering_provider']) {
+        $cols .= ', technician_is_rendering_provider';
+        $placeholders .= ', ?';
+        $types .= 'i';
+        $params[] = $technicianIsRendering;
+    }
+
+    $sql = "INSERT INTO master_providers ($cols) VALUES ($placeholders)";
+    $stmt = $conn->prepare($sql);
+
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'Failed to prepare statement']);
+        return;
+    }
+
+    $stmt->bind_param($types, ...$params);
 
     if (!$stmt->execute()) {
         http_response_code(500);
@@ -163,23 +213,15 @@ function handlePutProvider($conn, $input)
     $country = $input['country'] ?? null;
     $zip_code = $input['zip_code'] ?? null;
     $status = $input['status'] ?? null;
+    $ediCols = providers_edi_columns_exist($conn);
+    $ediPayer = providers_normalize_yes_no($input['edi_payer'] ?? 0);
+    $technicianIsRendering = providers_normalize_yes_no($input['technician_is_rendering_provider'] ?? 0);
 
-    $stmt = $conn->prepare("
-        UPDATE master_providers
-        SET provider_name = ?, provider_code = ?, email = ?, phone = ?, fax = ?,
+    $set = 'provider_name = ?, provider_code = ?, email = ?, phone = ?, fax = ?,
             address1 = ?, address2 = ?, city = ?, state = ?, country = ?, zip_code = ?,
-            status = COALESCE(?, status)
-        WHERE id = ?
-    ");
-
-    if (!$stmt) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'message' => 'Failed to prepare statement']);
-        return;
-    }
-
-    $stmt->bind_param(
-        "sssssssssssss",
+            status = COALESCE(?, status)';
+    $types = 'ssssssssssss';
+    $params = [
         $provider_name,
         $provider_code,
         $email,
@@ -192,8 +234,30 @@ function handlePutProvider($conn, $input)
         $country,
         $zip_code,
         $status,
-        $id
-    );
+    ];
+    if ($ediCols['edi_payer']) {
+        $set .= ', edi_payer = ?';
+        $types .= 'i';
+        $params[] = $ediPayer;
+    }
+    if ($ediCols['technician_is_rendering_provider']) {
+        $set .= ', technician_is_rendering_provider = ?';
+        $types .= 'i';
+        $params[] = $technicianIsRendering;
+    }
+    $params[] = $id;
+    $types .= 's';
+
+    $sql = "UPDATE master_providers SET $set WHERE id = ?";
+    $stmt = $conn->prepare($sql);
+
+    if (!$stmt) {
+        http_response_code(500);
+        echo json_encode(['success' => false, 'message' => 'Failed to prepare statement']);
+        return;
+    }
+
+    $stmt->bind_param($types, ...$params);
 
     if (!$stmt->execute()) {
         http_response_code(500);
