@@ -408,6 +408,137 @@ function rbac_user_may_session_action($user, $conn, $action, $providerId = null)
 }
 
 /**
+ * True when the clients row is active and not archived.
+ *
+ * @param array $client
+ */
+function rbac_client_row_is_active($client) {
+    if (!is_array($client)) {
+        return false;
+    }
+    $active = !isset($client['is_active'])
+        || ($client['is_active'] !== false
+            && $client['is_active'] !== 0
+            && $client['is_active'] !== '0');
+    $archived = isset($client['archived'])
+        && $client['archived'] !== false
+        && $client['archived'] !== 0
+        && $client['archived'] !== '0'
+        && $client['archived'] !== '';
+    return $active && !$archived;
+}
+
+/**
+ * Staff IDs a non-admin user may see in Appointments / scheduling dropdowns:
+ * self + people who report to me.
+ *
+ * staff_assignments semantics (see Staff form "Assigned Supervisor"):
+ *   staff_id           = the report (person whose profile is edited)
+ *   assigned_staff_id  = their supervisor
+ *
+ * So my reports are: WHERE assigned_staff_id = me → staff_id
+ * Supervisors (bosses) are excluded from the dropdown.
+ *
+ * @param mysqli $conn
+ * @param array $user
+ * @return string[]
+ */
+function rbac_visible_staff_ids_for_user($conn, $user) {
+    $sid = rbac_resolve_staff_id_for_user($conn, $user);
+    if (!$sid) {
+        return [];
+    }
+    $ids = [(string) $sid];
+
+    // Direct reports: staff who listed this user as their Assigned Supervisor.
+    $stmt = $conn->prepare("SELECT staff_id FROM staff_assignments WHERE assigned_staff_id = ?");
+    if ($stmt) {
+        $stmt->bind_param('s', $sid);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($res && ($row = $res->fetch_assoc())) {
+            if (!empty($row['staff_id'])) {
+                $ids[] = (string) $row['staff_id'];
+            }
+        }
+        $stmt->close();
+    }
+
+    return array_values(array_unique($ids));
+}
+
+/**
+ * Client IDs assigned to the authenticated user's staff (or linked client id).
+ *
+ * @param mysqli $conn
+ * @param array $user
+ * @return string[]
+ */
+function rbac_assigned_client_ids_for_user($conn, $user) {
+    $ids = [];
+    $cid = rbac_resolve_client_id_for_user($user);
+    if ($cid) {
+        $ids[] = (string) $cid;
+    }
+    $sid = rbac_resolve_staff_id_for_user($conn, $user);
+    if ($sid) {
+        $stmt = $conn->prepare("SELECT client_id FROM staff_client_assignments WHERE staff_id = ?");
+        if ($stmt) {
+            $stmt->bind_param('s', $sid);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            while ($res && ($row = $res->fetch_assoc())) {
+                if (!empty($row['client_id'])) {
+                    $ids[] = (string) $row['client_id'];
+                }
+            }
+            $stmt->close();
+        }
+    }
+    return array_values(array_unique($ids));
+}
+
+/**
+ * Filter session rows for non-admin users (assigned clients and/or visible providers).
+ * Sessions marked exclude_session=Yes are admin-only.
+ *
+ * @param mysqli $conn
+ * @param array $user
+ * @param array $sessions
+ * @return array
+ */
+function rbac_filter_sessions_for_user($conn, $user, $sessions) {
+    if (!$user || !is_array($sessions)) {
+        return [];
+    }
+    $role = strtolower((string) ($user['role'] ?? ''));
+    if ($role === 'admin') {
+        return $sessions;
+    }
+    $allowedClients = array_flip(rbac_assigned_client_ids_for_user($conn, $user));
+    $allowedStaff = array_flip(rbac_visible_staff_ids_for_user($conn, $user));
+    return array_values(array_filter($sessions, function ($s) use ($allowedClients, $allowedStaff) {
+        $exclude = strtolower(trim((string) ($s['exclude_session'] ?? $s['excludeSession'] ?? 'No')));
+        if ($exclude === 'yes' || $exclude === '1' || $exclude === 'true') {
+            return false;
+        }
+        $cid = (string) ($s['client_id'] ?? '');
+        $pid = (string) ($s['provider_id'] ?? '');
+        $sid = (string) ($s['supervising_provider_id'] ?? '');
+        if ($cid !== '' && isset($allowedClients[$cid])) {
+            return true;
+        }
+        if ($pid !== '' && isset($allowedStaff[$pid])) {
+            return true;
+        }
+        if ($sid !== '' && isset($allowedStaff[$sid])) {
+            return true;
+        }
+        return false;
+    }));
+}
+
+/**
  * @param mysqli $conn
  */
 function rbac_user_may_access_client_row($user, $conn, $clientId) {
@@ -419,17 +550,13 @@ function rbac_user_may_access_client_row($user, $conn, $clientId) {
         return true;
     }
     $map = rbac_fetch_grant_map_from_db($conn, $role);
-    $scopeView = rbac_grant_scope_for_perm($map, 'clients.read');
-    if ($scopeView === null) {
-        $scopeView = rbac_grant_scope_for_perm($map, 'clients.view');
-    }
-    if ($scopeView === null && !rbac_user_has_permission_key($role, 'clients.read', 'mahaverse', $map)) {
+    if (
+        !rbac_user_has_permission_key($role, 'clients.read', 'mahaverse', $map)
+        && !rbac_user_has_permission_key($role, 'clients.view', 'mahaverse', $map)
+    ) {
         return false;
     }
-    $effectiveScope = $scopeView ?? 'all';
-    if ($effectiveScope === 'all') {
-        return true;
-    }
+    // Non-admin: only linked client or staff_client_assignments (never full roster).
     $cid = rbac_resolve_client_id_for_user($user);
     if ($cid && (string) $cid === (string) $clientId) {
         return true;
@@ -500,7 +627,14 @@ function rbac_user_may_client_action($user, $conn, $action, $clientId = null) {
         return false;
     }
     if ($scope === 'all') {
-        return true;
+        if ($action === 'create') {
+            return true;
+        }
+        if (!$clientId) {
+            return false;
+        }
+        // Non-admin with scope "all" still cannot touch unassigned clients.
+        return rbac_user_may_access_client_row($user, $conn, $clientId);
     }
     if ($action === 'create') {
         return false;

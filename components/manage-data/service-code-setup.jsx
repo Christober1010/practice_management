@@ -151,6 +151,7 @@ export default function ServiceCodeSetup() {
           setCodeToDelete(null);
         }}
         onConfirm={handleDelete}
+        entityType="service code"
         moduleName={codeToDelete?.code || ""}
         loading={loading}
       />

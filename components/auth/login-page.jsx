@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Toaster, toast } from "react-hot-toast";
+import { toast } from "react-hot-toast";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -19,6 +19,8 @@ import img from "../../public/favicon.ico";
 import Image from "next/image";
 import { getMahaverseAuthHeaders } from "@/lib/api-auth";
 import { MAHAVERSE_PERMISSIONS_REFRESH_EVENT } from "@/lib/mahaverse-permissions-events";
+import { useDispatch } from "react-redux";
+import { setClients } from "@/app/store/clientSlice";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
 
@@ -73,6 +75,7 @@ const LAUNCHPAD_API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   "https://launchpad.mahabehavioralhealth.com";
 export default function LoginPage() {
+  const dispatch = useDispatch();
   const [showPassword, setShowPassword] = useState(false);
   const [user, setUser] = useState(null); // Removed TypeScript type annotation
   const [email, setEmail] = useState("");
@@ -255,7 +258,18 @@ export default function LoginPage() {
         // Set user state to trigger dashboard render
         setUser(data.user);
 
-        toast.success(`Welcome back, ${data.user.first_name}!`);
+        // Defer toast until after login UI (and its Toaster) unmounts so the
+        // root <Toaster /> owns it; otherwise dismiss can get stuck paused.
+        const welcomeName = data.user.first_name || data.user.username || "there";
+        const welcomeId = `welcome-${data.user.id || welcomeName}`;
+        setTimeout(() => {
+          toast.success(`Welcome back, ${welcomeName}!`, {
+            id: welcomeId,
+            duration: 4000,
+          });
+          // Belt-and-suspenders: clear even if hover/pause left the toast stuck
+          setTimeout(() => toast.dismiss(welcomeId), 4500);
+        }, 0);
 
         // If we were asked to redirect (e.g., Launchpad sync), navigate after login.
         const params = new URLSearchParams(
@@ -288,8 +302,10 @@ export default function LoginPage() {
             launchpadOk = true;
 
             toast.success(
-              `Welcome, ${lpData.user?.username || "Staff"}!`
+              `Welcome, ${lpData.user?.username || "Staff"}!`,
+              { id: "welcome-launchpad", duration: 4000 }
             );
+            setTimeout(() => toast.dismiss("welcome-launchpad"), 4500);
 
             const params = new URLSearchParams(
               typeof window !== "undefined" ? window.location.search || "" : ""
@@ -343,6 +359,9 @@ export default function LoginPage() {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("auth_user");
     localStorage.removeItem("auth_expires_at");
+
+    // Drop cached roster so the next login cannot reuse admin's full client list.
+    dispatch(setClients([]));
 
     setUser(null);
     setEmail("");
@@ -748,7 +767,6 @@ export default function LoginPage() {
       ) : (
         ""
       )}
-      <Toaster />
     </div>
   );
 }

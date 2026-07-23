@@ -353,7 +353,12 @@ export default function ModulesList() {
           setIsDeleteModalOpen(false);
           setModuleToDelete(null);
         }}
-        onConfirm={() => dispatch(fetchPrograms())}
+        onConfirm={() => {
+          dispatch(fetchPrograms());
+          setIsDeleteModalOpen(false);
+          setModuleToDelete(null);
+        }}
+        entityType="module"
         moduleName={moduleToDelete?.name || ""}
         loading={deleting}
       />

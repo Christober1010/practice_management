@@ -10,6 +10,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
 }
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/rbac_helpers.php';
 $authUser = requireAuth('scheduling.read', 'mahaverse');
 
 $host = 'db5018266079.hosting-data.io';
@@ -68,6 +69,8 @@ try {
         }
         $sessions = $result->fetch_all(MYSQLI_ASSOC);
     }
+
+    $sessions = rbac_filter_sessions_for_user($conn, $authUser, $sessions);
 
     echo json_encode(['success' => true, 'sessions' => $sessions]);
     $conn->close();

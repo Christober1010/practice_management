@@ -6,7 +6,7 @@ export async function gotoSchedulingCalendar(page: Page) {
   await gotoApp(page);
   const sessionsLoad = waitForApi(page, "/add-session.php").catch(() => null);
   await openMahaverseView(page, "scheduling");
-  await expect(page.getByRole("heading", { name: "Scheduling" })).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Appointments" })).toBeVisible({
     timeout: 30_000,
   });
   await sessionsLoad;
@@ -106,7 +106,7 @@ export async function fillClinicalNotesAndSave(
   dialog = page.getByRole("dialog")
 ) {
   await dialog.getByRole("tab", { name: "Session Notes" }).click();
-  await dialog.getByRole("tab", { name: "Clinical Notes" }).click();
+  await dialog.getByRole("tab", { name: "SOAP Notes" }).click();
   await dialog.locator("#subjective").fill(noteText);
   await saveSessionNotesFooter(page, dialog);
 }

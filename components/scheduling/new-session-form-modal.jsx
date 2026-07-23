@@ -39,6 +39,7 @@ import { fetchClients } from "@/app/store/clientSlice";
 import { getMahaverseAuthHeaders } from "@/lib/api-auth";
 import { sessionIsRenderedOrReadyToBill } from "@/lib/scheduling-session-status";
 import { schedulingSaveErrorMessage } from "@/lib/scheduling-errors";
+import { cn } from "@/lib/utils";
 import {
   authorizationBillingCodeLabel,
   authorizationBillingCodeMatches,
@@ -90,6 +91,7 @@ const initialForm = {
   placeOfService: "",
   locationAddress: "",
   quickNote: "",
+  excludeSession: "No",
   startDateTime: "",
   startTZ: "",
   endDateTime: "",
@@ -200,6 +202,9 @@ export default function NewSessionFormModal({
   editingSession = null,
   selectedDate = null,
   existingSessions = [],
+  locationFilterId = "",
+  /** Only admins may change Exclude session (Yes/No). */
+  canEditExcludeSession = false,
 }) {
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
@@ -216,8 +221,9 @@ export default function NewSessionFormModal({
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
   useEffect(() => {
+    if (!isOpen) return;
     dispatch(fetchClients());
-  }, [dispatch]);
+  }, [dispatch, isOpen]);
   const clients = useSelector((state) => state.clients?.items || []);
   const selectedProvider = staff.find((s) => s.id === form.provider);
 
@@ -242,11 +248,12 @@ export default function NewSessionFormModal({
   }, []);
 
   useEffect(() => {
-    if (!isOpen || staff.length > 0) return;
+    if (!isOpen) return;
+    setStaff([]);
     const fetchStaff = async () => {
       setLoadingStaff(true);
       try {
-        const res = await mahaverseFetch('/staff.php', {
+        const res = await mahaverseFetch("/staff.php?scope=assigned", {
           headers: getMahaverseAuthHeaders(),
         });
         const data = await res.json();
@@ -461,6 +468,11 @@ export default function NewSessionFormModal({
             editingSession.rendered_hours ??
             "0"
           )?.toString() || "0",
+        excludeSession:
+          editingSession.excludeSession === "Yes" ||
+          editingSession.exclude_session === "Yes"
+            ? "Yes"
+            : "No",
       });
     } else if (selectedDate && userTimezone) {
       const y = selectedDate.getFullYear();
@@ -478,7 +490,13 @@ export default function NewSessionFormModal({
 
   const clientOptions = useMemo(
     () =>
-      clients.filter(isClientActive).map((c) => ({
+      clients
+        .filter(isClientActive)
+        .filter((c) => {
+          if (!locationFilterId) return true;
+          return String(c.location || "") === String(locationFilterId);
+        })
+        .map((c) => ({
         id: c.client_id,
         name: [c.first_name, c.middle_name, c.last_name]
           .filter(Boolean)
@@ -502,7 +520,7 @@ export default function NewSessionFormModal({
               }))
             : [{ id: "no-address", value: "No address available" }],
       })),
-    [clients]
+    [clients, locationFilterId]
   );
 
   const selectedClient = useMemo(
@@ -658,6 +676,16 @@ export default function NewSessionFormModal({
       placeOfService: form.placeOfService,
       locationAddress: form.locationAddress,
       quickNote: form.quickNote,
+      excludeSession: canEditExcludeSession
+        ? form.excludeSession === "Yes"
+          ? "Yes"
+          : "No"
+        : editingSession
+          ? editingSession.excludeSession === "Yes" ||
+            editingSession.exclude_session === "Yes"
+            ? "Yes"
+            : "No"
+          : "No",
       status: "Scheduled",
       recurring: {
         frequency: form.recurring === "Repeats" ? form.repeatFrequency : "No",
@@ -933,7 +961,7 @@ export default function NewSessionFormModal({
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Clock className="h-5 w-5 text-teal-600" />
-                      Scheduling Details
+                      Appointment Details
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -1338,7 +1366,26 @@ export default function NewSessionFormModal({
                           Quick Note
                         </CardTitle>
                       </CardHeader>
-                      <CardContent>
+                      <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="exclude-session">Exclude session</Label>
+                          <select
+                            id="exclude-session"
+                            className={cn(
+                              "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                              !canEditExcludeSession &&
+                                "bg-muted cursor-not-allowed opacity-90"
+                            )}
+                            value={form.excludeSession === "Yes" ? "Yes" : "No"}
+                            disabled={!canEditExcludeSession}
+                            onChange={(e) =>
+                              setField("excludeSession", e.target.value)
+                            }
+                          >
+                            <option value="No">No</option>
+                            <option value="Yes">Yes</option>
+                          </select>
+                        </div>
                         <Textarea
                           rows={3}
                           value={form.quickNote}

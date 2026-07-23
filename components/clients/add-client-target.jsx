@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -21,15 +22,17 @@ import {
 } from "@/components/ui/select";
 import {
   ArrowRight,
-  Badge,
   ChevronRight,
   Edit,
   Plus,
   Target,
   TargetIcon,
+  Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Card, CardContent, CardHeader } from "../ui/card";
+import { mahaverseFetch } from "@/lib/mahaverse-api";
+import PromptMultiSelect from "@/components/master-data/prompt-multi-select";
 
 const activityTypes = [
   "Task Analysis",
@@ -48,6 +51,7 @@ export default function ClientTargetModal({
   programs = [],
   domains = [],
   modules = [],
+  allPrompts = [],
   loading,
   editingTarget,
 }) {
@@ -56,7 +60,9 @@ export default function ClientTargetModal({
   const [programId, setProgramId] = useState("");
   const [programSearch, setProgramSearch] = useState("");
   const [activityType, setActivityType] = useState("");
+  const [selectedPrompts, setSelectedPrompts] = useState([]);
   const isEditMode = !!editingTarget;
+  const isTaskAnalysisType = activityType === "Task Analysis";
 
   useEffect(() => {
     if (editingTarget) {
@@ -66,11 +72,17 @@ export default function ClientTargetModal({
       setActivityType(
         editingTarget.activity_type || editingTarget.activityType || ""
       );
+      const promptIds =
+        editingTarget.prompts?.map((p) =>
+          String(typeof p === "string" || typeof p === "number" ? p : p.id)
+        ) || [];
+      setSelectedPrompts(promptIds);
     } else {
       setName("");
       setDescription("");
       setProgramId("");
       setActivityType("");
+      setSelectedPrompts([]);
     }
   }, [editingTarget, isOpen]);
 
@@ -117,6 +129,27 @@ export default function ClientTargetModal({
       } - ${selectedProgram.name}`
     : "";
 
+  const buildPromptObjects = () => {
+    if (isTaskAnalysisType) return [];
+    return selectedPrompts
+      .map((id) => {
+        const prompt = allPrompts.find((p) => String(p.id) === String(id));
+        return prompt
+          ? {
+              id: prompt.id,
+              prompt_name: prompt.prompt_name,
+              max_score: prompt.max_score,
+              score_as_independent: prompt.score_as_independent,
+              dtt: prompt.dtt,
+              ta: prompt.ta,
+              maintenance: prompt.maintenance,
+              status: prompt.status,
+            }
+          : { id };
+      })
+      .filter((p) => p?.id);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -126,6 +159,8 @@ export default function ClientTargetModal({
     }
 
     try {
+      const prompts = buildPromptObjects();
+      let ok = true;
       if (isEditMode) {
         const updatedTarget = {
           ...editingTarget,
@@ -133,8 +168,9 @@ export default function ClientTargetModal({
           description: description.trim(),
           program_id: programId,
           activity_type: activityType,
+          prompts,
         };
-        await onEdit(updatedTarget);
+        ok = await onEdit(updatedTarget);
       } else {
         const newTarget = {
           id: `target_${Date.now()}`,
@@ -145,15 +181,19 @@ export default function ClientTargetModal({
           activity_type: activityType,
           status: "Active",
           archived: 0,
+          prompts,
         };
-        await onAdd(newTarget);
+        ok = await onAdd(newTarget);
       }
+
+      if (ok === false) return;
 
       setName("");
       setDescription("");
       setProgramId("");
       setProgramSearch("");
       setActivityType("");
+      setSelectedPrompts([]);
       onClose();
     } catch (error) {
       console.error("Error saving target:", error);
@@ -294,6 +334,18 @@ export default function ClientTargetModal({
             />
           </div>
 
+          {!isTaskAnalysisType && (
+            <div className="space-y-2">
+              <Label>Prompts</Label>
+              <PromptMultiSelect
+                allPrompts={allPrompts}
+                selectedIds={selectedPrompts}
+                onChange={setSelectedPrompts}
+                disabled={loading}
+              />
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="flex gap-2 justify-end">
             <Button
@@ -329,6 +381,7 @@ export function TargetsListModal({
   programs,
   domains,
   modules,
+  allPrompts = [],
   loading,
   onReload, // call loadClientTargets again
   onAddTarget, // wraps handleAddTarget
@@ -348,12 +401,35 @@ export function TargetsListModal({
   };
 
   const handleTargetSaved = async (target, isEdit) => {
-    if (isEdit) {
-      await onEditTarget(target);
-    } else {
-      await onAddTarget(target);
-    }
+    const ok = isEdit
+      ? await onEditTarget(target)
+      : await onAddTarget(target);
+    if (ok === false) return false;
     await onReload();
+    return true;
+  };
+
+  const handleDeleteTarget = async (targetId) => {
+    if (!confirm("Are you sure you want to delete this target?")) return;
+    try {
+      const res = await mahaverseFetch("/client-modules.php", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: clientId,
+          activityId: targetId,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.success) {
+        toast.success("Target deleted");
+        await onReload();
+      } else {
+        toast.error(json.message || "Failed to delete target");
+      }
+    } catch (err) {
+      toast.error("Failed to delete target");
+    }
   };
 
   return (
@@ -450,6 +526,34 @@ export function TargetsListModal({
                                 <span>{target.status || "Active"}</span>
                               </span>
                             </div>
+                            {Array.isArray(target.prompts) &&
+                              target.prompts.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {target.prompts.map((p) => {
+                                    const id =
+                                      typeof p === "string" ||
+                                      typeof p === "number"
+                                        ? p
+                                        : p.id;
+                                    const label =
+                                      typeof p === "object" && p?.prompt_name
+                                        ? p.prompt_name
+                                        : allPrompts.find(
+                                            (ap) =>
+                                              String(ap.id) === String(id)
+                                          )?.prompt_name || String(id);
+                                    return (
+                                      <Badge
+                                        key={String(id)}
+                                        variant="outline"
+                                        className="text-xs"
+                                      >
+                                        {label}
+                                      </Badge>
+                                    );
+                                  })}
+                                </div>
+                              )}
                           </div>
                           <div className="flex items-center gap-2">
                             <Button
@@ -459,7 +563,14 @@ export function TargetsListModal({
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            {/* Optional delete button if you add API */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteTarget(target.id)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </div>
                       </CardHeader>
@@ -486,6 +597,7 @@ export function TargetsListModal({
         programs={programs}
         domains={domains}
         modules={modules}
+        allPrompts={allPrompts}
         loading={loading}
         editingTarget={editingTarget}
       />

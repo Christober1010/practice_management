@@ -369,6 +369,7 @@ export default function AddStaffModal({
   const [activeTab, setActiveTab] = useState("personal");
   const [saving, setSaving] = useState(false);
   const [documentTypes, setDocumentTypes] = useState([]);
+  const [locations, setLocations] = useState([]);
   const [viewingDocument, setViewingDocument] = useState(null);
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
   const tabOrder = [
@@ -380,6 +381,30 @@ export default function AddStaffModal({
   ];
 
   const clients = useSelector((state) => state.clients.items);
+
+  const getLocationLabel = (loc) =>
+    loc?.location_name || loc?.facility_name || loc?.id || "";
+
+  const selectableLocations = (() => {
+    const active = locations.filter(
+      (l) => !Number(l.archived) && (l.status || "Active") === "Active"
+    );
+    const currentId = formData.location ? String(formData.location) : "";
+    if (!currentId) {
+      return [...active].sort((a, b) =>
+        getLocationLabel(a).localeCompare(getLocationLabel(b))
+      );
+    }
+    const current = locations.find((l) => String(l.id) === currentId);
+    if (current && !active.some((l) => String(l.id) === currentId)) {
+      return [current, ...active].sort((a, b) =>
+        getLocationLabel(a).localeCompare(getLocationLabel(b))
+      );
+    }
+    return [...active].sort((a, b) =>
+      getLocationLabel(a).localeCompare(getLocationLabel(b))
+    );
+  })();
 
   const isClientActive = (client) => {
     if (!client) return false;
@@ -393,6 +418,29 @@ export default function AddStaffModal({
       client.archived === "1";
     return active && !archived;
   };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await mahaverseFetch("/locations.php");
+        const json = await res.json();
+        if (cancelled) return;
+        const rows = Array.isArray(json.data)
+          ? json.data
+          : Array.isArray(json.locations)
+            ? json.locations
+            : [];
+        setLocations(rows);
+      } catch {
+        if (!cancelled) setLocations([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (baseUrl) {
@@ -1308,6 +1356,24 @@ export default function AddStaffModal({
                     (e) => handleInputChange("dob", e.target.value),
                     { type: "date" }
                   )}
+                  {renderSelectWithError(
+                    "location",
+                    "Location",
+                    formData.location ? String(formData.location) : "",
+                    (value) => handleInputChange("location", value),
+                    selectableLocations.length > 0 ? (
+                      selectableLocations.map((loc) => (
+                        <SelectItem key={loc.id} value={String(loc.id)}>
+                          {getLocationLabel(loc)}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="__no_locations__" disabled>
+                        No locations in Master Data
+                      </SelectItem>
+                    ),
+                    "Select location"
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1323,13 +1389,6 @@ export default function AddStaffModal({
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {renderInputWithError(
-                      "location",
-                      "Primary location / office",
-                      formData.location,
-                      (e) => handleInputChange("location", e.target.value),
-                      { placeholder: "e.g. Naperville clinic, Home-based" }
-                    )}
                     {renderSelectWithError(
                       "staffType",
                       "Staff Type *",

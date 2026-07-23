@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 /**
- * Matches section cards in Session Notes tabs (Overview, Clinical, SOAP, etc.).
+ * Matches section cards in Session Notes tabs (Overview, Clinical, etc.).
  */
 export default function SessionNotesSectionCard({
   icon: Icon,

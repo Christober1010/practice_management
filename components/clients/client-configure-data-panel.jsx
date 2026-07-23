@@ -34,6 +34,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
   const [clientModules, setClientModules] = useState([]);
   const [programs, setPrograms] = useState([]);
   const [targets, setTargets] = useState([]);
+  const [allPrompts, setAllPrompts] = useState([]);
   const [expandedDomainIds, setExpandedDomainIds] = useState(() => new Set());
   const [expandedProgramIds, setExpandedProgramIds] = useState(() => new Set());
 
@@ -50,6 +51,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
         const modules = result.data.modules || [];
         const rawPrograms = result.data.programs || [];
         const rawTargets = result.data.activities || [];
+        const prompts = result.data.allPrompts || result.data.prompts || [];
 
         setClientDomains(
           domains.map((d) => ({
@@ -80,18 +82,21 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
           rawTargets.map((t) => ({
             id: t.id,
             name: t.name || t.NAME || "Unnamed Target",
-            description: t.description || "",
+            description: t.description || t.goal_description || "",
             program_id: t.program_id,
             activity_type: t.activity_type || "",
             status: t.status || "Active",
+            prompts: t.prompts || [],
           })),
         );
+        setAllPrompts(prompts);
       } else {
         toast.error(result.message || "Failed to load programs/targets");
         setClientDomains([]);
         setClientModules([]);
         setPrograms([]);
         setTargets([]);
+        setAllPrompts([]);
       }
     } catch (err) {
       console.error(err);
@@ -138,15 +143,29 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
   };
 
   const handleAddTarget = async (payload) => {
-    const res = await mahaverseFetch('/client-target.php', {
+    const activity = {
+      id: payload.id,
+      programId: payload.program_id,
+      name: payload.name,
+      goalDescription: payload.description || "",
+      trials: payload.trials || 1,
+      activityType: payload.activity_type || "",
+      instructions: payload.instructions || "",
+      status: payload.status || "Active",
+      archived: 0,
+      prompts: payload.prompts || [],
+      tasks: payload.tasks || [],
+    };
+    const res = await mahaverseFetch('/client-modules.php', {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        client_id: clientId,
+        activities: [activity],
+      }),
     });
     const data = await res.json();
     if (data.success) {
-      const saved = data.target || (payload.targets ? payload.targets[0] : payload);
-      setTargets((prev) => [...prev, saved]);
       toast.success("Target added");
       return true;
     }
@@ -155,15 +174,29 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
   };
 
   const handleEditTarget = async (payload) => {
-    const res = await mahaverseFetch('/client-target.php', {
+    const activity = {
+      id: payload.id,
+      programId: payload.program_id,
+      name: payload.name,
+      goalDescription: payload.description || "",
+      trials: payload.trials || 1,
+      activityType: payload.activity_type || "",
+      instructions: payload.instructions || "",
+      status: payload.status || "Active",
+      archived: payload.archived ?? 0,
+      prompts: payload.prompts || [],
+      tasks: payload.tasks || [],
+    };
+    const res = await mahaverseFetch('/client-modules.php', {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "update", ...payload }),
+      body: JSON.stringify({
+        client_id: clientId,
+        activities: [activity],
+      }),
     });
     const data = await res.json();
     if (data.success) {
-      const saved = data.target || (payload.targets ? payload.targets[0] : payload);
-      setTargets((prev) => prev.map((t) => (t.id === saved.id ? saved : t)));
       toast.success("Target updated");
       return true;
     }
@@ -399,6 +432,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
         programs={programs}
         domains={clientDomains}
         modules={clientModules}
+        allPrompts={allPrompts}
         loading={loading}
         onReload={loadClientPrograms}
         onAddTarget={handleAddTarget}

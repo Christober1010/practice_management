@@ -31,6 +31,25 @@ function generateId()
     );
 }
 
+/** Normalize Yes/No flags from UI (Yes/No, true/false, 1/0). */
+function normalizeYesNo($value, $default = 'Yes')
+{
+    if ($value === null || $value === '') {
+        return $default;
+    }
+    if (is_bool($value)) {
+        return $value ? 'Yes' : 'No';
+    }
+    $normalized = strtolower(trim((string) $value));
+    if (in_array($normalized, ['yes', 'y', '1', 'true'], true)) {
+        return 'Yes';
+    }
+    if (in_array($normalized, ['no', 'n', '0', 'false'], true)) {
+        return 'No';
+    }
+    return $default;
+}
+
 function handleGetProviderServiceCodes($conn)
 {
     $id = $_GET['id'] ?? null;
@@ -112,6 +131,8 @@ function handlePostProviderServiceCode($conn, $input)
     $unit_type = $input['unit_type'] ?? 'Minute(s)';
     $rate = $input['rate'] ?? null;
     $status = $input['status'] ?? 'Active';
+    $billable = normalizeYesNo($input['billable'] ?? 'Yes', 'Yes');
+    $authorization_required = normalizeYesNo($input['authorization_required'] ?? 'Yes', 'Yes');
 
     // Check for duplicate mapping
     $checkStmt = $conn->prepare("SELECT id FROM master_provider_service_code WHERE provider_id = ? AND service_code_id = ? AND archived = 0");
@@ -127,8 +148,9 @@ function handlePostProviderServiceCode($conn, $input)
 
     $stmt = $conn->prepare("
         INSERT INTO master_provider_service_code (
-            id, provider_id, service_code_id, unit_duration, unit_type, rate, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            id, provider_id, service_code_id, unit_duration, unit_type, rate, status,
+            billable, authorization_required
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ");
 
     if (!$stmt) {
@@ -137,7 +159,18 @@ function handlePostProviderServiceCode($conn, $input)
         return;
     }
 
-    $stmt->bind_param("ssisdss", $id, $provider_id, $service_code_id, $unit_duration, $unit_type, $rate, $status);
+    $stmt->bind_param(
+        "ssisdssss",
+        $id,
+        $provider_id,
+        $service_code_id,
+        $unit_duration,
+        $unit_type,
+        $rate,
+        $status,
+        $billable,
+        $authorization_required
+    );
 
     if (!$stmt->execute()) {
         http_response_code(500);
@@ -164,6 +197,12 @@ function handlePutProviderServiceCode($conn, $input)
     $unit_type = $input['unit_type'] ?? null;
     $rate = $input['rate'] ?? null;
     $status = $input['status'] ?? null;
+    $billable = array_key_exists('billable', $input)
+        ? normalizeYesNo($input['billable'], 'Yes')
+        : null;
+    $authorization_required = array_key_exists('authorization_required', $input)
+        ? normalizeYesNo($input['authorization_required'], 'Yes')
+        : null;
 
     $updates = [];
     $params = [];
@@ -190,6 +229,18 @@ function handlePutProviderServiceCode($conn, $input)
     if ($status !== null) {
         $updates[] = "status = ?";
         $params[] = $status;
+        $types .= "s";
+    }
+
+    if ($billable !== null) {
+        $updates[] = "billable = ?";
+        $params[] = $billable;
+        $types .= "s";
+    }
+
+    if ($authorization_required !== null) {
+        $updates[] = "authorization_required = ?";
+        $params[] = $authorization_required;
         $types .= "s";
     }
 

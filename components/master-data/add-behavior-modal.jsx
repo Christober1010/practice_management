@@ -237,9 +237,6 @@ export default function AddBehaviorModal({
                 {selectedClientObj && (
                   <div className="sm:col-span-2 p-3 bg-purple-50 border border-purple-200 rounded-md text-sm">
                     <div className="font-medium text-purple-900">{displayClientName}</div>
-                    {selectedClientObj.email && (
-                      <div className="text-purple-700">Email: {selectedClientObj.email}</div>
-                    )}
                   </div>
                 )}
               </>

@@ -431,7 +431,10 @@ function handlePost($conn, $input)
             foreach ($input['prompts'] as $prompt) {
                 $id = $conn->real_escape_string($prompt['id']);
                 $prompt_name = $conn->real_escape_string($prompt['prompt_name']);
-                $max_score = $conn->real_escape_string($prompt['max_score'] ?? '');
+                $maxScoreRaw = $prompt['max_score'] ?? null;
+                $max_score_sql = ($maxScoreRaw === null || $maxScoreRaw === '')
+                    ? 'NULL'
+                    : ("'" . $conn->real_escape_string((string) $maxScoreRaw) . "'");
                 $score_as_independent = $conn->real_escape_string($prompt['score_as_independent'] ?? '0');
                 $dtt = $conn->real_escape_string($prompt['dtt'] ?? '0');
                 $ta = $conn->real_escape_string($prompt['ta'] ?? '0');
@@ -442,10 +445,10 @@ function handlePost($conn, $input)
                     INSERT INTO master_prompts 
                         (id, prompt_name, max_score, score_as_independent, dtt, ta, maintenance, status)
                     VALUES 
-                        ('$id', '$prompt_name', '$max_score', '$score_as_independent', '$dtt', '$ta', '$maintenance', '$status')
+                        ('$id', '$prompt_name', $max_score_sql, '$score_as_independent', '$dtt', '$ta', '$maintenance', '$status')
                     ON DUPLICATE KEY UPDATE
                         prompt_name='$prompt_name', 
-                        max_score='$max_score',
+                        max_score=$max_score_sql,
                         score_as_independent='$score_as_independent',
                         dtt='$dtt',
                         ta='$ta',
@@ -593,7 +596,10 @@ function handlePut($conn, $input)
     if (isset($input['promptId'])) {
         $promptId = $conn->real_escape_string($input['promptId']);
         $prompt_name = $conn->real_escape_string($input['prompt_name'] ?? '');
-        $max_score = $conn->real_escape_string($input['max_score'] ?? '');
+        $maxScoreRaw = $input['max_score'] ?? null;
+        $max_score_sql = ($maxScoreRaw === null || $maxScoreRaw === '')
+            ? 'NULL'
+            : ("'" . $conn->real_escape_string((string) $maxScoreRaw) . "'");
         $score_as_independent = $conn->real_escape_string($input['score_as_independent'] ?? '0');
         $dtt = $conn->real_escape_string($input['dtt'] ?? '0');
         $ta = $conn->real_escape_string($input['ta'] ?? '0');
@@ -602,7 +608,7 @@ function handlePut($conn, $input)
 
         $query = "UPDATE master_prompts SET 
             prompt_name='$prompt_name', 
-            max_score='$max_score',
+            max_score=$max_score_sql,
             score_as_independent='$score_as_independent',
             dtt='$dtt',
             ta='$ta',

@@ -168,6 +168,7 @@ export default function ProviderSetup() {
           setProviderToDelete(null);
         }}
         onConfirm={handleDelete}
+        entityType="provider"
         moduleName={providerToDelete?.provider_name || ""}
         loading={loading}
       />

@@ -169,6 +169,7 @@ export default function ProviderServiceCodeSetup() {
           setMappingToDelete(null);
         }}
         onConfirm={handleDelete}
+        entityType="mapping"
         moduleName={`${mappingToDelete?.provider_name || ""} - ${mappingToDelete?.service_code || ""}`}
         loading={loading}
       />
@@ -268,6 +269,8 @@ export default function ProviderServiceCodeSetup() {
                     <TableHead className="hidden lg:table-cell">Unit Duration</TableHead>
                     <TableHead className="hidden lg:table-cell">Unit Type</TableHead>
                     <TableHead className="hidden md:table-cell">Rate ($)</TableHead>
+                    <TableHead className="hidden md:table-cell">Billable</TableHead>
+                    <TableHead className="hidden lg:table-cell">Auth Required</TableHead>
                     <TableHead className="hidden sm:table-cell">Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -296,6 +299,12 @@ export default function ProviderServiceCodeSetup() {
                       </TableCell>
                       <TableCell className="hidden md:table-cell p-2">
                         {mapping.rate ? `$${parseFloat(mapping.rate).toFixed(2)}` : "—"}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell p-2">
+                        {mapping.billable || "Yes"}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell p-2">
+                        {mapping.authorization_required || "Yes"}
                       </TableCell>
                       <TableCell className="hidden sm:table-cell p-2">
                         <Badge

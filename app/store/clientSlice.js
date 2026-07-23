@@ -141,6 +141,7 @@ export const fetchClients = () => async (dispatch) => {
 
   } catch (err) {
     console.error('Error fetching clients:', err);
+    dispatch(setClients([]));
     dispatch(setClientsError(err.message));
   } finally {
     dispatch(setClientsLoading(false));

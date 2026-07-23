@@ -54,7 +54,7 @@ function buildTargetProjects(target: E2eTarget) {
     },
     {
       name: `api-${target}`,
-      testMatch: /(?:00-schema-readiness|api-endpoints)\.spec\.ts/,
+      testMatch: /(?:00-schema-readiness|api-endpoints|assignment-location-role)\.spec\.ts/,
       timeout: 120_000,
       env: projectEnv(target),
     },

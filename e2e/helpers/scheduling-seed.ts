@@ -13,9 +13,15 @@ export type SchedulingFlowSeed = {
   ts: string;
   clientId: string;
   clientName: string;
+  clientFirst: string;
+  clientLast: string;
   providerId: string;
   providerName: string;
+  staffFirst: string;
+  staffLast: string;
   authId: number;
+  authNumber: string;
+  serviceCode: string;
   billingLabel: string;
   locationValue: string;
   sessionDate: string;
@@ -116,18 +122,31 @@ export async function seedSchedulingFlow(
     const client = pickClientWithAuthForScheduling(clients);
 
     const clientId = String(client.client_id || client.id);
-    const clientName = clientDisplayName(client);
+    const clientFirst = String(client.first_name || "").trim();
+    const clientLast = String(client.last_name || "").trim();
+    const mid = String(client.middle_name || "").trim();
+    const clientName = mid
+      ? `${clientFirst} ${mid} ${clientLast}`.trim()
+      : clientDisplayName(client);
     const auth = pickAuthorization(client);
     const authPk = Number(auth?.auth_id ?? auth?.id ?? NaN);
     if (!Number.isFinite(authPk)) {
       throw new Error("E2E seed: selected client has no authorization PK");
     }
+    const authNumber = String(
+      auth?.authorization_number || auth?.auth_number || authPk
+    );
+    const serviceCode = String(
+      auth?.billing_code ??
+        (Array.isArray(auth?.billing_codes)
+          ? auth?.billing_codes[0]
+          : auth?.billing_codes) ??
+        "97153"
+    );
 
     const locationValue = clientLocationAddress(client);
 
-    const billingLabel = String(
-      auth?.billing_code ?? auth?.auth_code ?? "97153"
-    );
+    const billingLabel = serviceCode;
 
     const { data: staffData } = await api.expectOk("staff.php");
     const staffRows = ((staffData.staff_records as ApiJson[]) || []).filter(
@@ -138,6 +157,11 @@ export async function seedSchedulingFlow(
       staffRows[parseInt(ts, 10) % staffRows.length] ?? staffRows[0];
     const providerId = String(provider.id);
     const providerName = String(provider.fullName || provider.full_name || "Provider");
+    const nameParts = providerName.trim().split(/\s+/);
+    const staffFirst = String(provider.firstName || provider.first_name || nameParts[0] || "E2E").trim();
+    const staffLast = String(
+      provider.lastName || provider.last_name || nameParts.slice(1).join(" ") || "Staff"
+    ).trim();
 
     const catId = uniqueId("bcat_flow", ts);
     const masterBehId = uniqueId("mb_flow", ts);
@@ -234,9 +258,15 @@ export async function seedSchedulingFlow(
       ts,
       clientId,
       clientName,
+      clientFirst,
+      clientLast,
       providerId,
       providerName,
+      staffFirst,
+      staffLast,
       authId: authPk,
+      authNumber,
+      serviceCode,
       billingLabel,
       locationValue,
       sessionDate,

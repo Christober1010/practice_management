@@ -95,6 +95,7 @@ export default function TreatmentTypesSetup() {
         isOpen={isDeleteModalOpen}
         onClose={() => { setIsDeleteModalOpen(false); setItemToDelete(null); }}
         onConfirm={handleDelete}
+        entityType="treatment type"
         moduleName={itemToDelete?.treatment_name || ""}
         loading={loading}
       />

@@ -40,6 +40,8 @@ export default function AddProviderServiceCodeModal({
     unit_type: "Minute(s)",
     rate: "",
     status: "Active",
+    billable: "Yes",
+    authorization_required: "Yes",
   });
 
   useEffect(() => {
@@ -58,6 +60,8 @@ export default function AddProviderServiceCodeModal({
         unit_type: editingMapping.unit_type || "Minute(s)",
         rate: editingMapping.rate || "",
         status: editingMapping.status || "Active",
+        billable: editingMapping.billable || "Yes",
+        authorization_required: editingMapping.authorization_required || "Yes",
       });
     } else {
       setForm({
@@ -67,6 +71,8 @@ export default function AddProviderServiceCodeModal({
         unit_type: "Minute(s)",
         rate: "",
         status: "Active",
+        billable: "Yes",
+        authorization_required: "Yes",
       });
     }
   }, [editingMapping, isEditing, isOpen]);
@@ -120,6 +126,8 @@ export default function AddProviderServiceCodeModal({
       unit_type: form.unit_type,
       rate: form.rate ? parseFloat(form.rate) : null,
       status: form.status,
+      billable: form.billable,
+      authorization_required: form.authorization_required,
     };
 
     try {
@@ -226,6 +234,44 @@ export default function AddProviderServiceCodeModal({
               onChange={handleChange}
               disabled={loading}
             />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Billable</Label>
+              <Select
+                value={form.billable}
+                onValueChange={(value) => setForm((prev) => ({ ...prev, billable: value }))}
+                disabled={loading}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Yes">Yes</SelectItem>
+                  <SelectItem value="No">No</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Authorization Required</Label>
+              <Select
+                value={form.authorization_required}
+                onValueChange={(value) =>
+                  setForm((prev) => ({ ...prev, authorization_required: value }))
+                }
+                disabled={loading}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Yes">Yes</SelectItem>
+                  <SelectItem value="No">No</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           {isEditing && (

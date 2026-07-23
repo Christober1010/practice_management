@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -24,12 +23,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Plus,
   Trash2,
-  ChevronDown,
-  CheckIcon,
-  XIcon,
   ChevronRight,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import toast from "react-hot-toast";
 import {
   getDomainModuleLabel,
@@ -45,6 +40,7 @@ import {
   normalizeTaskStepsForApi,
   parseTargetInstructions,
 } from "@/lib/target-instructions-format";
+import PromptMultiSelect from "@/components/master-data/prompt-multi-select";
 
 interface AddTargetModalProps {
   isOpen: boolean;
@@ -143,8 +139,9 @@ export default function AddTargetModal({
 
       // Set prompts - extract IDs from prompt objects
       const promptIds =
-        editingTarget.prompts?.map((p) => (typeof p === "string" ? p : p.id)) ||
-        [];
+        editingTarget.prompts?.map((p) =>
+          String(typeof p === "string" || typeof p === "number" ? p : p.id)
+        ) || [];
       setSelectedPrompts(promptIds);
 
       // Set tasks
@@ -271,7 +268,7 @@ export default function AddTargetModal({
     // Convert selected prompt IDs into full prompt objects
     const promptObjects = selectedPrompts
       .map((id) => {
-        const prompt = allPrompts.find((p) => p.id === id);
+        const prompt = allPrompts.find((p) => String(p.id) === String(id));
         return prompt
           ? {
               id: prompt.id,
@@ -356,140 +353,6 @@ export default function AddTargetModal({
     setSelectedPrompts([]);
     setSelectedClientValue("generic");
     setProgramSearch("");
-  };
-
-  const MultiSelectPrompts = () => {
-    const [open, setOpen] = useState(false);
-    const [search, setSearch] = useState("");
-    const dropdownRef = useRef(null);
-
-    const filteredOptions = Array.isArray(allPrompts)
-      ? allPrompts.filter((option) =>
-          option?.prompt_name?.toLowerCase().includes(search.toLowerCase())
-        )
-      : [];
-
-    useEffect(() => {
-      const handleClickOutside = (event: MouseEvent) => {
-        if (
-          dropdownRef.current &&
-          !dropdownRef.current.contains(event.target as Node)
-        ) {
-          setOpen(false);
-          setSearch("");
-        }
-      };
-
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => {
-        document.removeEventListener("mousedown", handleClickOutside);
-      };
-    }, []);
-
-    const handleSelect = (promptId: string) => {
-      if (selectedPrompts.includes(promptId)) {
-        setSelectedPrompts(selectedPrompts.filter((item) => item !== promptId));
-      } else {
-        setSelectedPrompts([...selectedPrompts, promptId]);
-      }
-    };
-
-    const handleRemovePrompt = (promptId: string) => {
-      setSelectedPrompts(selectedPrompts.filter((id) => id !== promptId));
-    };
-
-    const getPromptName = (promptId: string) => {
-      const prompt = Array.isArray(allPrompts)
-        ? allPrompts.find((p) => p.id === promptId)
-        : null;
-      return prompt?.prompt_name || promptId;
-    };
-
-    return (
-      <div ref={dropdownRef} className="relative">
-        <Button
-          type="button"
-          variant="outline"
-          className="w-full justify-between bg-transparent"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setOpen(!open);
-            setSearch("");
-          }}
-        >
-          {selectedPrompts.length > 0
-            ? `${selectedPrompts.length} selected`
-            : "Select Prompts..."}
-          <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-        {open && (
-          <div className="absolute z-10 w-full p-0 mt-2 border border-slate-200 bg-white rounded-lg shadow-lg">
-            <div className="p-2">
-              <Input
-                placeholder="Search prompts..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-              />
-            </div>
-            <div className="max-h-48 overflow-y-auto">
-              {filteredOptions.length === 0 ? (
-                <div className="p-2 text-sm text-gray-500">
-                  {allPrompts?.length === 0
-                    ? "No prompts available"
-                    : "No results found"}
-                </div>
-              ) : (
-                filteredOptions.map((option) => (
-                  <div
-                    key={option.id}
-                    className="p-2 flex items-center space-x-2 cursor-pointer hover:bg-slate-100 text-sm"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleSelect(option.id);
-                    }}
-                  >
-                    <CheckIcon
-                      className={cn(
-                        "mr-2 h-4 w-4",
-                        selectedPrompts.includes(option.id)
-                          ? "opacity-100"
-                          : "opacity-0"
-                      )}
-                    />
-                    {option.prompt_name}
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-        <div className="mt-3 flex flex-wrap gap-2">
-          {selectedPrompts.map((promptId) => (
-            <Badge
-              key={promptId}
-              variant="outline"
-              className="flex items-center space-x-1 pr-1"
-            >
-              <span>{getPromptName(promptId)}</span>
-              <button
-                type="button"
-                onClick={() => handleRemovePrompt(promptId)}
-                className="p-0.5 rounded-full hover:bg-red-200 hover:text-red-800 transition-colors"
-                aria-label={`Remove ${getPromptName(promptId)}`}
-              >
-                <XIcon className="h-3 w-3" />
-              </button>
-            </Badge>
-          ))}
-        </div>
-      </div>
-    );
   };
 
   const getDomainName = (dom) => {
@@ -606,9 +469,6 @@ export default function AddTargetModal({
                 <div className="font-medium text-purple-900">
                   {selectedClientObj.first_name || ""} {selectedClientObj.last_name || ""}
                 </div>
-                {selectedClientObj.email && (
-                  <div className="text-purple-700">Email: {selectedClientObj.email}</div>
-                )}
               </div>
             )}
           </div>
@@ -769,7 +629,12 @@ export default function AddTargetModal({
           {!isTaskAnalysisType && (
             <div className="space-y-2">
               <Label>Select Prompts</Label>
-              <MultiSelectPrompts />
+              <PromptMultiSelect
+                allPrompts={allPrompts}
+                selectedIds={selectedPrompts}
+                onChange={setSelectedPrompts}
+                disabled={loading}
+              />
             </div>
           )}
 

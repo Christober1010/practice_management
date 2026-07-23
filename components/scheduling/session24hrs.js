@@ -417,6 +417,10 @@ export default function SchedulingView() {
           placeOfService: row.place_of_service,
           locationAddress: row.location_address || "",
           quickNote: row.quick_note || "",
+          excludeSession:
+            row.exclude_session === "Yes" || row.excludeSession === "Yes"
+              ? "Yes"
+              : "No",
           status: normalizeSessionStatus(row),
           createdAt: row.created_at,
           updatedAt: row.updatedAt,
@@ -1500,7 +1504,7 @@ export default function SchedulingView() {
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-foreground">Scheduling</h2>
+          <h2 className="text-3xl font-bold text-foreground">Appointments</h2>
           <p className="text-muted-foreground mt-1">
             Manage appointments and therapy sessions
           </p>

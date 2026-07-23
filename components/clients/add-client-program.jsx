@@ -25,9 +25,11 @@ import {
   Edit,
   ListChecks,
   Plus,
+  Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Card, CardContent, CardHeader } from "../ui/card";
+import { mahaverseFetch } from "@/lib/mahaverse-api";
 import {
   getDomainModuleLabel,
   mergeCanonicalDomainModules,
@@ -66,6 +68,35 @@ export function ProgramsListModal({
       await onAddProgram(payload);
     }
     await onReload();
+  };
+
+  const handleDeleteProgram = async (programId) => {
+    if (
+      !confirm(
+        "Are you sure you want to delete this program? Targets under it will also be deleted."
+      )
+    ) {
+      return;
+    }
+    try {
+      const res = await mahaverseFetch("/client-modules.php", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: clientId,
+          programId,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.success) {
+        toast.success("Program deleted");
+        await onReload();
+      } else {
+        toast.error(json.message || "Failed to delete program");
+      }
+    } catch (err) {
+      toast.error("Failed to delete program");
+    }
   };
 
   return (
@@ -141,7 +172,14 @@ export function ProgramsListModal({
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            {/* Optional delete button if you have API */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteProgram(program.id)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </div>
                       </CardHeader>

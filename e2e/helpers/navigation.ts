@@ -62,8 +62,19 @@ export async function ensureLoggedIn(page: Page) {
 
 /** Land on the Mahaverse dashboard (not Launchpad). */
 export async function gotoApp(page: Page) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await ensureLoggedIn(page);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    const errorOverlay = page.getByRole("dialog", { name: /Runtime/i });
+    if (await errorOverlay.isVisible().catch(() => false)) {
+      await page.reload({ waitUntil: "domcontentloaded" });
+    }
+    await ensureLoggedIn(page);
+    const adminHeading = page.getByRole("heading", { name: "Administrator" });
+    if (await adminHeading.isVisible().catch(() => false)) {
+      await ensureMahaverseApp(page);
+      return;
+    }
+  }
   await ensureMahaverseApp(page);
 }
 

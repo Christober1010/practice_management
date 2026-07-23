@@ -614,6 +614,7 @@ export default function ClientsView({ userRole }) {
   const [clientModules, setClientModules] = useState([]);
   const [clientDomains, setClientDomains] = useState([]);
   const [targets, setTargets] = useState([]);
+  const [allPrompts, setAllPrompts] = useState([]);
   const [targetsLoading, setTargetsLoading] = useState(false);
 
   // const loadClientPrograms = async (clientId) => {
@@ -672,6 +673,7 @@ export default function ClientsView({ userRole }) {
         const modules = result.data.modules || [];
         const rawPrograms = result.data.programs || [];
         const rawTargets = result.data.activities || [];
+        const prompts = result.data.allPrompts || result.data.prompts || [];
 
         const normalizedDomains = domains.map((d) => ({
           id: d.id,
@@ -696,16 +698,18 @@ export default function ClientsView({ userRole }) {
         const normalizedTargets = rawTargets.map((t) => ({
           id: t.id,
           name: t.name || t.NAME || "Unnamed Target",
-          description: t.description || "",
+          description: t.description || t.goal_description || "",
           program_id: t.program_id,
           activity_type: t.activity_type || "",
           status: t.status || "Active",
+          prompts: t.prompts || [],
         }));
 
         setClientDomains(normalizedDomains);
         setClientModules(normalizedModules);
         setPrograms(normalizedPrograms);
         setTargets(normalizedTargets);
+        setAllPrompts(prompts);
 
         console.log("Programs from API", normalizedPrograms);
         console.log("Targets from API", normalizedTargets);
@@ -715,6 +719,7 @@ export default function ClientsView({ userRole }) {
         setClientModules([]);
         setPrograms([]);
         setTargets([]);
+        setAllPrompts([]);
       }
     } catch (err) {
       console.error("Error fetching programs/targets", err);
@@ -723,6 +728,7 @@ export default function ClientsView({ userRole }) {
       setClientModules([]);
       setPrograms([]);
       setTargets([]);
+      setAllPrompts([]);
     } finally {
       setProgramsLoading(false);
     }
@@ -820,21 +826,34 @@ export default function ClientsView({ userRole }) {
   const handleAddTarget = async (payload) => {
     if (!allowUpdate) {
       toast.error("You do not have permission to modify client targets.");
-      return;
+      return false;
     }
     try {
       setTargetsLoading(true);
-      const res = await mahaverseFetch('/client-target.php', {
+      const activity = {
+        id: payload.id,
+        programId: payload.program_id,
+        name: payload.name,
+        goalDescription: payload.description || "",
+        trials: payload.trials || 1,
+        activityType: payload.activity_type || "",
+        instructions: payload.instructions || "",
+        status: payload.status || "Active",
+        archived: 0,
+        prompts: payload.prompts || [],
+        tasks: payload.tasks || [],
+      };
+      const res = await mahaverseFetch('/client-modules.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          client_id: selectedClient?.id || payload.client_id,
+          activities: [activity],
+        }),
       });
       const data = await res.json();
 
       if (data.success) {
-        const saved =
-          data.target || (payload.targets ? payload.targets[0] : payload);
-        setTargets((prev) => [...prev, saved]);
         toast.success("Target added successfully");
         return true;
       } else {
@@ -853,21 +872,34 @@ export default function ClientsView({ userRole }) {
   const handleEditTarget = async (payload) => {
     if (!allowUpdate) {
       toast.error("You do not have permission to modify client targets.");
-      return;
+      return false;
     }
     try {
       setTargetsLoading(true);
-      const res = await mahaverseFetch('/client-target.php', {
+      const activity = {
+        id: payload.id,
+        programId: payload.program_id,
+        name: payload.name,
+        goalDescription: payload.description || "",
+        trials: payload.trials || 1,
+        activityType: payload.activity_type || "",
+        instructions: payload.instructions || "",
+        status: payload.status || "Active",
+        archived: payload.archived ?? 0,
+        prompts: payload.prompts || [],
+        tasks: payload.tasks || [],
+      };
+      const res = await mahaverseFetch('/client-modules.php', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "update", ...payload }),
+        body: JSON.stringify({
+          client_id: selectedClient?.id || payload.client_id,
+          activities: [activity],
+        }),
       });
       const data = await res.json();
 
       if (data.success) {
-        const saved =
-          data.target || (payload.targets ? payload.targets[0] : payload);
-        setTargets((prev) => prev.map((t) => (t.id === saved.id ? saved : t)));
         toast.success("Target updated successfully");
         return true;
       } else {
@@ -2589,6 +2621,7 @@ export default function ClientsView({ userRole }) {
           programs={programs}
           domains={clientDomains}
           modules={clientModules}
+          allPrompts={allPrompts}
           loading={targetsLoading}
           onReload={() => loadClientPrograms(selectedClient.id)}
           onAddTarget={handleAddTarget}

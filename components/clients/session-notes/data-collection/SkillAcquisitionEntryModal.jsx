@@ -17,7 +17,6 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ListChecks, Target, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
-import { getMahaverseAuthHeaders } from "@/lib/api-auth";
 import {
   TRIAL_OUTCOMES,
   formatTrialsSummary,
@@ -56,16 +55,16 @@ export default function SkillAcquisitionEntryModal({
   const [trialActionLoading, setTrialActionLoading] = useState(false);
 
   const readOnly = mode === "view";
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
-
   const activityType = getTargetActivityType(targetData);
   const showTrialsUi = usesTrialRecording(activityType);
   const showTaskAnalysisUi = isTaskAnalysis(activityType);
   const plannedTrials = getTargetPlannedTrials(targetData, 10);
+  const resolvedTargetId =
+    row?.targetId || targetData?.id || targetData?.ID || null;
 
   const loadTrials = useCallback(async () => {
-    const targetId = row?.targetId;
-    if (!clientId || !targetId || !sessionDate || !baseUrl) return;
+    const targetId = resolvedTargetId;
+    if (!clientId || !targetId || !sessionDate) return;
 
     setLoadingTrials(true);
     try {
@@ -74,9 +73,7 @@ export default function SkillAcquisitionEntryModal({
         target_id: String(targetId),
         session_date: String(sessionDate),
       });
-      const res = await mahaverseFetch(`/session-notes.php?${params}`, {
-        headers: getMahaverseAuthHeaders(),
-      });
+      const res = await mahaverseFetch(`/session-notes.php?${params}`);
       const data = await readJson(res);
       if (!res.ok || data?.success === false) {
         throw new Error(data?.message || "Failed to load trials");
@@ -89,13 +86,13 @@ export default function SkillAcquisitionEntryModal({
     } finally {
       setLoadingTrials(false);
     }
-  }, [baseUrl, clientId, row?.targetId, row?.trials, sessionDate]);
+  }, [clientId, resolvedTargetId, row?.trials, sessionDate]);
 
   useEffect(() => {
     if (!isOpen || !row) return;
     setValue(row.value || "");
     setCurrentTrialOutcome("");
-    if (showTrialsUi && clientId && row.targetId) {
+    if (showTrialsUi && clientId && resolvedTargetId) {
       if (Array.isArray(row.trials) && row.trials.length > 0) {
         setTrials(row.trials);
         loadTrials();
@@ -105,7 +102,7 @@ export default function SkillAcquisitionEntryModal({
     } else {
       setTrials(row.trials || []);
     }
-  }, [isOpen, row, showTrialsUi, clientId, loadTrials]);
+  }, [isOpen, row, showTrialsUi, clientId, resolvedTargetId, loadTrials]);
 
   const trialsDone = trials.length;
   const trialsSummary = useMemo(
@@ -114,7 +111,23 @@ export default function SkillAcquisitionEntryModal({
   );
 
   const handleSaveTrial = async () => {
-    if (readOnly || !currentTrialOutcome || !row?.targetId || !clientId) return;
+    if (readOnly) return;
+    if (!currentTrialOutcome) {
+      toast.error("Select a trial outcome first");
+      return;
+    }
+    if (!resolvedTargetId) {
+      toast.error("Missing target — reopen this entry from the skill list");
+      return;
+    }
+    if (!clientId) {
+      toast.error("Missing client");
+      return;
+    }
+    if (!sessionDate) {
+      toast.error("Missing session date");
+      return;
+    }
     if (trialsDone >= plannedTrials) {
       toast.error(`All ${plannedTrials} trials are recorded`);
       return;
@@ -122,15 +135,12 @@ export default function SkillAcquisitionEntryModal({
 
     setTrialActionLoading(true);
     try {
-      const res = await mahaverseFetch('/session-notes.php', {
+      const res = await mahaverseFetch("/session-notes.php", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...getMahaverseAuthHeaders(),
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           client_id: clientId,
-          target_id: row.targetId,
+          target_id: resolvedTargetId,
           session_date: sessionDate,
           trial_outcome: currentTrialOutcome,
           notes: value.trim() || null,
@@ -140,6 +150,19 @@ export default function SkillAcquisitionEntryModal({
       if (!res.ok || data?.success === false) {
         throw new Error(data?.message || "Failed to save trial");
       }
+      const saved = data?.data || {};
+      setTrials((prev) => [
+        ...prev,
+        {
+          id: saved.id,
+          client_id: clientId,
+          target_id: resolvedTargetId,
+          session_date: sessionDate,
+          trial_number: saved.trial_number ?? prev.length + 1,
+          trial_outcome: currentTrialOutcome,
+          notes: value.trim() || "",
+        },
+      ]);
       await loadTrials();
       setCurrentTrialOutcome("");
       toast.success("Trial saved");
@@ -160,12 +183,9 @@ export default function SkillAcquisitionEntryModal({
 
     setTrialActionLoading(true);
     try {
-      const res = await mahaverseFetch('/session-notes.php', {
+      const res = await mahaverseFetch("/session-notes.php", {
         method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          ...getMahaverseAuthHeaders(),
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: last.id }),
       });
       const data = await readJson(res);
@@ -228,7 +248,11 @@ export default function SkillAcquisitionEntryModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="sm:max-w-lg max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Target className="h-5 w-5 text-green-600 shrink-0" />

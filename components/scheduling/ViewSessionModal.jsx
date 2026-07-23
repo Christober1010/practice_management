@@ -79,6 +79,15 @@ export default function ViewSessionModal({
             </div>
           )}
 
+          <div>
+            <p className="text-sm font-medium text-gray-600">Exclude session</p>
+            <p className="text-base">
+              {session.excludeSession === "Yes" || session.exclude_session === "Yes"
+                ? "Yes"
+                : "No"}
+            </p>
+          </div>
+
           {session.quickNote && (
             <div>
               <p className="text-sm font-medium text-gray-600">Notes</p>

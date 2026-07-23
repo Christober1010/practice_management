@@ -154,6 +154,7 @@ export default function DiagnosisCodeSetup() {
           setCodeToDelete(null);
         }}
         onConfirm={handleDelete}
+        entityType="diagnosis code"
         moduleName={codeToDelete?.diagnosis_code || ""}
         loading={loading}
       />

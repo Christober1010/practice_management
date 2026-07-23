@@ -130,10 +130,16 @@ export default function DomainsListModal({
   };
 
   const handleDeleteDomain = async (domainId) => {
-    if (!confirm("Are you sure you want to delete this domain?")) return;
+    if (
+      !confirm(
+        "Are you sure you want to delete this domain? Programs and targets under it will also be deleted."
+      )
+    ) {
+      return;
+    }
 
     try {
-      const res = await mahaverseFetch('/client-modules.php', {
+      const res = await mahaverseFetch("/client-modules.php", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -141,10 +147,12 @@ export default function DomainsListModal({
           domainId,
         }),
       });
-      const json = await res.json();
-      if (json.success) {
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.success) {
         setDomains((prev) => prev.filter((d) => d.id !== domainId));
         toast.success("Domain deleted");
+      } else {
+        toast.error(json.message || "Failed to delete domain");
       }
     } catch (err) {
       toast.error("Failed to delete domain");

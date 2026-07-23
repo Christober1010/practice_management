@@ -30,7 +30,7 @@ export default function Sidebar({
       },
       {
         id: "scheduling",
-        label: "Manage Scheduling",
+        label: "Manage Appointments",
         icon: Calendar,
         color: "text-blue-600",
       },

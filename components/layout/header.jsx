@@ -20,7 +20,7 @@ export default function Header({ userRole, onLogout }) {
       case "biller":
         return { title: "Biller", subtitle: "Billing & Claims Management" };
       case "planner":
-        return { title: "Planner", subtitle: "Scheduling" };
+        return { title: "Planner", subtitle: "Appointments" };
       case "client":
         return { title: "Client Portal", subtitle: "Your profile" };
       default: {

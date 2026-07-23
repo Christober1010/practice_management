@@ -2,17 +2,17 @@ import { test, expect } from "@playwright/test";
 import { gotoApp, clickSidebar } from "./helpers/navigation";
 import { waitForApi } from "./helpers/api";
 
-test.describe("Scheduling", () => {
+test.describe("Appointments", () => {
   test("loads calendar and sessions API", async ({ page }) => {
     const sessionsResponse = waitForApi(page, "/add-session.php", {
       method: "GET",
     });
 
     await gotoApp(page);
-    await clickSidebar(page, "Scheduling");
+    await clickSidebar(page, "Appointments");
 
     await expect(
-      page.getByRole("heading", { name: "Scheduling" })
+      page.getByRole("heading", { name: "Appointments" })
     ).toBeVisible();
 
     const res = await sessionsResponse;
@@ -21,7 +21,7 @@ test.describe("Scheduling", () => {
 
   test("opens add session modal", async ({ page }) => {
     await gotoApp(page);
-    await clickSidebar(page, "Scheduling");
+    await clickSidebar(page, "Appointments");
 
     await page.getByRole("button", { name: "Add Session" }).first().click();
 

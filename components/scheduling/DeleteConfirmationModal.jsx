@@ -60,7 +60,7 @@ const DeleteConfirmationModal = ({
         <CardContent className="space-y-4">
           <div className="text-gray-700">
             <p className="mb-3">
-              Are you sure you want to delete this session? This will remove it from Scheduling and cannot be undone.
+              Are you sure you want to delete this session? This will remove it from Appointments and cannot be undone.
             </p>
             <p className="text-sm text-gray-600 mb-3">
               Use <strong>Edit</strong> to cancel or update sessions.

@@ -407,6 +407,8 @@ CREATE TABLE IF NOT EXISTS `master_provider_service_code` (
  `unit_type` enum('Hour(s)','Minute(s)','Per Session') COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Minute(s)',
  `rate` decimal(10,2) DEFAULT NULL,
  `status` enum('Active','Inactive') COLLATE utf8mb4_general_ci DEFAULT 'Active',
+ `billable` enum('Yes','No') COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Yes',
+ `authorization_required` enum('Yes','No') COLLATE utf8mb4_general_ci NOT NULL DEFAULT 'Yes',
  `archived` tinyint(1) DEFAULT '0',
  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

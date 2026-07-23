@@ -174,6 +174,12 @@ export default function AppSidebar({
   ];
   const reportsSubItems = [
     {
+      id: "reportsSessionLog",
+      label: "Session Log",
+      icon: FileText,
+      color: "text-teal-700",
+    },
+    {
       id: "reportsSessionImport",
       label: "Session Import",
       icon: FileText,
@@ -220,7 +226,7 @@ export default function AppSidebar({
     if (can(PERM.VIEW_SCHEDULING)) {
       push({
         id: "scheduling",
-        label: "Scheduling",
+        label: "Appointments",
         icon: Calendar,
         color: "text-blue-600",
       });

@@ -33,6 +33,41 @@ function safe_json_decode($json_str)
     return $decoded;
 }
 
+/**
+ * Normalize staff email for storage/compare (trim + lowercase for uniqueness).
+ */
+function staff_normalize_email($email)
+{
+    return strtolower(trim((string) $email));
+}
+
+/**
+ * True if another staff row already uses this email (case-insensitive).
+ * Pass $excludeStaffId on update to ignore the current record.
+ */
+function staff_email_exists($conn, $email, $excludeStaffId = null)
+{
+    $normalized = staff_normalize_email($email);
+    if ($normalized === '') {
+        return false;
+    }
+    if ($excludeStaffId) {
+        $stmt = $conn->prepare(
+            "SELECT id FROM staff WHERE LOWER(TRIM(email)) = ? AND id != ? LIMIT 1"
+        );
+        $stmt->bind_param("ss", $normalized, $excludeStaffId);
+    } else {
+        $stmt = $conn->prepare(
+            "SELECT id FROM staff WHERE LOWER(TRIM(email)) = ? LIMIT 1"
+        );
+        $stmt->bind_param("s", $normalized);
+    }
+    $stmt->execute();
+    $exists = $stmt->get_result()->num_rows > 0;
+    $stmt->close();
+    return $exists;
+}
+
 /** Normalize one document from JSON (snake_case or camelCase) for staff_documents INSERT. */
 function staff_normalize_document_for_db($doc)
 {
@@ -294,7 +329,7 @@ if ($method !== 'OPTIONS') {
 
 switch ($method) {
     case 'GET':
-        handleGetStaff($conn);
+        handleGetStaff($conn, $authUser ?? null);
         break;
     case 'POST':
         handleAddStaff($conn);
@@ -317,7 +352,7 @@ switch ($method) {
 // ============ COMPLETE STAFF.PHP UPDATED FUNCTIONS ============
 
 // Update the handleGetStaff function to not return certificationNumber from staff table
-function handleGetStaff($conn)
+function handleGetStaff($conn, $authUser = null)
 {
     $id = $_GET['id'] ?? null;
     $showArchived = isset($_GET['showArchived']) && $_GET['showArchived'] === 'true';
@@ -375,6 +410,17 @@ function handleGetStaff($conn)
         $staff[] = $row;
     }
 
+    // Scheduling dropdowns: ?scope=assigned → self + direct reports only (admin still gets all).
+    $scope = strtolower(trim((string) ($_GET['scope'] ?? '')));
+    $role = strtolower((string) ($authUser['role'] ?? ''));
+    if ($authUser && $scope === 'assigned' && $role !== 'admin' && !$id) {
+        $allowed = rbac_visible_staff_ids_for_user($conn, $authUser);
+        $allowedSet = array_flip($allowed);
+        $staff = array_values(array_filter($staff, function ($row) use ($allowedSet) {
+            return isset($allowedSet[(string) ($row['id'] ?? '')]);
+        }));
+    }
+
     echo json_encode(["success" => true, "staff_records" => $staff]);
     $stmt->close();
 }
@@ -388,6 +434,22 @@ function handleAddStaff($conn)
         echo json_encode(["success" => false, "message" => "Missing required fields."]);
         return;
     }
+
+    $email = trim((string) $data['email']);
+    if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        http_response_code(400);
+        echo json_encode(["success" => false, "message" => "A valid email address is required."]);
+        return;
+    }
+    if (staff_email_exists($conn, $email)) {
+        http_response_code(409);
+        echo json_encode([
+            "success" => false,
+            "message" => "A staff member with this email already exists. Each staff account must use a unique email.",
+        ]);
+        return;
+    }
+    $data['email'] = $email;
 
     $id = $data['id'] ?? 'ST' . uniqid();
     $fullName = trim($data['firstName']) . ' ' . trim($data['lastName']);
@@ -569,7 +631,11 @@ function handleAddStaff($conn)
 
             echo json_encode(["success" => true, "message" => "Staff added successfully", "id" => $id]);
         } else {
-            echo json_encode(["success" => false, "message" => "Staff not added (possible duplicate email skipped)"]);
+            http_response_code(409);
+            echo json_encode([
+                "success" => false,
+                "message" => "A staff member with this email already exists. Each staff account must use a unique email.",
+            ]);
         }
     } else {
         http_response_code(500);
@@ -590,7 +656,13 @@ function handleUpdateStaff($conn)
     }
 
     $id = $data['id'];
-    $newEmail = $data['email'];
+    $newEmail = trim((string) $data['email']);
+    if ($newEmail === '' || !filter_var($newEmail, FILTER_VALIDATE_EMAIL)) {
+        http_response_code(400);
+        echo json_encode(["success" => false, "message" => "A valid email address is required."]);
+        return;
+    }
+    $data['email'] = $newEmail;
 
     // Fetch current staff record
     $currentStaffSql = "SELECT * FROM staff WHERE id = ?";
@@ -605,6 +677,18 @@ function handleUpdateStaff($conn)
         http_response_code(404);
         echo json_encode(["success" => false, "message" => "Staff member not found."]);
         return;
+    }
+
+    // Block taking another staff member's email (case-insensitive)
+    if (staff_normalize_email($currentStaffRow['email']) !== staff_normalize_email($newEmail)) {
+        if (staff_email_exists($conn, $newEmail, $id)) {
+            http_response_code(409);
+            echo json_encode([
+                "success" => false,
+                "message" => "A staff member with this email already exists. Each staff account must use a unique email.",
+            ]);
+            return;
+        }
     }
 
     $hasLocation = $conn->query("SHOW COLUMNS FROM staff LIKE 'location'")->num_rows > 0;
@@ -740,24 +824,6 @@ function handleUpdateStaff($conn)
     if ($newDocsPayload !== null) {
         $newDocsForCompare = is_array($newDocsPayload) ? $newDocsPayload : [];
         if (json_encode($oldDocs) !== json_encode($newDocsForCompare)) $hasChanged = true;
-    }
-
-    // Check for duplicate email
-    if ($currentStaffRow['email'] !== $newEmail) {
-        $checkDuplicateSql = "SELECT COUNT(*) FROM staff WHERE email = ? AND id != ?";
-        $checkDuplicateStmt = $conn->prepare($checkDuplicateSql);
-        $checkDuplicateStmt->bind_param("ss", $newEmail, $id);
-        $checkDuplicateStmt->execute();
-        $duplicateResult = $checkDuplicateStmt->get_result();
-        $row = $duplicateResult->fetch_row();
-        $count = $row[0];
-        $checkDuplicateStmt->close();
-
-        if ($count > 0) {
-            http_response_code(409);
-            echo json_encode(["success" => false, "message" => "Error updating staff: Email already exists for another staff member."]);
-            return;
-        }
     }
 
     if (!$hasChanged) {

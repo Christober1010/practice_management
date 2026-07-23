@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import OverviewTab from "./tabs/OverviewTab";
-import SoapEntryTab from "./tabs/SoapEntryTab";
 import ClinicalNotesTab from "./tabs/ClinicalNotesTab";
 import SignaturesTab from "./tabs/SignaturesTab";
 import SessionNotesFooterActions from "./SessionNotesFooterActions";
@@ -29,8 +28,7 @@ export default function SessionNotesPanel({
         <TabsList className="sticky top-0 z-10 -mx-6 mb-5 flex flex-wrap justify-start gap-2 border-b border-slate-200 bg-background/95 px-6 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           {[
             { value: "overview", label: "Overview" },
-            { value: "soap-entry", label: "SOAP Entry" },
-            { value: "clinical", label: "Clinical Notes" },
+            { value: "clinical", label: "SOAP Notes" },
             { value: "signatures", label: "Signatures" },
           ].map((t) => (
             <TabsTrigger
@@ -51,10 +49,6 @@ export default function SessionNotesPanel({
             sessionNotes={sessionNotes}
             setSessionNotes={setSessionNotes}
           />
-        </TabsContent>
-
-        <TabsContent value="soap-entry" className="mt-0">
-          <SoapEntryTab sessionDate={sessionDate} sessionNotes={sessionNotes} setSessionNotes={setSessionNotes} />
         </TabsContent>
 
         <TabsContent value="clinical" className="mt-0">
@@ -80,13 +74,9 @@ export default function SessionNotesPanel({
         onClose={onClose}
         onSave={onSave}
         onComplete={onComplete}
-        sessionNotes={sessionNotes}
         isFutureSessionDate={isFutureSessionDate}
         futureCompleteMessage={futureCompleteMessage}
-        openEmployeeSignature={() => setShowEmployeeSignatureDialog(true)}
-        openGuardianSignature={() => setShowGuardianSignatureDialog(true)}
       />
     </>
   );
 }
-

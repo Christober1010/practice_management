@@ -282,9 +282,6 @@ export default function AddProgramModal({
                 <div className="font-medium text-purple-900">
                   {selectedClientObj.first_name || ""} {selectedClientObj.last_name || ""}
                 </div>
-                {selectedClientObj.email && (
-                  <div className="text-purple-700">Email: {selectedClientObj.email}</div>
-                )}
               </div>
             )}
           </div>

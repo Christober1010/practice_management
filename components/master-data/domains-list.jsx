@@ -285,6 +285,47 @@ export default function DomainsList() {
     }
   };
 
+  const handleDeleteDomain = async () => {
+    const domain = domainToDelete;
+    if (!domain) return;
+    const isClientDomain = domain.type === "client";
+    const domainId = domain.rawId || domain.id;
+    try {
+      const res = await mahaverseFetch(
+        isClientDomain ? "/client-modules.php" : "/programs.php",
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            isClientDomain
+              ? {
+                  client_id: domain.client_id,
+                  domainId,
+                }
+              : {
+                  domainId,
+                  delete: true,
+                }
+          ),
+        }
+      );
+      const result = await res.json().catch(() => ({}));
+      if (res.ok && result.success) {
+        toast.success("Domain deleted!");
+        dispatch(fetchPrograms());
+        if (viewMode === "client" || viewMode === "all") {
+          await fetchClientData();
+        }
+        setIsDeleteModalOpen(false);
+        setDomainToDelete(null);
+      } else {
+        toast.error(result.message || "Delete failed");
+      }
+    } catch (err) {
+      toast.error("Network error");
+    }
+  };
+
   const openEditModal = (domain) => {
     setEditingDomain(domain);
     setIsAddModalOpen(true);
@@ -313,9 +354,8 @@ export default function DomainsList() {
           setIsDeleteModalOpen(false);
           setDomainToDelete(null);
         }}
-        onConfirm={() => {
-          // your delete logic here
-        }}
+        onConfirm={handleDeleteDomain}
+        entityType="domain"
         moduleName={domainToDelete?.name || ""}
         loading={false}
       />

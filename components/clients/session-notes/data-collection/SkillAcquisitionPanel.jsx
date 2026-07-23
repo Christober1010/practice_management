@@ -222,7 +222,16 @@ export default function SkillAcquisitionPanel({
   const openEntryModal = (row, mode) => {
     const targetId = resolveRowTargetId(row);
     const targetData = targetId ? targetRawById.get(targetId) : null;
-    setEntryModal({ open: true, mode, row, targetData });
+    setEntryModal({
+      open: true,
+      mode,
+      row: {
+        ...row,
+        targetId: targetId || row.targetId || "",
+        programId: row.programId || resolveRowProgramId(row) || "",
+      },
+      targetData,
+    });
   };
 
   const closeEntryModal = () => {

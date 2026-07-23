@@ -277,20 +277,27 @@ try {
         try {
             $rbacConn = getDBConnection();
             $role = strtolower((string) ($authUser['role'] ?? ''));
-            if ($role !== 'admin' && rbac_tables_exist($rbacConn)) {
-                $gm = rbac_fetch_grant_map_from_db($rbacConn, $role);
-                $scView = rbac_grant_scope_for_perm($gm, 'clients.view');
-                if ($scView === null) {
-                    $scView = rbac_grant_scope_for_perm($gm, 'clients.read');
-                }
-                if ($scView === 'self') {
+            // Only admin sees the full client roster. Everyone else: active + assigned only.
+            if ($role !== 'admin') {
+                try {
                     $clientsData = array_filter($clientsData, function ($c) use ($authUser, $rbacConn) {
+                        if (!rbac_client_row_is_active($c)) {
+                            return false;
+                        }
                         return rbac_user_may_access_client_row($authUser, $rbacConn, $c['client_id'] ?? '');
                     });
+                } catch (Exception $filterEx) {
+                    // Fail closed for non-admin — never leak full roster.
+                    error_log('get-clients assignment filter failed: ' . $filterEx->getMessage());
+                    $clientsData = [];
                 }
             }
         } catch (Exception $e) {
-            // keep full list if RBAC filter cannot run
+            $role = strtolower((string) ($authUser['role'] ?? ''));
+            if ($role !== 'admin') {
+                error_log('get-clients RBAC setup failed: ' . $e->getMessage());
+                $clientsData = [];
+            }
         }
     }
 

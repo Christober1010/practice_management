@@ -3,7 +3,8 @@
  * Matches billing-style headers users do not want on session reports.
  */
 
-const FULL_REPORT_REQUIRED_COLUMN_LABELS = [
+/** CL_PA_RPT export headers — used by Reports and Scheduling session import. */
+export const FULL_REPORT_REQUIRED_COLUMN_LABELS = [
   "Client First Name",
   "Client Last Name",
   "Client Middle Name",

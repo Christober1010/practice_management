@@ -51,7 +51,7 @@ test.describe("Scheduling & session notes flows", () => {
     uiQuickNote = `E2E UI create ${seed.ts}`;
 
     await openMahaverseView(page, "scheduling");
-    await expect(page.getByRole("heading", { name: "Scheduling" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Appointments" })).toBeVisible();
     await waitForApi(page, "/add-session.php").catch(() => null);
 
     const addBtn = page.getByRole("button", { name: /add session/i });
@@ -102,14 +102,14 @@ test.describe("Scheduling & session notes flows", () => {
     await dialog.getByRole("button", { name: "CANCEL" }).click();
   });
 
-  test("session notes: Clinical Notes subjective + SAVE", async ({ page }) => {
+  test("session notes: SOAP Notes subjective + SAVE", async ({ page }) => {
     const notesDialog = await openSessionNotesForClient(page, seed.clientName);
     const noteText = `E2E subjective ${seed.ts}`;
     await fillClinicalNotesAndSave(page, noteText, notesDialog);
 
     const reopened = await openSessionNotesForClient(page, seed.clientName);
     await reopened.getByRole("tab", { name: "Session Notes" }).click();
-    await reopened.getByRole("tab", { name: "Clinical Notes" }).click();
+    await reopened.getByRole("tab", { name: "SOAP Notes" }).click();
     await expect(reopened.locator("#subjective")).toHaveValue(noteText);
     await reopened.getByRole("button", { name: "CANCEL" }).click();
   });

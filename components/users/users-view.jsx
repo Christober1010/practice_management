@@ -47,6 +47,7 @@ import { toast, Toaster } from "react-hot-toast";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks"; // Assuming your Redux hooks
 import { toggleActive, deleteUser, fetchUsers } from "@/app/store/usersSlice";
 import { getMahaverseAuthHeaders } from "@/lib/api-auth";
+import { notifyMahaversePermissionsRefresh } from "@/lib/mahaverse-permissions-events";
 
 const jsonAuthHeaders = () =>
   getMahaverseAuthHeaders({ "Content-Type": "application/json" });
@@ -55,6 +56,32 @@ const jsonAuthHeaders = () =>
 function userRowIsActive(u) {
   const v = u?.is_active;
   return v === 1 || v === true || v === "1";
+}
+
+/** If the edited user is the logged-in session, refresh role/permissions in the shell. */
+function syncLoggedInUserAfterRoleChange(userData) {
+  if (typeof window === "undefined" || !userData?.id) return;
+  try {
+    const raw = localStorage.getItem("aba_user");
+    if (!raw) return;
+    const me = JSON.parse(raw);
+    if (String(me?.id) !== String(userData.id)) return;
+    const nextRole =
+      typeof userData.role === "string" && userData.role.trim() !== ""
+        ? userData.role.trim()
+        : me.role;
+    const next = {
+      ...me,
+      role: nextRole,
+      email: userData.email ?? me.email,
+      first_name: userData.first_name ?? me.first_name,
+      last_name: userData.last_name ?? me.last_name,
+    };
+    localStorage.setItem("aba_user", JSON.stringify(next));
+    notifyMahaversePermissionsRefresh();
+  } catch {
+    notifyMahaversePermissionsRefresh();
+  }
 }
 
 export default function UsersView() {
@@ -130,8 +157,13 @@ export default function UsersView() {
         body: JSON.stringify(userData),
       });
       const result = await res.json();
+      if (!res.ok) {
+        toast.error(result.message || `Request failed (${res.status})`);
+        return false;
+      }
       if (result.success) {
         await dispatch(fetchUsers());
+        syncLoggedInUserAfterRoleChange(userData);
         toast.success("User updated successfully!");
         return true;
       }

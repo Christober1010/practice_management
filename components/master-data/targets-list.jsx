@@ -479,31 +479,43 @@ export default function TargetsList() {
   };
 
   const handleDeleteTarget = async () => {
-    if (!targetToDelete) return;
+    const target = targetToDelete;
+    if (!target) return;
+    const isClientTarget = target.type === "client";
+    const activityId = target.rawId || target.id;
     try {
-      const res = await mahaverseFetch('/programs.php', {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          activityId: targetToDelete.rawId || targetToDelete.id,
-          delete: true,
-        }),
-      });
-      const result = await res.json();
-      if (result.success) {
+      const res = await mahaverseFetch(
+        isClientTarget ? "/client-modules.php" : "/programs.php",
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            isClientTarget
+              ? {
+                  client_id: target.client_id,
+                  activityId,
+                }
+              : {
+                  activityId,
+                  delete: true,
+                }
+          ),
+        }
+      );
+      const result = await res.json().catch(() => ({}));
+      if (res.ok && result.success) {
         toast.success("Target deleted!");
         dispatch(fetchPrograms());
         if (viewMode === "client" || viewMode === "all") {
           fetchClientSpecificData();
         }
         setIsDeleteModalOpen(false);
+        setTargetToDelete(null);
       } else {
         toast.error(result.message || "Delete failed");
       }
     } catch (err) {
       toast.error("Network error");
-    } finally {
-      setTargetToDelete(null);
     }
   };
 
@@ -541,6 +553,7 @@ export default function TargetsList() {
           setTargetToDelete(null);
         }}
         onConfirm={handleDeleteTarget}
+        entityType="target"
         moduleName={targetToDelete?.name || ""}
         loading={false}
       />

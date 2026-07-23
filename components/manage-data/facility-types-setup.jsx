@@ -193,6 +193,7 @@ export default function FacilityTypesSetup() {
           setFacilityTypeToDelete(null);
         }}
         onConfirm={handleDelete}
+        entityType="facility type"
         moduleName={facilityTypeToDelete?.facility_name || ""}
         loading={loading}
       />

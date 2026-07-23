@@ -84,6 +84,7 @@ export default function SessionNotesModal({
   linkedSessionDate = null,
   linkedSessionId = null,
   onSessionBillingFinalized,
+  initialTab = "data-collection",
 }) {
   // Shared state (used across panels)
   const [loading, setLoading] = useState(false);
@@ -98,7 +99,7 @@ export default function SessionNotesModal({
 
   // Session Notes structured state
   const [sessionNotes, setSessionNotes] = useState({ ...INITIAL_SESSION_NOTES });
-  const [activeTab, setActiveTab] = useState("data-collection");
+  const [activeTab, setActiveTab] = useState(initialTab);
   const scrollContainerRef = useRef(null);
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
@@ -135,13 +136,34 @@ export default function SessionNotesModal({
     [client]
   );
 
+  const appointmentTimezone = useMemo(() => {
+    return (
+      sessionData?.start_tz ||
+      sessionData?.startTZ ||
+      (typeof Intl !== "undefined"
+        ? Intl.DateTimeFormat().resolvedOptions().timeZone
+        : null) ||
+      "America/Chicago"
+    );
+  }, [sessionData?.start_tz, sessionData?.startTZ]);
+
   const timeHHMMFromIso = (iso) => {
     if (!iso) return "";
-    const d = new Date(iso);
+    let isoString = String(iso);
+    if (!isoString.includes("T")) isoString = isoString.replace(" ", "T");
+    if (!isoString.endsWith("Z")) isoString += "Z";
+    const d = new Date(isoString);
     if (Number.isNaN(d.getTime())) return "";
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mm = String(d.getMinutes()).padStart(2, "0");
-    return `${hh}:${mm}`;
+    const parts = new Intl.DateTimeFormat("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+      timeZone: appointmentTimezone,
+    }).formatToParts(d);
+    let hh = parts.find((p) => p.type === "hour")?.value ?? "00";
+    const mm = parts.find((p) => p.type === "minute")?.value ?? "00";
+    if (hh === "24") hh = "00";
+    return `${hh.padStart(2, "0")}:${mm.padStart(2, "0")}`;
   };
 
   useLayoutEffect(() => {
@@ -149,6 +171,14 @@ export default function SessionNotesModal({
       setSessionDate(linkedSessionDate);
     }
   }, [isOpen, linkedSessionDate]);
+
+  // Land on the requested tab when opening (e.g. Appointments book icon → Session Notes).
+  useEffect(() => {
+    if (!isOpen) return;
+    const tab =
+      initialTab === "session-notes" ? "session-notes" : "data-collection";
+    setActiveTab(tab);
+  }, [isOpen, initialTab]);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -160,9 +190,11 @@ export default function SessionNotesModal({
       setClientTargets([]);
       setSessionData(null);
       setSessionNotes({ ...INITIAL_SESSION_NOTES });
-      setActiveTab("data-collection");
+      setActiveTab(
+        initialTab === "session-notes" ? "session-notes" : "data-collection"
+      );
     }
-  }, [isOpen]);
+  }, [isOpen, initialTab]);
 
   // Fetch session data + client modules for current date
   useEffect(() => {
@@ -267,7 +299,7 @@ export default function SessionNotesModal({
     fetchSessionAndClientData();
   }, [isOpen, clientId, apiSessionDate, baseUrl]);
 
-  // Prefill SOAP entry fields (don’t clobber edits)
+  // Prefill clinical/attendance fields (don’t clobber edits)
   useEffect(() => {
     if (!isOpen) return;
 
@@ -290,7 +322,7 @@ export default function SessionNotesModal({
       caregiverName: prev.caregiverName || derivedCaregiver,
       serviceLocation: prev.serviceLocation || derivedLocation,
     }));
-  }, [isOpen, sessionData, apiSessionDate, client]);
+  }, [isOpen, sessionData, apiSessionDate, client, appointmentTimezone]);
 
   const resolveSchedulingSessionId = () => {
     const raw = sessionData?.session_id ?? linkedSessionId;
@@ -375,8 +407,35 @@ export default function SessionNotesModal({
   if (!isOpen) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="flex h-[90vh] max-h-[90vh] w-full max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl">
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent
+        className="flex h-[90vh] max-h-[90vh] w-full max-w-6xl flex-col gap-0 overflow-hidden p-0 sm:max-w-6xl"
+        onPointerDownOutside={(e) => {
+          // Nested dialogs (e.g. skill acquisition entry) portal outside this
+          // content; don't treat those clicks as "outside" or Save trial aborts.
+          const target = e.target;
+          if (target instanceof Element && target.closest('[role="dialog"]')) {
+            e.preventDefault();
+          }
+        }}
+        onInteractOutside={(e) => {
+          const target = e.target;
+          if (target instanceof Element && target.closest('[role="dialog"]')) {
+            e.preventDefault();
+          }
+        }}
+        onFocusOutside={(e) => {
+          const target = e.target;
+          if (target instanceof Element && target.closest('[role="dialog"]')) {
+            e.preventDefault();
+          }
+        }}
+      >
         <Tabs
           value={activeTab}
           onValueChange={setActiveTab}
@@ -404,7 +463,7 @@ export default function SessionNotesModal({
               <p className="text-sm text-muted-foreground">
                 {activeTab === "data-collection"
                   ? "Record skill acquisition and behaviors for this session."
-                  : "Complete SOAP notes, clinical documentation, and signatures."}
+                  : "Complete SOAP notes, documentation, and signatures."}
               </p>
             </DialogHeader>
 

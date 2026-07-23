@@ -19,6 +19,8 @@ if ($method === 'GET') {
         'clients.write',
         'scheduling.read',
         'billing.read',
+        'staff.read',
+        'staff.write',
     ], 'mahaverse');
 } else {
     requireAuthReadWrite('manage_data.read', 'manage_data.write', 'mahaverse');

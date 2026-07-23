@@ -470,7 +470,7 @@ function handlePost($conn, $input)
                 }
 
                 // Save prompt associations (skip if table doesn't exist)
-                if (isset($activity['prompts']) && is_array($activity['prompts']) && !empty($activity['prompts'])) {
+                if (isset($activity['prompts']) && is_array($activity['prompts'])) {
                     try {
                         saveTargetPrompts($conn, $id, $activity['prompts']);
                     } catch (Exception $promptErr) {
@@ -693,7 +693,7 @@ function handlePut($conn, $input)
                 throw new Exception("Error updating activity: " . $conn->error);
             }
 
-            if (isset($input['prompts']) && is_array($input['prompts']) && !empty($input['prompts'])) {
+            if (isset($input['prompts']) && is_array($input['prompts'])) {
                 try {
                     saveTargetPrompts($conn, $activityId, $input['prompts']);
                 } catch (Exception $promptErr) {
@@ -738,20 +738,25 @@ function handlePut($conn, $input)
 
 function handleDelete($conn, $input)
 {
-    if (!$input || !isset($input['client_id'])) {
+    if (!$input || !isset($input['client_id']) || trim((string) $input['client_id']) === '') {
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'Client ID is required']);
         return;
     }
 
-    $clientId = (int)$input['client_id']; // Cast to integer for safety
+    $clientId = trim((string) $input['client_id']);
 
     if (isset($input['moduleId'])) {
-        $id = (int)$input['moduleId']; // Cast to integer for safety
+        $id = trim((string) $input['moduleId']);
         $stmt = $conn->prepare("DELETE FROM client_modules WHERE id = ? AND client_id = ?");
-        $stmt->bind_param("ii", $id, $clientId);
+        $stmt->bind_param("ss", $id, $clientId);
         if ($stmt->execute()) {
-            echo json_encode(['success' => true, 'message' => 'Module deleted']);
+            if ($stmt->affected_rows > 0) {
+                echo json_encode(['success' => true, 'message' => 'Module deleted']);
+            } else {
+                http_response_code(404);
+                echo json_encode(['success' => false, 'message' => 'Module not found']);
+            }
         } else {
             http_response_code(500);
             echo json_encode(['success' => false, 'message' => $conn->error]);
@@ -761,61 +766,107 @@ function handleDelete($conn, $input)
     }
 
     if (isset($input['domainId'])) {
-        $id = (int)$input['domainId']; // Cast to integer for safety
-        $stmt = $conn->prepare("DELETE FROM client_domains WHERE id = ? AND client_id = ?");
-        $stmt->bind_param("ii", $id, $clientId);
-        if ($stmt->execute()) {
+        $id = trim((string) $input['domainId']);
+        $conn->begin_transaction();
+        try {
+            // Cascade: targets under programs in this domain, then programs, then domain
+            $stmt = $conn->prepare("
+                DELETE t FROM client_targets t
+                INNER JOIN client_programs p ON t.program_id = p.id
+                WHERE p.domain_id = ? AND p.client_id = ? AND t.client_id = ?
+            ");
+            if ($stmt) {
+                $stmt->bind_param("sss", $id, $clientId, $clientId);
+                $stmt->execute();
+                $stmt->close();
+            }
+
+            $stmt = $conn->prepare("DELETE FROM client_programs WHERE domain_id = ? AND client_id = ?");
+            if ($stmt) {
+                $stmt->bind_param("ss", $id, $clientId);
+                $stmt->execute();
+                $stmt->close();
+            }
+
+            $stmt = $conn->prepare("DELETE FROM client_domains WHERE id = ? AND client_id = ?");
+            $stmt->bind_param("ss", $id, $clientId);
+            if (!$stmt->execute()) {
+                throw new Exception($conn->error);
+            }
+            if ($stmt->affected_rows < 1) {
+                throw new Exception('Domain not found');
+            }
+            $stmt->close();
+            $conn->commit();
             echo json_encode(['success' => true, 'message' => 'Domain deleted']);
-        } else {
-            http_response_code(500);
-            echo json_encode(['success' => false, 'message' => $conn->error]);
+        } catch (Exception $e) {
+            $conn->rollback();
+            $code = strpos($e->getMessage(), 'not found') !== false ? 404 : 500;
+            http_response_code($code);
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
-        $stmt->close();
         return;
     }
 
     if (isset($input['programId'])) {
-        $id = (int)$input['programId']; // Cast to integer for safety
-        $stmt = $conn->prepare("DELETE FROM client_programs WHERE id = ? AND client_id = ?");
-        $stmt->bind_param("ii", $id, $clientId);
-        if ($stmt->execute()) {
+        $id = trim((string) $input['programId']);
+        $conn->begin_transaction();
+        try {
+            $stmt = $conn->prepare("DELETE FROM client_targets WHERE program_id = ? AND client_id = ?");
+            if ($stmt) {
+                $stmt->bind_param("ss", $id, $clientId);
+                $stmt->execute();
+                $stmt->close();
+            }
+
+            $stmt = $conn->prepare("DELETE FROM client_programs WHERE id = ? AND client_id = ?");
+            $stmt->bind_param("ss", $id, $clientId);
+            if (!$stmt->execute()) {
+                throw new Exception($conn->error);
+            }
+            if ($stmt->affected_rows < 1) {
+                throw new Exception('Program not found');
+            }
+            $stmt->close();
+            $conn->commit();
             echo json_encode(['success' => true, 'message' => 'Program deleted']);
-        } else {
-            http_response_code(500);
-            echo json_encode(['success' => false, 'message' => $conn->error]);
+        } catch (Exception $e) {
+            $conn->rollback();
+            $code = strpos($e->getMessage(), 'not found') !== false ? 404 : 500;
+            http_response_code($code);
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
-        $stmt->close();
         return;
     }
 
-    if (isset($input['activityId'])) {
+    if (isset($input['activityId']) || isset($input['targetId'])) {
         $conn->begin_transaction();
         try {
-            $id = (int)$input['activityId']; // Cast to integer for safety
-            
-            // Delete prompt associations (only if table exists)
+            $id = trim((string) ($input['activityId'] ?? $input['targetId']));
+
             $tableCheck = $conn->query("SHOW TABLES LIKE 'client_target_prompts'");
             if ($tableCheck && $tableCheck->num_rows > 0) {
                 $stmt = $conn->prepare("DELETE FROM client_target_prompts WHERE target_id = ?");
-                $stmt->bind_param("i", $id);
+                $stmt->bind_param("s", $id);
                 $stmt->execute();
                 $stmt->close();
             }
-            
-            // Delete task associations (only if table exists)
+
             $tableCheck = $conn->query("SHOW TABLES LIKE 'client_target_tasks'");
             if ($tableCheck && $tableCheck->num_rows > 0) {
                 $stmt = $conn->prepare("DELETE FROM client_target_tasks WHERE activity_id = ? AND client_id = ?");
-                $stmt->bind_param("ii", $id, $clientId);
+                $stmt->bind_param("ss", $id, $clientId);
                 $stmt->execute();
                 $stmt->close();
             }
-            
-            // Delete activity (CASCADE will handle related records if foreign keys are set up)
+
             $stmt = $conn->prepare("DELETE FROM client_targets WHERE id = ? AND client_id = ?");
-            $stmt->bind_param("ii", $id, $clientId);
+            $stmt->bind_param("ss", $id, $clientId);
             if (!$stmt->execute()) {
                 throw new Exception($conn->error);
+            }
+            if ($stmt->affected_rows < 1) {
+                throw new Exception('Target not found');
             }
             $stmt->close();
 
@@ -823,7 +874,8 @@ function handleDelete($conn, $input)
             echo json_encode(['success' => true, 'message' => 'Activity deleted']);
         } catch (Exception $e) {
             $conn->rollback();
-            http_response_code(500);
+            $code = strpos($e->getMessage(), 'not found') !== false ? 404 : 500;
+            http_response_code($code);
             echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
         return;
@@ -832,4 +884,5 @@ function handleDelete($conn, $input)
     http_response_code(400);
     echo json_encode(['success' => false, 'message' => 'Invalid request']);
 }
+
 ?>

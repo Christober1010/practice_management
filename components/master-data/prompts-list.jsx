@@ -21,7 +21,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Search, MessageSquare, Plus, Trash2, MoreVertical } from "lucide-react";
+import { Search, MessageSquare, Plus, Trash2, MoreVertical, Edit } from "lucide-react";
 import { Toaster } from "react-hot-toast";
 import toast from "react-hot-toast";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
@@ -30,14 +30,13 @@ import AddPromptModal from "./add-prompt-modal";
 
 export default function PromptsList() {
   const [searchTerm, setSearchTerm] = useState("");
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState(null);
 
   const dispatch = useAppDispatch();
   const { prompts: allPrompts = [] } =
     useAppSelector((state) => state.programs.items) || {};
   const loading = useAppSelector((state) => state.programs.loading);
-
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
   useEffect(() => {
     dispatch(fetchPrograms());
@@ -62,6 +61,21 @@ export default function PromptsList() {
     }
   };
 
+  const openAddModal = () => {
+    setEditingPrompt(null);
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (prompt) => {
+    setEditingPrompt(prompt);
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingPrompt(null);
+  };
+
   const handleDeletePrompt = async (promptId) => {
     try {
       const res = await mahaverseFetch('/programs.php', {
@@ -83,24 +97,45 @@ export default function PromptsList() {
   };
 
   const handleAddPrompt = async (newPrompt) => {
-    try {
-      const res = await mahaverseFetch('/programs.php', {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompts: [newPrompt],
-        }),
-      });
-      const result = await res.json();
-      if (result.success) {
-        toast.success("Prompt added!");
-        dispatch(fetchPrograms());
-      } else {
-        toast.error(result.message ?? "Add failed");
-      }
-    } catch (err) {
-      toast.error("Network error");
-      console.error(err);
+    const res = await mahaverseFetch('/programs.php', {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompts: [newPrompt],
+      }),
+    });
+    const result = await res.json();
+    if (result.success) {
+      toast.success("Prompt added!");
+      dispatch(fetchPrograms());
+    } else {
+      toast.error(result.message ?? "Add failed");
+      throw new Error(result.message || "Add failed");
+    }
+  };
+
+  const handleEditPrompt = async (updatedPrompt) => {
+    const res = await mahaverseFetch('/programs.php', {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        promptId: updatedPrompt.id,
+        prompt_name: updatedPrompt.prompt_name,
+        max_score: updatedPrompt.max_score,
+        score_as_independent: updatedPrompt.score_as_independent,
+        dtt: updatedPrompt.dtt,
+        ta: updatedPrompt.ta,
+        maintenance: updatedPrompt.maintenance,
+        status: updatedPrompt.status,
+      }),
+    });
+    const result = await res.json();
+    if (result.success) {
+      toast.success("Prompt updated!");
+      dispatch(fetchPrograms());
+    } else {
+      toast.error(result.message ?? "Update failed");
+      throw new Error(result.message || "Update failed");
     }
   };
 
@@ -108,9 +143,11 @@ export default function PromptsList() {
     <div className="space-y-8">
       <Toaster />
       <AddPromptModal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
+        isOpen={isModalOpen}
+        onClose={closeModal}
         onAdd={handleAddPrompt}
+        onEdit={handleEditPrompt}
+        editingPrompt={editingPrompt}
         loading={loading}
       />
 
@@ -123,7 +160,7 @@ export default function PromptsList() {
           </p>
         </div>
         <Button
-          onClick={() => setIsAddModalOpen(true)}
+          onClick={openAddModal}
           className="bg-teal-600 hover:bg-teal-700 text-white"
           size="sm"
         >
@@ -201,18 +238,27 @@ export default function PromptsList() {
                       <TableCell className="p-4 font-medium text-slate-800">
                         {item.prompt_name}
                       </TableCell>
-                      <TableCell className="p-4">{item.max_score}</TableCell>
                       <TableCell className="p-4">
-                        {item.score_as_independent === "1" ? "Yes" : "No"}
+                        {item.max_score == null || item.max_score === ""
+                          ? "—"
+                          : item.max_score}
                       </TableCell>
                       <TableCell className="p-4">
-                        {item.dtt === "1" ? "Yes" : "No"}
+                        {item.score_as_independent === "1" ||
+                        item.score_as_independent === 1
+                          ? "Yes"
+                          : "No"}
                       </TableCell>
                       <TableCell className="p-4">
-                        {item.ta === "1" ? "Yes" : "No"}
+                        {item.dtt === "1" || item.dtt === 1 ? "Yes" : "No"}
                       </TableCell>
                       <TableCell className="p-4">
-                        {item.maintenance === "1" ? "Yes" : "No"}
+                        {item.ta === "1" || item.ta === 1 ? "Yes" : "No"}
+                      </TableCell>
+                      <TableCell className="p-4">
+                        {item.maintenance === "1" || item.maintenance === 1
+                          ? "Yes"
+                          : "No"}
                       </TableCell>
                       <TableCell className="p-4">
                         <Badge className={getStatusColor(item.status)}>
@@ -221,6 +267,15 @@ export default function PromptsList() {
                       </TableCell>
                       <TableCell className="p-4">
                         <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-slate-300 bg-transparent"
+                            onClick={() => openEditModal(item)}
+                            aria-label={`Edit ${item.prompt_name}`}
+                          >
+                            <Edit className="h-3 w-3" />
+                          </Button>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
@@ -235,6 +290,11 @@ export default function PromptsList() {
                               align="end"
                               className="w-48"
                             >
+                              <DropdownMenuItem
+                                onClick={() => openEditModal(item)}
+                              >
+                                <Edit className="h-4 w-4 mr-2" /> Edit Prompt
+                              </DropdownMenuItem>
                               <DropdownMenuItem
                                 onClick={() => handleDeletePrompt(item.id)}
                                 className="text-red-600"

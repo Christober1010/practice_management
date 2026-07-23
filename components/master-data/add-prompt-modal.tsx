@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -19,16 +19,52 @@ import {
 } from "@/components/ui/select";
 import toast from "react-hot-toast";
 
-export default function AddPromptModal({ isOpen, onClose, onAdd, loading }) {
-  const [form, setForm] = useState({
-    prompt_name: "",
-    max_score: "",
-    score_as_independent: "0",
-    dtt: "0",
-    ta: "0",
-    maintenance: "0",
-    status: "Active",
-  });
+const EMPTY_FORM = {
+  prompt_name: "",
+  max_score: "",
+  score_as_independent: "0",
+  dtt: "0",
+  ta: "0",
+  maintenance: "0",
+  status: "Active",
+};
+
+function yesNoValue(value) {
+  return value === 1 || value === "1" || value === true ? "1" : "0";
+}
+
+export default function AddPromptModal({
+  isOpen,
+  onClose,
+  onAdd,
+  onEdit,
+  editingPrompt = null,
+  loading,
+}) {
+  const isEditMode = !!editingPrompt;
+  const [form, setForm] = useState(EMPTY_FORM);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (editingPrompt) {
+      setForm({
+        prompt_name: editingPrompt.prompt_name || "",
+        max_score:
+          editingPrompt.max_score === null ||
+          editingPrompt.max_score === undefined ||
+          editingPrompt.max_score === ""
+            ? ""
+            : String(editingPrompt.max_score),
+        score_as_independent: yesNoValue(editingPrompt.score_as_independent),
+        dtt: yesNoValue(editingPrompt.dtt),
+        ta: yesNoValue(editingPrompt.ta),
+        maintenance: yesNoValue(editingPrompt.maintenance),
+        status: editingPrompt.status || "Active",
+      });
+    } else {
+      setForm(EMPTY_FORM);
+    }
+  }, [isOpen, editingPrompt]);
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -37,34 +73,49 @@ export default function AddPromptModal({ isOpen, onClose, onAdd, loading }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!form.prompt_name.trim() || !form.max_score) {
-      toast.error("Prompt name and Max Score are required.");
+    if (!form.prompt_name.trim()) {
+      toast.error("Prompt name is required.");
       return;
     }
 
+    if (
+      form.max_score !== "" &&
+      form.max_score != null &&
+      (Number.isNaN(Number(form.max_score)) ||
+        Number(form.max_score) < 0 ||
+        Number(form.max_score) > 100)
+    ) {
+      toast.error("Max Score must be a number between 0 and 100.");
+      return;
+    }
+
+    const maxScore =
+      form.max_score === "" || form.max_score == null ? null : form.max_score;
+
     try {
-      const newPrompt = {
-        id: crypto.randomUUID(),
-        ...form,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+      if (isEditMode) {
+        await onEdit({
+          ...editingPrompt,
+          ...form,
+          id: editingPrompt.id,
+          max_score: maxScore,
+          updated_at: new Date().toISOString(),
+        });
+      } else {
+        await onAdd({
+          id: crypto.randomUUID(),
+          ...form,
+          max_score: maxScore,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
 
-      await onAdd(newPrompt);
-
-      setForm({
-        prompt_name: "",
-        max_score: "",
-        score_as_independent: "0",
-        dtt: "0",
-        ta: "0",
-        maintenance: "0",
-        status: "Active",
-      });
+      setForm(EMPTY_FORM);
       onClose();
     } catch (error) {
-      console.error("Error adding prompt:", error);
-      toast.error("Failed to add prompt.");
+      console.error("Error saving prompt:", error);
+      toast.error(isEditMode ? "Failed to update prompt." : "Failed to add prompt.");
     }
   };
 
@@ -72,14 +123,15 @@ export default function AddPromptModal({ isOpen, onClose, onAdd, loading }) {
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Add New Master Prompt</DialogTitle>
+          <DialogTitle>
+            {isEditMode ? "Edit Master Prompt" : "Add New Master Prompt"}
+          </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit}>
-          {/* Prompt Name */}
           <div className="space-y-4 grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="prompt_name">Prompt Name</Label>
+              <Label htmlFor="prompt_name">Prompt Name *</Label>
               <Input
                 id="prompt_name"
                 placeholder="Enter prompt name"
@@ -89,9 +141,8 @@ export default function AddPromptModal({ isOpen, onClose, onAdd, loading }) {
               />
             </div>
 
-            {/* Max Score */}
             <div className="space-y-2">
-              <Label htmlFor="max_score">Max Score</Label>
+              <Label htmlFor="max_score">Max Score (optional)</Label>
               <Input
                 id="max_score"
                 type="number"
@@ -104,7 +155,6 @@ export default function AddPromptModal({ isOpen, onClose, onAdd, loading }) {
               />
             </div>
 
-            {/* Score as Independent */}
             <div className="space-y-2">
               <Label>Score as Independent</Label>
               <Select
@@ -122,7 +172,6 @@ export default function AddPromptModal({ isOpen, onClose, onAdd, loading }) {
               </Select>
             </div>
 
-            {/* DTT */}
             <div className="space-y-2">
               <Label>DTT</Label>
               <Select
@@ -140,7 +189,6 @@ export default function AddPromptModal({ isOpen, onClose, onAdd, loading }) {
               </Select>
             </div>
 
-            {/* TA */}
             <div className="space-y-2">
               <Label>TA</Label>
               <Select
@@ -158,7 +206,6 @@ export default function AddPromptModal({ isOpen, onClose, onAdd, loading }) {
               </Select>
             </div>
 
-            {/* Maintenance */}
             <div className="space-y-2">
               <Label>Maintenance</Label>
               <Select
@@ -176,7 +223,6 @@ export default function AddPromptModal({ isOpen, onClose, onAdd, loading }) {
               </Select>
             </div>
 
-            {/* Status */}
             <div className="space-y-2">
               <Label>Status</Label>
               <Select
@@ -195,7 +241,6 @@ export default function AddPromptModal({ isOpen, onClose, onAdd, loading }) {
             </div>
           </div>
 
-          {/* Buttons */}
           <div className="flex gap-2 justify-end mt-8">
             <Button
               type="button"
@@ -206,7 +251,13 @@ export default function AddPromptModal({ isOpen, onClose, onAdd, loading }) {
               Cancel
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? "Adding..." : "Add Prompt"}
+              {loading
+                ? isEditMode
+                  ? "Saving..."
+                  : "Adding..."
+                : isEditMode
+                  ? "Save Changes"
+                  : "Add Prompt"}
             </Button>
           </div>
         </form>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Calendar, ClipboardList, Clock, Table as TableIcon, X } from "lucide-react";
 import toast from "react-hot-toast";
+import { formatTime12hFromUTC } from "@/lib/time-utils";
 
 export default function OverviewTab({
   client,
@@ -22,6 +23,46 @@ export default function OverviewTab({
     units: "",
     description: "",
   });
+
+  /** Same timezone path as scheduling sticky cards (session TZ → browser → Chicago). */
+  const appointmentTimezone = useMemo(
+    () =>
+      sessionData?.start_tz ||
+      sessionData?.startTZ ||
+      (typeof Intl !== "undefined"
+        ? Intl.DateTimeFormat().resolvedOptions().timeZone
+        : null) ||
+      "America/Chicago",
+    [sessionData?.start_tz, sessionData?.startTZ]
+  );
+
+  const appointmentStartLabel = sessionData?.start_utc
+    ? formatTime12hFromUTC(sessionData.start_utc, appointmentTimezone)
+    : "N/A";
+  const appointmentEndLabel = sessionData?.end_utc
+    ? formatTime12hFromUTC(sessionData.end_utc, appointmentTimezone)
+    : "N/A";
+  const appointmentDateLabel = sessionData?.start_utc
+    ? (() => {
+        let iso = String(sessionData.start_utc);
+        if (!iso.includes("T")) iso = iso.replace(" ", "T");
+        if (!iso.endsWith("Z")) iso += "Z";
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return "N/A";
+        return d.toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          timeZone: appointmentTimezone,
+        });
+      })()
+    : sessionDate
+      ? new Date(`${sessionDate}T12:00:00`).toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        })
+      : "N/A";
 
   const handleAddServiceCode = () => {
     if (!newServiceCode.serviceCode) {
@@ -58,15 +99,8 @@ export default function OverviewTab({
               <p className="font-medium mt-1">MAHA BEHAVIORAL HEALTH SERVICES, LLC</p>
             </div>
             <div>
-              <Label className="text-slate-500 text-xs">Actual Start Time</Label>
-              <p className="font-medium mt-1">
-                {sessionData?.start_utc
-                  ? new Date(sessionData.start_utc).toLocaleTimeString("en-US", {
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })
-                  : "N/A"}
-              </p>
+              <Label className="text-slate-500 text-xs">Appointment Start Time</Label>
+              <p className="font-medium mt-1">{appointmentStartLabel}</p>
             </div>
             <div>
               <Label className="text-slate-500 text-xs">Place of Service</Label>
@@ -107,15 +141,8 @@ export default function OverviewTab({
               </p>
             </div>
             <div>
-              <Label className="text-slate-500 text-xs">Actual End Time</Label>
-              <p className="font-medium mt-1">
-                {sessionData?.end_utc
-                  ? new Date(sessionData.end_utc).toLocaleTimeString("en-US", {
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })
-                  : "N/A"}
-              </p>
+              <Label className="text-slate-500 text-xs">Appointment End Time</Label>
+              <p className="font-medium mt-1">{appointmentEndLabel}</p>
             </div>
             <div>
               <Label className="text-slate-500 text-xs">Service Type</Label>
@@ -137,15 +164,7 @@ export default function OverviewTab({
             </div>
             <div>
               <Label className="text-slate-500 text-xs">Appointment Date</Label>
-              <p className="font-medium mt-1">
-                {sessionDate
-                  ? new Date(sessionDate).toLocaleDateString("en-US", {
-                      year: "numeric",
-                      month: "2-digit",
-                      day: "2-digit",
-                    })
-                  : "N/A"}
-              </p>
+              <p className="font-medium mt-1">{appointmentDateLabel}</p>
             </div>
             <div>
               <Label className="text-slate-500 text-xs">Provider Name/Credentials</Label>
@@ -318,27 +337,11 @@ export default function OverviewTab({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div>
               <Label className="text-slate-500 text-xs">Start Time</Label>
-              <p className="font-medium mt-1">
-                {sessionData?.start_utc
-                  ? new Date(sessionData.start_utc).toLocaleTimeString("en-US", {
-                      hour: "numeric",
-                      minute: "2-digit",
-                      hour12: true,
-                    })
-                  : "N/A"}
-              </p>
+              <p className="font-medium mt-1">{appointmentStartLabel}</p>
             </div>
             <div>
               <Label className="text-slate-500 text-xs">End Time</Label>
-              <p className="font-medium mt-1">
-                {sessionData?.end_utc
-                  ? new Date(sessionData.end_utc).toLocaleTimeString("en-US", {
-                      hour: "numeric",
-                      minute: "2-digit",
-                      hour12: true,
-                    })
-                  : "N/A"}
-              </p>
+              <p className="font-medium mt-1">{appointmentEndLabel}</p>
             </div>
           </div>
         </CardContent>

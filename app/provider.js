@@ -8,7 +8,14 @@ export default function Providers({ children }) {
   return (
     <Provider store={store}>
       {children}
-      <Toaster />
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          duration: 4000,
+          success: { duration: 4000 },
+          error: { duration: 5000 },
+        }}
+      />
     </Provider>
   )
 }

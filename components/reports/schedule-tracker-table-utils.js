@@ -78,7 +78,7 @@ export function formatMoneyOnBlur(value) {
 
 export function parseMoney(value) {
   if (value == null || value === "") return null;
-  const n = Number(String(value).trim());
+  const n = Number(String(value).trim().replace(/[^0-9.-]/g, ""));
   return Number.isFinite(n) ? n : null;
 }
 

@@ -95,6 +95,7 @@ export default function DocumentTypesSetup() {
         isOpen={isDeleteModalOpen}
         onClose={() => { setIsDeleteModalOpen(false); setItemToDelete(null); }}
         onConfirm={handleDelete}
+        entityType="document type"
         moduleName={itemToDelete?.type_name || ""}
         loading={loading}
       />

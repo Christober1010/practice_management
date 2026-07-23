@@ -366,31 +366,43 @@ export default function ProgramsList() {
 
 
   const handleDeleteProgram = async () => {
-    if (!programToDelete) return;
+    const program = programToDelete;
+    if (!program) return;
+    const isClientProgram = program.type === "client";
+    const programId = program.rawId || program.id;
     try {
-      const res = await mahaverseFetch('/programs.php', {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          programId: programToDelete.rawId || programToDelete.id,
-          delete: true,
-        }),
-      });
-      const result = await res.json();
-      if (result.success) {
+      const res = await mahaverseFetch(
+        isClientProgram ? "/client-modules.php" : "/programs.php",
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            isClientProgram
+              ? {
+                  client_id: program.client_id,
+                  programId,
+                }
+              : {
+                  programId,
+                  delete: true,
+                }
+          ),
+        }
+      );
+      const result = await res.json().catch(() => ({}));
+      if (res.ok && result.success) {
         toast.success("Program deleted!");
         dispatch(fetchPrograms());
         if (viewMode === "client" || viewMode === "all") {
           fetchClientSpecificData();
         }
         setIsDeleteModalOpen(false);
+        setProgramToDelete(null);
       } else {
         toast.error(result.message || "Delete failed");
       }
     } catch (err) {
       toast.error("Network error");
-    } finally {
-      setProgramToDelete(null);
     }
   };
 
@@ -425,6 +437,7 @@ export default function ProgramsList() {
           setProgramToDelete(null);
         }}
         onConfirm={handleDeleteProgram}
+        entityType="program"
         moduleName={programToDelete?.name || ""}
         loading={false}
       />

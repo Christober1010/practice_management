@@ -297,7 +297,6 @@ export default function AddModuleModal({
           {selectedClientObj && (
             <div className="border rounded p-3 bg-slate-50">
               <div className="font-medium">{selectedClientObj.name}</div>
-              {selectedClientObj.email && <div className="text-sm">Email: {selectedClientObj.email}</div>}
               {selectedClientObj.phone && <div className="text-sm">Phone: {selectedClientObj.phone}</div>}
               {/* render additional fields if present */}
               {selectedClientObj.contact_person && (

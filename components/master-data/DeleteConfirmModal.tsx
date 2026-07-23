@@ -15,8 +15,13 @@ type DeleteConfirmModalProps = {
   onClose: () => void;
   onConfirm: () => void;
   loading?: boolean;
-  /** Used by legacy delete-module flows when title/message are omitted. */
+  /** Display name of the item being deleted/archived. */
   moduleName?: string;
+  /**
+   * Entity kind for default copy (e.g. "domain", "program", "target", "module").
+   * Used when title / message / confirmLabel are omitted.
+   */
+  entityType?: string;
   /** Optional: override heading (e.g. archive flows). */
   title?: string;
   /** Optional: override description body. */
@@ -26,11 +31,21 @@ type DeleteConfirmModalProps = {
   variant?: "delete" | "archive";
 };
 
+function formatEntityLabel(entityType?: string) {
+  const raw = String(entityType || "item").trim();
+  if (!raw) return "Item";
+  return raw
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
 export default function DeleteConfirmModal({
   isOpen,
   onClose,
   onConfirm,
   moduleName = "",
+  entityType,
   title,
   message,
   confirmLabel,
@@ -39,10 +54,12 @@ export default function DeleteConfirmModal({
 }: DeleteConfirmModalProps) {
   const useArchiveUi = variant === "archive";
   const Icon = useArchiveUi ? Archive : Trash2;
+  const entityLabel = formatEntityLabel(entityType);
+  const entityLower = entityLabel.toLowerCase();
 
   const heading =
     title ||
-    (useArchiveUi ? "Archive?" : "Delete module");
+    (useArchiveUi ? `Archive ${entityLabel}?` : `Delete ${entityLabel}?`);
 
   const descriptionBody = (() => {
     if (message) return message;
@@ -57,17 +74,25 @@ export default function DeleteConfirmModal({
     }
     return (
       <>
-        Are you sure you want to delete the module{" "}
+        Are you sure you want to delete the {entityLower}{" "}
         <span className="font-semibold text-slate-800">&quot;{moduleName}&quot;</span>? This action{" "}
-        <strong>cannot be undone</strong> and will permanently remove the module from the system.
+        <strong>cannot be undone</strong> and will permanently remove it from the system.
       </>
     );
   })();
 
-  const actionIdleLabel = confirmLabel ?? (useArchiveUi ? "Archive" : "Delete module");
+  const actionIdleLabel =
+    confirmLabel ?? (useArchiveUi ? "Archive" : `Delete ${entityLabel}`);
 
   return (
-    <AlertDialog open={isOpen} onOpenChange={onClose}>
+    <AlertDialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        // Only react to close; ignore open=true. Callers often clear the
+        // pending row in onClose — that must not run before Confirm's onClick.
+        if (!open) onClose();
+      }}
+    >
       <AlertDialogContent className="max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle
@@ -83,7 +108,12 @@ export default function DeleteConfirmModal({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            onClick={onConfirm}
+            onClick={(e) => {
+              // Prevent Dialog.Close from flipping open→false in the same tick,
+              // which clears parent state and makes async delete handlers no-op.
+              e.preventDefault();
+              onConfirm();
+            }}
             disabled={loading}
             className={
               useArchiveUi
