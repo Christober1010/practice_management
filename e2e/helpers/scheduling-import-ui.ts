@@ -2,6 +2,7 @@ import { expect, type Page } from "@playwright/test";
 import path from "path";
 import fs from "fs";
 import { execSync } from "child_process";
+import { gotoApp, clickSidebar } from "./navigation";
 import { gotoSchedulingCalendar } from "./session-notes-ui";
 
 const E2E_DEFAULT_YEAR = 2026;
@@ -36,7 +37,12 @@ export function buildImportExcelFixture(
 }
 
 export async function importSessionsFromExcel(page: Page, excelPath: string) {
-  await gotoSchedulingCalendar(page);
+  await gotoApp(page);
+  await clickSidebar(page, "Reports");
+  await clickSidebar(page, "Session Log");
+  await expect(page.getByText("Session Log (Internal)").first()).toBeVisible({
+    timeout: 20_000,
+  });
   await page.getByRole("button", { name: /import session/i }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Import Sessions" });
   await expect(dialog).toBeVisible({ timeout: 15_000 });

@@ -174,12 +174,13 @@ try {
             $sessionsHasAuthorizedHours = sessions_has_authorized_hours_column($conn);
             $authHoursSelect = $sessionsHasAuthorizedHours ? ', authorized_hours' : '';
             $excludeSelect = sessions_has_exclude_session_column($conn) ? ', exclude_session' : '';
+            $serviceTypeSelect = sessions_has_service_type_column($conn) ? ', service_type' : '';
 
             // Get the current session
             $stmt = $conn->prepare("
         SELECT client_id, auth_id, provider_id, provider_name, supervising_provider_id, supervising_provider_name,
                start_utc, end_utc, start_tz, end_tz, auth_code, place_of_service, location_address,
-               quick_note, recurring, recurring_days, status{$authHoursSelect}, scheduled_hours, rendered_hours, recurring_id{$excludeSelect}
+               quick_note, recurring, recurring_days, status{$authHoursSelect}, scheduled_hours, rendered_hours, recurring_id{$excludeSelect}{$serviceTypeSelect}
         FROM sessions WHERE session_id = ?
     ");
             $stmt->bind_param("i", $sessionId);
@@ -295,6 +296,16 @@ try {
                     $excludeSessionRequested,
                     $currentSession['exclude_session'] ?? 'No'
                 );
+                $serviceTypeRaw = array_key_exists('serviceType', $input)
+                    || array_key_exists('service_type', $input)
+                    || array_key_exists('direct_or_indirect_service', $input)
+                    || array_key_exists('directOrIndirectService', $input)
+                    ? ($input['serviceType']
+                        ?? $input['service_type']
+                        ?? $input['direct_or_indirect_service']
+                        ?? $input['directOrIndirectService'])
+                    : ($currentSession['service_type'] ?? 'Indirect');
+                $serviceType = normalize_session_service_type($serviceTypeRaw);
 
                 foreach ($sessionsToUpdate as $session) {
                     $sessionId = (int)$session['session_id'];
@@ -601,6 +612,7 @@ try {
                     $rowsAffected += $updateStmt->affected_rows;
                     $updateStmt->close();
                     sessions_set_exclude_session($conn, $sessionId, $excludeSession, true);
+                    sessions_set_service_type($conn, $sessionId, $serviceType, true);
                     if (!session_status_is_cancelled($status)) {
                         $pendingPutWindows[] = [
                             'start' => $startUtc,
@@ -777,6 +789,7 @@ try {
                         $createdSessionIds[] = $newSessionId;
                         $allExcludeSessionIds[] = $newSessionId;
                         sessions_set_exclude_session($conn, $newSessionId, $excludeSession, true);
+                        sessions_set_service_type($conn, $newSessionId, $serviceType, true);
                         if (!session_status_is_cancelled($status)) {
                             $pendingPutWindows[] = [
                                 'start' => $occStartUtc,
@@ -869,6 +882,7 @@ try {
                     "recurring_id" => $targetRecurringId,
                     "total_hours_change" => $totalHoursChange,
                     "exclude_session" => $excludeSession,
+                    "service_type" => $serviceType,
                 ]);
             } catch (ProviderScheduleConflictException $e) {
                 $conn->rollback();

@@ -421,6 +421,15 @@ export default function SchedulingView() {
             row.exclude_session === "Yes" || row.excludeSession === "Yes"
               ? "Yes"
               : "No",
+          serviceType:
+            String(
+              row.service_type ||
+                row.serviceType ||
+                row.direct_or_indirect_service ||
+                ""
+            ).toLowerCase() === "direct"
+              ? "Direct"
+              : "Indirect",
           status: normalizeSessionStatus(row),
           createdAt: row.created_at,
           updatedAt: row.updatedAt,

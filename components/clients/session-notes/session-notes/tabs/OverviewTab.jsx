@@ -147,7 +147,10 @@ export default function OverviewTab({
             <div>
               <Label className="text-slate-500 text-xs">Service Type</Label>
               <p className="font-medium mt-1">
-                {sessionData?.direct_or_indirect_service || "Indirect"}
+                {sessionData?.service_type ||
+                  sessionData?.serviceType ||
+                  sessionData?.direct_or_indirect_service ||
+                  "Indirect"}
               </p>
             </div>
             <div>

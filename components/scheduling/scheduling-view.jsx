@@ -9,7 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import {
   CalendarIcon,
   Plus,
-  Upload,
   ChevronLeft,
   ChevronRight,
   Edit,
@@ -28,7 +27,6 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import NewSessionFormModal from "./new-session-form-modal";
-import SessionImportModal from "./session-import-modal";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 import ViewSessionModal from "./ViewSessionModal";
 import SessionNotesModal from "../clients/session-notes-modal";
@@ -273,7 +271,6 @@ export default function SchedulingView({ userRole }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState("month");
   const [isNewSessionModalOpen, setIsNewSessionModalOpen] = useState(false);
-  const [isImportSessionModalOpen, setIsImportSessionModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [editingSession, setEditingSession] = useState(null);
   const [sessions, setSessions] = useState([]);
@@ -648,6 +645,12 @@ export default function SchedulingView({ userRole }) {
             row.exclude_session === "Yes" || row.excludeSession === "Yes"
               ? "Yes"
               : "No",
+          serviceType:
+            String(
+              row.service_type || row.serviceType || row.direct_or_indirect_service || ""
+            ).toLowerCase() === "direct"
+              ? "Direct"
+              : "Indirect",
           status: normalizeSessionStatus(row),
           createdAt: row.created_at,
           updatedAt: row.updatedAt,
@@ -781,6 +784,8 @@ export default function SchedulingView({ userRole }) {
       placeOfService: session.placeOfService,
       locationAddress: session.locationAddress,
       quickNote: session.quickNote,
+      excludeSession: session.excludeSession,
+      serviceType: session.serviceType,
       status: session.status,
       renderedHours: session.renderedHours,
       scheduledHours: session.scheduledHours,
@@ -1991,14 +1996,6 @@ export default function SchedulingView({ userRole }) {
         {allowCreate && (
           <div className="flex flex-wrap gap-2">
             <Button
-              variant="outline"
-              onClick={() => setIsImportSessionModalOpen(true)}
-              className="border-teal-600 text-teal-700 hover:bg-teal-50"
-            >
-              <Upload className="h-4 w-4 mr-2" />
-              Import Session
-            </Button>
-            <Button
               onClick={() => handleOpenAddSessionForDate(selectedDate || today)}
               className="bg-teal-600 hover:bg-teal-700 text-white"
             >
@@ -2168,13 +2165,6 @@ export default function SchedulingView({ userRole }) {
           locationFilter && locationFilter !== "All" ? locationFilter : ""
         }
         canEditExcludeSession={isAdminUser}
-      />
-      <SessionImportModal
-        isOpen={isImportSessionModalOpen}
-        onClose={() => setIsImportSessionModalOpen(false)}
-        onImported={() => {
-          void refreshSessions();
-        }}
       />
       <DeleteConfirmationModal
         isOpen={deleteModalOpen}

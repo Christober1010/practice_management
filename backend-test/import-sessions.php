@@ -520,6 +520,9 @@ function import_parse_row(array $row): array
         'locationAddress' => trim((string)($row['Address'] ?? '')) ?: null,
         'quickNote' => $quickNote,
         'status' => $status,
+        'serviceType' => normalize_session_service_type(
+            $row['DIRECT or INDIRECT Service'] ?? $row['direct_or_indirect_service'] ?? null
+        ),
     ];
 }
 
@@ -601,6 +604,7 @@ function import_build_session_payload(array $parsed, array $resolved): array
         'locationAddress' => $parsed['locationAddress'],
         'quickNote' => $parsed['quickNote'],
         'status' => $parsed['status'],
+        'serviceType' => $parsed['serviceType'] ?? 'Indirect',
         'scheduled_hours' => $parsed['scheduledHours'],
         'rendered_hours' => $parsed['renderedHours'],
         'recurring' => ['frequency' => 'No'],

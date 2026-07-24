@@ -7,9 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Upload } from "lucide-react";
 import toast from "react-hot-toast";
 import SessionLogTable, { SESSION_LOG_STATUSES } from "./session-log-table";
 import { formatMoneyDisplay } from "./schedule-tracker-table-utils";
+import SessionImportModal from "@/components/scheduling/session-import-modal";
 
 function defaultDosTo() {
   return new Date().toISOString().slice(0, 10);
@@ -136,6 +138,7 @@ export default function SessionLogGrid({ onRegisterReload, onLoadingChange }) {
   const [filterCheckNumber, setFilterCheckNumber] = useState("");
   const [activeTab, setActiveTab] = useState(tabSlug("Scheduled"));
   const [selectedRowIds, setSelectedRowIds] = useState([]);
+  const [importOpen, setImportOpen] = useState(false);
 
   const activeStatus = statusFromSlug(activeTab);
 
@@ -466,6 +469,16 @@ export default function SessionLogGrid({ onRegisterReload, onLoadingChange }) {
               type="button"
               size="sm"
               variant="outline"
+              className="border-teal-600 text-teal-700 hover:bg-teal-50"
+              onClick={() => setImportOpen(true)}
+            >
+              <Upload className="h-3.5 w-3.5 mr-1.5" />
+              Import Session
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
               className="border-slate-200"
               onClick={load}
               disabled={loading}
@@ -585,6 +598,14 @@ export default function SessionLogGrid({ onRegisterReload, onLoadingChange }) {
           inputFilterClass={inputFilterClass}
         />
       )}
+
+      <SessionImportModal
+        isOpen={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => {
+          void load();
+        }}
+      />
     </div>
   );
 }

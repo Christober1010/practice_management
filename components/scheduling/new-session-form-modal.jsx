@@ -92,6 +92,7 @@ const initialForm = {
   locationAddress: "",
   quickNote: "",
   excludeSession: "No",
+  serviceType: "Indirect",
   startDateTime: "",
   startTZ: "",
   endDateTime: "",
@@ -473,6 +474,15 @@ export default function NewSessionFormModal({
           editingSession.exclude_session === "Yes"
             ? "Yes"
             : "No",
+        serviceType:
+          String(
+            editingSession.serviceType ||
+              editingSession.service_type ||
+              editingSession.direct_or_indirect_service ||
+              "Indirect"
+          ).toLowerCase() === "direct"
+            ? "Direct"
+            : "Indirect",
       });
     } else if (selectedDate && userTimezone) {
       const y = selectedDate.getFullYear();
@@ -686,6 +696,7 @@ export default function NewSessionFormModal({
             ? "Yes"
             : "No"
           : "No",
+      serviceType: form.serviceType === "Direct" ? "Direct" : "Indirect",
       status: "Scheduled",
       recurring: {
         frequency: form.recurring === "Repeats" ? form.repeatFrequency : "No",
@@ -1367,6 +1378,29 @@ export default function NewSessionFormModal({
                         </CardTitle>
                       </CardHeader>
                       <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="service-type">Service type</Label>
+                          <select
+                            id="service-type"
+                            className={cn(
+                              "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                              isCompletedLimitedEdit &&
+                                "bg-muted cursor-not-allowed opacity-90"
+                            )}
+                            value={
+                              form.serviceType === "Direct"
+                                ? "Direct"
+                                : "Indirect"
+                            }
+                            disabled={isCompletedLimitedEdit}
+                            onChange={(e) =>
+                              setField("serviceType", e.target.value)
+                            }
+                          >
+                            <option value="Indirect">Indirect</option>
+                            <option value="Direct">Direct</option>
+                          </select>
+                        </div>
                         <div className="space-y-2">
                           <Label htmlFor="exclude-session">Exclude session</Label>
                           <select

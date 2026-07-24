@@ -54,6 +54,65 @@ function normalize_session_exclude_session($value): string
     return 'No';
 }
 
+/** True when sessions.service_type (Direct/Indirect) exists. */
+function sessions_has_service_type_column(mysqli $conn): bool
+{
+    static $cachedTrue = false;
+    if ($cachedTrue) {
+        return true;
+    }
+    $r = @$conn->query("SHOW COLUMNS FROM `sessions` LIKE 'service_type'");
+    $ok = ($r && $r->num_rows > 0);
+    if ($r) {
+        $r->free();
+    }
+    if ($ok) {
+        $cachedTrue = true;
+    }
+    return $ok;
+}
+
+/** Normalize service type to Direct|Indirect (default Indirect). */
+function normalize_session_service_type($value): string
+{
+    if ($value === null || $value === '') {
+        return 'Indirect';
+    }
+    $normalized = strtolower(trim((string) $value));
+    if (in_array($normalized, ['direct', 'd'], true)) {
+        return 'Direct';
+    }
+    return 'Indirect';
+}
+
+/**
+ * Persist service_type. Throws on prepare/execute failure when the column exists.
+ * Throws if a non-default value is requested but the DB column is missing.
+ */
+function sessions_set_service_type(mysqli $conn, int $sessionId, string $serviceType, bool $requireColumn = false): void
+{
+    $value = normalize_session_service_type($serviceType);
+    if (!sessions_has_service_type_column($conn)) {
+        if ($requireColumn || $value === 'Direct') {
+            throw new Exception(
+                'service_type column is missing on sessions. Run migration/shared/sessions_add_service_type.sql'
+            );
+        }
+        return;
+    }
+    $stmt = $conn->prepare("UPDATE sessions SET service_type = ? WHERE session_id = ?");
+    if (!$stmt) {
+        throw new Exception('Failed to prepare service_type update: ' . $conn->error);
+    }
+    $stmt->bind_param('si', $value, $sessionId);
+    if (!$stmt->execute()) {
+        $err = $stmt->error;
+        $stmt->close();
+        throw new Exception('Failed to update service_type: ' . $err);
+    }
+    $stmt->close();
+}
+
 /**
  * Persist exclude_session. Throws on prepare/execute failure when the column exists.
  * Throws if an admin requests Yes/No but the DB column has not been migrated yet.
@@ -869,6 +928,13 @@ $excludeSession = sessions_resolve_exclude_session_for_write(
     'No'
 );
 
+$serviceTypeRaw = $input['serviceType']
+    ?? $input['service_type']
+    ?? $input['direct_or_indirect_service']
+    ?? $input['directOrIndirectService']
+    ?? null;
+$serviceType = normalize_session_service_type($serviceTypeRaw);
+
 if (!in_array($status, ['Scheduled', 'Rendered', 'Cancelled'])) {
     return $fail(400, ['error' => "Invalid status. Must be 'Scheduled', 'Rendered', or 'Cancelled'"]);
 }
@@ -1172,6 +1238,12 @@ INSERT INTO sessions (
                 (int) $stmt->insert_id,
                 $excludeSession,
                 $excludeSession === 'Yes'
+            );
+            sessions_set_service_type(
+                $conn,
+                (int) $stmt->insert_id,
+                $serviceType,
+                $serviceType === 'Direct'
             );
             $totalScheduledHours += floatval($sessionScheduledHours);
             $pendingScheduleWindows[] = [

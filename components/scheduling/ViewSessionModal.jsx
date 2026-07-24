@@ -80,6 +80,18 @@ export default function ViewSessionModal({
           )}
 
           <div>
+            <p className="text-sm font-medium text-gray-600">Service type</p>
+            <p className="text-base">
+              {String(
+                session.serviceType ||
+                  session.service_type ||
+                  session.direct_or_indirect_service ||
+                  "Indirect"
+              )}
+            </p>
+          </div>
+
+          <div>
             <p className="text-sm font-medium text-gray-600">Exclude session</p>
             <p className="text-base">
               {session.excludeSession === "Yes" || session.exclude_session === "Yes"
