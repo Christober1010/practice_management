@@ -95,7 +95,7 @@ function sessions_set_service_type(mysqli $conn, int $sessionId, string $service
     if (!sessions_has_service_type_column($conn)) {
         if ($requireColumn || $value === 'Direct') {
             throw new Exception(
-                'service_type column is missing on sessions. Run migration/shared/sessions_add_service_type.sql'
+                'service_type column is missing on sessions. Run migration/shared/20260723_215313_sessions_add_service_type.sql'
             );
         }
         return;
@@ -125,7 +125,7 @@ function sessions_set_exclude_session(mysqli $conn, int $sessionId, string $excl
     if (!sessions_has_exclude_session_column($conn)) {
         if ($requireColumn) {
             throw new Exception(
-                'exclude_session column is missing on sessions. Run migration/shared/sessions_add_exclude_session.sql'
+                'exclude_session column is missing on sessions. Run migration/shared/20260720_222819_sessions_add_exclude_session.sql'
             );
         }
         return;
@@ -438,6 +438,23 @@ function build_claim_id($sessionId, $startUtc = null): string
     return 'CLM' . (int)$sessionId;
 }
 
+function claim_status_is_submitted($status): bool
+{
+    return stripos(trim((string) $status), 'submitted') !== false;
+}
+
+function claim_status_is_not_applicable($status): bool
+{
+    $s = strtolower(trim((string) $status));
+    return in_array($s, ['not applicable', 'na', 'n/a', 'not applicable/na'], true);
+}
+
+/**
+ * Set claim_id / claim_status when a session is completed.
+ * Billable=No (provider↔service mapping) → claim_status "Not Applicable", no claim number.
+ * Billable=Yes → generate claim_id + "Ready to Bill" (or keep an existing non-NA status).
+ * Exclude session does NOT control claim generation.
+ */
 function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = null): void
 {
     $cols = sessions_has_claim_columns($conn);
@@ -445,7 +462,18 @@ function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = nu
         return;
     }
 
-    $stmt = $conn->prepare("SELECT claim_id, claim_status FROM sessions WHERE session_id = ? LIMIT 1");
+    // Ensure billable helper is available even if the caller forgot to include it.
+    if (!function_exists('session_resolve_billable')) {
+        $rateLib = __DIR__ . '/session_rate_lib.php';
+        if (is_file($rateLib)) {
+            require_once $rateLib;
+        }
+    }
+
+    $stmt = $conn->prepare(
+        "SELECT claim_id, claim_status, provider_id, service_code, auth_code, auth_id, client_id
+         FROM sessions WHERE session_id = ? LIMIT 1"
+    );
     if (!$stmt) {
         return;
     }
@@ -457,16 +485,71 @@ function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = nu
         return;
     }
 
-    $nextClaimId = trim((string)($row['claim_id'] ?? ''));
-    $nextClaimStatus = trim((string)($row['claim_status'] ?? ''));
-    if ($nextClaimId === '' && $cols['claim_id']) {
-        $nextClaimId = build_claim_id($sessionId, $startUtc);
-    }
-    if ($nextClaimStatus === '' && $cols['claim_status']) {
-        $nextClaimStatus = 'Ready to Bill';
+    $existingClaimId = trim((string) ($row['claim_id'] ?? ''));
+    $existingClaimStatus = trim((string) ($row['claim_status'] ?? ''));
+    if (claim_status_is_submitted($existingClaimStatus)) {
+        return;
     }
 
-    if (($row['claim_id'] ?? '') === $nextClaimId && ($row['claim_status'] ?? '') === $nextClaimStatus) {
+    $billable = 'Yes';
+    if (function_exists('session_resolve_billable')) {
+        $billable = session_resolve_billable($conn, $row);
+    } else {
+        // Inline fallback: procedure from auth_code/service_code; No only if all active mappings are No.
+        $proc = '';
+        $sc = trim((string) ($row['service_code'] ?? ''));
+        $ac = trim((string) ($row['auth_code'] ?? ''));
+        if (preg_match('/^(\d{4,5})/', strtoupper($sc), $m) || preg_match('/^(\d{4,5})/', strtoupper($ac), $m)) {
+            $proc = $m[1];
+        }
+        if ($proc !== '') {
+                $sql = "
+                SELECT LOWER(TRIM(IFNULL(psc.billable, 'Yes'))) AS billable
+                FROM master_provider_service_code psc
+                INNER JOIN master_service_code sc ON psc.service_code_id = sc.code_id
+                WHERE UPPER(TRIM(sc.code)) = ?
+                  AND (psc.archived = 0 OR psc.archived = '0' OR IFNULL(psc.archived, 0) = 0)
+            ";
+            $q = $conn->prepare($sql);
+            if ($q) {
+                $q->bind_param('s', $proc);
+                $q->execute();
+                $res = $q->get_result();
+                $seenYes = false;
+                $seenNo = false;
+                $any = false;
+                while ($res && ($br = $res->fetch_assoc())) {
+                    $any = true;
+                    $b = strtolower(trim((string) ($br['billable'] ?? 'yes')));
+                    if (in_array($b, ['no', 'n', '0', 'false'], true)) {
+                        $seenNo = true;
+                    } else {
+                        $seenYes = true;
+                    }
+                }
+                $q->close();
+                if ($any && $seenNo && !$seenYes) {
+                    $billable = 'No';
+                }
+            }
+        }
+    }
+
+    if ($billable === 'No') {
+        $nextClaimId = '';
+        $nextClaimStatus = 'Not Applicable';
+    } else {
+        $nextClaimId = $existingClaimId;
+        $nextClaimStatus = $existingClaimStatus;
+        if ($nextClaimId === '') {
+            $nextClaimId = build_claim_id($sessionId, $startUtc);
+        }
+        if ($nextClaimStatus === '' || claim_status_is_not_applicable($nextClaimStatus)) {
+            $nextClaimStatus = 'Ready to Bill';
+        }
+    }
+
+    if ($existingClaimId === $nextClaimId && $existingClaimStatus === $nextClaimStatus) {
         return;
     }
 
@@ -474,6 +557,7 @@ function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = nu
     if (!$upd) {
         return;
     }
+    // Empty string when Not Applicable — no claim number generated.
     $upd->bind_param("ssi", $nextClaimId, $nextClaimStatus, $sessionId);
     $upd->execute();
     $upd->close();

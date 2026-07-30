@@ -22,25 +22,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit();
 }
 
-// DB Connection (test — align with backend deployment)
-$host = "db5018266079.hosting-data.io";
-$username = "dbu3321929";
-$password = "M@h@B3h@v1or@lH3@lth4@ut1sm";
-$database = "dbs14484433";
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/scheduling_session_lib.php';
+require_once __DIR__ . '/rbac_helpers.php';
+require_once __DIR__ . '/session_rate_lib.php';
 
-$conn = new mysqli($host, $username, $password, $database);
-if ($conn->connect_error) {
+// Use the same DB as provider-service-codes / get-clients (config.php), not a hardcoded host.
+try {
+    $conn = getDBConnection();
+} catch (Exception $e) {
     http_response_code(500);
     echo json_encode(["error" => "Database connection failed"]);
     exit();
 }
 
-require_once __DIR__ . '/scheduling_session_lib.php';
-require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/rbac_helpers.php';
-require_once __DIR__ . '/session_rate_lib.php';
-
-$authUser = requireAuthReadWrite('scheduling.read', 'scheduling.write', 'mahaverse');
+// Mutations stay scheduling-write. Claims Billing (biller) lists sessions with billing.read.
+$methodEarly = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+if (in_array($methodEarly, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+    $authUser = requireAuth('scheduling.write', 'mahaverse');
+} else {
+    $authUser = requireAuthAny(['scheduling.read', 'billing.read'], 'mahaverse');
+}
 
 // Main Logic
 $method = $_SERVER['REQUEST_METHOD'];

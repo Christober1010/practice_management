@@ -241,6 +241,318 @@ function import_normalize_token($s)
     return strtolower(trim(preg_replace('/\s+/', ' ', (string)$s)));
 }
 
+/**
+ * Duplicate key for Theralytics scheduling import:
+ * Client Full Name + DOS + Time of Service (Apt Start) + Service Code.
+ * Returns null when any part is missing (skip check).
+ */
+function import_schedule_dup_fingerprint(
+    $clientFirst,
+    $clientLast,
+    ?string $dosYmd,
+    ?string $aptStartHms,
+    $serviceCode
+): ?string {
+    $fullName = import_normalize_token(trim((string)$clientFirst . ' ' . (string)$clientLast));
+    $svc = import_normalize_token($serviceCode);
+    $dos = $dosYmd !== null ? trim($dosYmd) : '';
+    $time = $aptStartHms !== null ? trim($aptStartHms) : '';
+    if ($fullName === '' || $dos === '' || $time === '' || $svc === '') {
+        return null;
+    }
+    if (preg_match('/^\d{1,2}:\d{2}$/', $time)) {
+        $time .= ':00';
+    }
+    return $fullName . '|' . $dos . '|' . $time . '|' . $svc;
+}
+
+/**
+ * Find an existing non-cancelled session with the same client, start (minute), and service code.
+ * Service code is matched via sessions.service_code when present, else client_auth.billing_codes / auth_code.
+ *
+ * @return array{session_id:int,status:string,provider_id?:string,start_utc?:string,end_utc?:string}|null
+ */
+function import_find_matching_session(
+    mysqli $conn,
+    string $clientId,
+    string $startUtc,
+    string $serviceCode
+): ?array {
+    $clientId = trim($clientId);
+    $startUtc = trim($startUtc);
+    $serviceCode = trim($serviceCode);
+    if ($clientId === '' || $startUtc === '' || $serviceCode === '') {
+        return null;
+    }
+
+    $startMinute = substr($startUtc, 0, 16);
+    if (strlen($startMinute) < 16) {
+        return null;
+    }
+
+    $statusCol = sessions_status_column($conn);
+    $statusExpr = sessions_status_sql_expr($conn, 's');
+    $svcCols = session_auth_service_columns_exist($conn);
+    $svcSelect = !empty($svcCols['service_code']) ? 's.service_code' : 'NULL AS service_code';
+
+    $sql = "
+        SELECT s.session_id, s.auth_id, s.auth_code, s.provider_id, s.start_utc, s.end_utc,
+               s.`{$statusCol}` AS status, {$svcSelect}
+        FROM sessions s
+        WHERE s.client_id = ?
+          AND LEFT(s.start_utc, 16) = ?
+          AND {$statusExpr} <> 'cancelled'
+        ORDER BY s.session_id ASC
+        LIMIT 25
+    ";
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return null;
+    }
+    $stmt->bind_param('ss', $clientId, $startMinute);
+    if (!$stmt->execute()) {
+        $stmt->close();
+        return null;
+    }
+    $res = $stmt->get_result();
+    $candidates = [];
+    while ($row = $res->fetch_assoc()) {
+        $candidates[] = $row;
+    }
+    $stmt->close();
+
+    foreach ($candidates as $row) {
+        $matched = false;
+        $storedCode = trim((string)($row['service_code'] ?? ''));
+        if (
+            $storedCode !== ''
+            && (
+                import_billing_codes_match($storedCode, $serviceCode)
+                || import_billing_codes_match($serviceCode, $storedCode)
+            )
+        ) {
+            $matched = true;
+        }
+
+        if (!$matched) {
+            $authCode = trim((string)($row['auth_code'] ?? ''));
+            if ($authCode !== '') {
+                $billingPart = trim(explode(' - ', $authCode, 2)[0]);
+                if (
+                    $billingPart !== ''
+                    && (
+                        import_billing_codes_match($billingPart, $serviceCode)
+                        || import_billing_codes_match($serviceCode, $billingPart)
+                    )
+                ) {
+                    $matched = true;
+                }
+            }
+        }
+
+        if (!$matched) {
+            $authId = isset($row['auth_id']) ? (int)$row['auth_id'] : 0;
+            if ($authId > 0) {
+                $match = session_rate_client_auth_where($conn, '');
+                $authSql = "SELECT billing_codes FROM client_auth WHERE {$match['clause']} LIMIT 1";
+                $authStmt = $conn->prepare($authSql);
+                if ($authStmt) {
+                    if ($match['dual']) {
+                        $authStmt->bind_param('ii', $authId, $authId);
+                    } else {
+                        $authStmt->bind_param('i', $authId);
+                    }
+                    $authStmt->execute();
+                    $authRow = $authStmt->get_result()->fetch_assoc();
+                    $authStmt->close();
+                    $billing = trim((string)($authRow['billing_codes'] ?? ''));
+                    if (
+                        $billing !== ''
+                        && (
+                            import_billing_codes_match($billing, $serviceCode)
+                            || import_billing_codes_match($serviceCode, $billing)
+                        )
+                    ) {
+                        $matched = true;
+                    }
+                }
+            }
+        }
+
+        if ($matched) {
+            return [
+                'session_id' => (int)$row['session_id'],
+                'status' => (string)($row['status'] ?? ''),
+                'provider_id' => isset($row['provider_id']) ? (string)$row['provider_id'] : '',
+                'start_utc' => (string)($row['start_utc'] ?? ''),
+                'end_utc' => (string)($row['end_utc'] ?? ''),
+            ];
+        }
+    }
+
+    return null;
+}
+
+/** True when an existing Scheduled session may be upgraded by a Rendered import row. */
+function import_is_scheduled_to_rendered_upgrade(?array $existing, string $incomingStatus): bool
+{
+    if ($existing === null) {
+        return false;
+    }
+    $existingStatus = strtolower(trim((string)($existing['status'] ?? '')));
+    $incoming = strtolower(trim($incomingStatus));
+    return $existingStatus === 'scheduled' && $incoming === 'rendered';
+}
+
+/**
+ * Upgrade an existing Scheduled session to Rendered from a Theralytics re-import.
+ *
+ * @return array{success:bool,session_id?:int,action?:string,error?:string}
+ */
+function import_upgrade_scheduled_to_rendered(
+    mysqli $conn,
+    array $existing,
+    array $parsed,
+    array $authUser,
+    bool $dryRun
+): array {
+    $sessionId = (int)($existing['session_id'] ?? 0);
+    if ($sessionId <= 0) {
+        return ['success' => false, 'error' => 'Invalid session id for Scheduled → Rendered upgrade'];
+    }
+
+    if ($dryRun) {
+        return [
+            'success' => true,
+            'session_id' => $sessionId,
+            'action' => 'update',
+        ];
+    }
+
+    $endUtc = $parsed['endUtc'] ?? null;
+    if (!$endUtc) {
+        return ['success' => false, 'error' => 'Missing appointment end time for Rendered upgrade'];
+    }
+
+    $providerId = trim((string)($existing['provider_id'] ?? ''));
+    $startUtc = trim((string)($existing['start_utc'] ?? $parsed['startUtc'] ?? ''));
+    if ($providerId !== '' && $startUtc !== '') {
+        try {
+            ensure_provider_schedule_clear(
+                $conn,
+                $providerId,
+                $startUtc,
+                (string)$endUtc,
+                [$sessionId],
+                [],
+                ''
+            );
+        } catch (ProviderScheduleConflictException $e) {
+            return $e->getPayload();
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    $statusCol = sessions_status_column($conn);
+    $status = 'Rendered';
+    $renderedHours = (string) floatval($parsed['renderedHours'] ?? 0);
+    $scheduledHours = $parsed['scheduledHours'] ?? null;
+    $scheduledHoursStr = $scheduledHours !== null && $scheduledHours !== ''
+        ? (string) floatval($scheduledHours)
+        : null;
+    $quickNote = $parsed['quickNote'] ?? null;
+    if (is_string($quickNote) && trim($quickNote) === '') {
+        $quickNote = null;
+    }
+
+    if ($scheduledHoursStr !== null) {
+        $sql = "UPDATE sessions SET `{$statusCol}` = ?, rendered_hours = ?, end_utc = ?, quick_note = ?, scheduled_hours = ? WHERE session_id = ?";
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) {
+            return ['success' => false, 'error' => 'Failed to prepare Scheduled → Rendered update: ' . $conn->error];
+        }
+        $stmt->bind_param(
+            'sssssi',
+            $status,
+            $renderedHours,
+            $endUtc,
+            $quickNote,
+            $scheduledHoursStr,
+            $sessionId
+        );
+    } else {
+        $sql = "UPDATE sessions SET `{$statusCol}` = ?, rendered_hours = ?, end_utc = ?, quick_note = ? WHERE session_id = ?";
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) {
+            return ['success' => false, 'error' => 'Failed to prepare Scheduled → Rendered update: ' . $conn->error];
+        }
+        $stmt->bind_param(
+            'ssssi',
+            $status,
+            $renderedHours,
+            $endUtc,
+            $quickNote,
+            $sessionId
+        );
+    }
+
+    if (!$stmt->execute()) {
+        $err = $stmt->error;
+        $stmt->close();
+        return ['success' => false, 'error' => 'Failed to upgrade session to Rendered: ' . $err];
+    }
+    $stmt->close();
+
+    $excludeSession = sessions_resolve_exclude_session_for_write(
+        $authUser,
+        $parsed['excludeSession'] ?? 'No',
+        'No'
+    );
+    try {
+        sessions_set_exclude_session($conn, $sessionId, $excludeSession, $excludeSession === 'Yes');
+        sessions_set_service_type(
+            $conn,
+            $sessionId,
+            normalize_session_service_type($parsed['serviceType'] ?? null),
+            normalize_session_service_type($parsed['serviceType'] ?? null) === 'Direct'
+        );
+        ensure_session_claim_ready($conn, $sessionId, $startUtc !== '' ? $startUtc : null);
+    } catch (Exception $e) {
+        return ['success' => false, 'error' => $e->getMessage(), 'session_id' => $sessionId];
+    }
+
+    return [
+        'success' => true,
+        'session_id' => $sessionId,
+        'action' => 'update',
+    ];
+}
+
+/** Read Exclude Session from Excel / JSON (optional; default No). */
+function import_parse_exclude_session(array $row): string
+{
+    foreach (
+        [
+            'Exclude Session',
+            'Exclude session',
+            'excludeSession',
+            'exclude_session',
+        ] as $key
+    ) {
+        if (array_key_exists($key, $row) && $row[$key] !== '' && $row[$key] !== null) {
+            return normalize_session_exclude_session($row[$key]);
+        }
+    }
+    // Case-insensitive header fallback (trailing spaces, etc.).
+    foreach ($row as $k => $v) {
+        if (import_normalize_token($k) === 'exclude session' && $v !== '' && $v !== null) {
+            return normalize_session_exclude_session($v);
+        }
+    }
+    return 'No';
+}
+
 function import_resolve_client_id(mysqli $conn, $firstName, $lastName)
 {
     static $cache = [];
@@ -477,6 +789,7 @@ function import_compute_scheduled_hours($startUtc, $endUtc)
 function import_parse_row(array $row): array
 {
     $dos = import_parse_excel_dos($row['DOS'] ?? null);
+    $aptStartHms = import_parse_excel_time($row['Apt Start Time'] ?? null);
     $aptStart = import_combine_dos_and_time($row['DOS'] ?? null, $row['Apt Start Time'] ?? null);
     $aptEnd = import_combine_dos_and_time($row['DOS'] ?? null, $row['Apt End Time'] ?? null);
 
@@ -512,6 +825,8 @@ function import_parse_row(array $row): array
         'supervisedName' => $row['Name of RBT Supervised'] ?? '',
         'authNumber' => trim((string)($row['Authorization Number'] ?? '')),
         'serviceCode' => trim((string)($row['Service Code With Modifiers'] ?? '')),
+        'dosYmd' => $dos,
+        'aptStartHms' => $aptStartHms,
         'startUtc' => $startUtc,
         'endUtc' => $endUtc,
         'scheduledHours' => $scheduledHours,
@@ -520,6 +835,7 @@ function import_parse_row(array $row): array
         'locationAddress' => trim((string)($row['Address'] ?? '')) ?: null,
         'quickNote' => $quickNote,
         'status' => $status,
+        'excludeSession' => import_parse_exclude_session($row),
         'serviceType' => normalize_session_service_type(
             $row['DIRECT or INDIRECT Service'] ?? $row['direct_or_indirect_service'] ?? null
         ),
@@ -604,6 +920,7 @@ function import_build_session_payload(array $parsed, array $resolved): array
         'locationAddress' => $parsed['locationAddress'],
         'quickNote' => $parsed['quickNote'],
         'status' => $parsed['status'],
+        'excludeSession' => $parsed['excludeSession'] ?? 'No',
         'serviceType' => $parsed['serviceType'] ?? 'Indirect',
         'scheduled_hours' => $parsed['scheduledHours'],
         'rendered_hours' => $parsed['renderedHours'],
@@ -629,8 +946,11 @@ function import_result_errors(array $result): array
 $results = [];
 $readyCount = 0;
 $imported = 0;
+$updated = 0;
 $sessionIds = [];
 $line = 0;
+/** @var array<string,int> fingerprint => first line number in this file */
+$seenDupFingerprints = [];
 
 foreach ($rows as $row) {
     $line++;
@@ -639,38 +959,122 @@ foreach ($rows as $row) {
     }
 
     $parsed = import_parse_row($row);
+    $dupErrors = [];
+    $existingMatch = null;
+    $willUpgrade = false;
+
+    $fp = import_schedule_dup_fingerprint(
+        $parsed['clientFirst'],
+        $parsed['clientLast'],
+        $parsed['dosYmd'] ?? null,
+        $parsed['aptStartHms'] ?? null,
+        $parsed['serviceCode']
+    );
+    if ($fp !== null) {
+        if (isset($seenDupFingerprints[$fp])) {
+            $dupErrors[] = 'Duplicate session in import file (same client + DOS + time + service code as row '
+                . $seenDupFingerprints[$fp] . ')';
+        } else {
+            $seenDupFingerprints[$fp] = $line;
+        }
+    }
+
     $resolved = import_resolve_row($conn, $parsed);
+
+    if (
+        empty($dupErrors)
+        && !empty($resolved['clientId'])
+        && !empty($parsed['startUtc'])
+        && trim((string)$parsed['serviceCode']) !== ''
+    ) {
+        $existingMatch = import_find_matching_session(
+            $conn,
+            (string)$resolved['clientId'],
+            (string)$parsed['startUtc'],
+            (string)$parsed['serviceCode']
+        );
+        if ($existingMatch !== null) {
+            if (import_is_scheduled_to_rendered_upgrade($existingMatch, (string)($parsed['status'] ?? ''))) {
+                $willUpgrade = true;
+            } else {
+                $dupErrors[] = 'Duplicate session already exists (session_id '
+                    . (int)$existingMatch['session_id']
+                    . ': same client + DOS + time + service code)';
+            }
+        }
+    }
+
+    $errors = $willUpgrade
+        ? array_values(array_unique($dupErrors))
+        : array_values(array_unique(array_merge($resolved['errors'], $dupErrors)));
+
+    // Upgrade still needs a resolvable client (used for the match) and end time.
+    if ($willUpgrade && empty($resolved['clientId'])) {
+        $errors[] = 'Client not found (unique match required by first + last name)';
+    }
+    if ($willUpgrade && empty($parsed['endUtc'])) {
+        $errors[] = 'Missing appointment end time';
+    }
 
     $entry = [
         'line' => $line,
         'ready' => false,
-        'errors' => $resolved['errors'],
+        'action' => null,
+        'errors' => $errors,
         'client' => trim($parsed['clientFirst'] . ' ' . $parsed['clientLast']),
         'staff' => trim($parsed['staffFirst'] . ' ' . $parsed['staffLast']),
+        'exclude_session' => $parsed['excludeSession'] ?? 'No',
         'session_id' => null,
     ];
 
-    if (empty($resolved['errors'])) {
-        $payload = import_build_session_payload($parsed, $resolved);
-        $createResult = mahaverse_create_scheduling_session($conn, $payload, [
-            'authUser' => $authUser,
-            'enforceRbac' => !$validateOnly,
-            'sendEmail' => !$validateOnly,
-            'dryRun' => $validateOnly,
-        ]);
+    if (empty($errors)) {
+        if ($willUpgrade && $existingMatch !== null) {
+            $updateResult = import_upgrade_scheduled_to_rendered(
+                $conn,
+                $existingMatch,
+                $parsed,
+                $authUser,
+                $validateOnly
+            );
 
-        if ($createResult['success'] ?? false) {
-            $entry['ready'] = true;
-            $readyCount++;
-            if (!$validateOnly) {
-                $entry['session_id'] = $createResult['session_id'] ?? null;
-                if (!empty($createResult['session_id'])) {
-                    $sessionIds[] = (int)$createResult['session_id'];
+            if ($updateResult['success'] ?? false) {
+                $entry['ready'] = true;
+                $entry['action'] = 'update';
+                $entry['session_id'] = $updateResult['session_id'] ?? $existingMatch['session_id'];
+                $readyCount++;
+                if (!$validateOnly) {
+                    $sid = (int)($updateResult['session_id'] ?? 0);
+                    if ($sid > 0) {
+                        $sessionIds[] = $sid;
+                    }
+                    $updated++;
                 }
-                $imported++;
+            } else {
+                $entry['errors'] = import_result_errors($updateResult);
             }
         } else {
-            $entry['errors'] = import_result_errors($createResult);
+            $payload = import_build_session_payload($parsed, $resolved);
+            $createResult = mahaverse_create_scheduling_session($conn, $payload, [
+                'authUser' => $authUser,
+                'enforceRbac' => !$validateOnly,
+                'sendEmail' => !$validateOnly,
+                'dryRun' => $validateOnly,
+            ]);
+
+            if ($createResult['success'] ?? false) {
+                $entry['ready'] = true;
+                $entry['action'] = 'create';
+                $readyCount++;
+                if (!$validateOnly) {
+                    $entry['session_id'] = $createResult['session_id'] ?? null;
+                    if (!empty($createResult['session_id'])) {
+                        $sessionIds[] = (int)$createResult['session_id'];
+                    }
+                    $imported++;
+                }
+            } else {
+                $entry['errors'] = import_result_errors($createResult);
+            }
         }
     }
 
@@ -683,6 +1087,7 @@ echo json_encode([
     'total' => count($results),
     'readyCount' => $readyCount,
     'imported' => $imported,
+    'updated' => $updated,
     'session_ids' => $sessionIds,
     'rows' => $results,
 ]);

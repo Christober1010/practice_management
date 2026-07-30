@@ -264,7 +264,7 @@ if (!$googleClientAvailable) {
 }
 
 if (!$oauthTableExists) {
-    $response['recommendations'][] = 'Create GoogleDriveOAuthTokens table (run create_google_drive_oauth_tokens_table.sql)';
+    $response['recommendations'][] = 'Create GoogleDriveOAuthTokens table (run 20260126_185436_create_google_drive_oauth_tokens_table.sql)';
 }
 
 $redirectUri = getenv('GOOGLE_DRIVE_OAUTH_REDIRECT_URI');

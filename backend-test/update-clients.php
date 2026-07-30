@@ -10,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 }
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
-$authUser = requireAuthAny(['clients.update', 'clients.write'], 'mahaverse');
+$authUser = requireAuthAny(['clients.update', 'clients.write', 'clients.archive'], 'mahaverse');
 
 
 
@@ -43,8 +43,20 @@ try {
 
     if ($authUser) {
         $rbacM = getDBConnection();
-        $archiving = isset($input['archived']) && (int) $input['archived'] === 1;
-        if ($archiving) {
+        $archiveAction = false;
+        if (array_key_exists('archived', $input)) {
+            $newArchived = (int) $input['archived'] ? 1 : 0;
+            $curStmt = $conn->prepare("SELECT archived FROM clients WHERE client_id = :client_id LIMIT 1");
+            $curStmt->execute([":client_id" => $clientId]);
+            $curArchived = $curStmt->fetchColumn();
+            if ($curArchived !== false) {
+                $archiveAction = ((int) $curArchived ? 1 : 0) !== $newArchived;
+            } else {
+                // New row path shouldn't hit update-clients, but treat archived=1 as archive.
+                $archiveAction = $newArchived === 1;
+            }
+        }
+        if ($archiveAction) {
             rbac_enforce_client_action($authUser, $rbacM, 'archive', $clientId);
         } else {
             rbac_enforce_client_action($authUser, $rbacM, 'update', $clientId);
@@ -53,7 +65,7 @@ try {
 
     // Normalize workflow status: empty / whitespace → "New". (If client_status is still an ENUM
     // that omits labels like "Active Treatment", MySQL may coerce invalid values to '' — run
-    // alter-clients-client-status-varchar.sql on the database.)
+    // 20260412_201107_alter-clients-client-status-varchar.sql on the database.)
     $clientStatusRaw = $input["client_status"] ?? null;
     $clientStatus = is_string($clientStatusRaw)
         ? trim($clientStatusRaw)

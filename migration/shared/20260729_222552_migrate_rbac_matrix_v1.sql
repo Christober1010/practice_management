@@ -61,7 +61,10 @@ INSERT INTO rbac_permissions (perm_key, label, perm_group, app_scope, sort_order
 ('manage_data.provider', 'Manage data: Providers', 'mahaverse_action', 'mahaverse', 531),
 ('manage_data.provider_service', 'Manage data: Provider services', 'mahaverse_action', 'mahaverse', 532),
 ('manage_data.service_code', 'Manage data: Service codes', 'mahaverse_action', 'mahaverse', 533),
-('manage_data.diagnosis', 'Manage data: Diagnosis codes', 'mahaverse_action', 'mahaverse', 534)
+('manage_data.diagnosis', 'Manage data: Diagnosis codes', 'mahaverse_action', 'mahaverse', 534),
+('view.reports_session_log', 'Reports: Session Log', 'mahaverse_view', 'mahaverse', 181),
+('view.reports_session_import', 'Reports: Session Import', 'mahaverse_view', 'mahaverse', 182),
+('view.reports_insurance_utilization', 'Reports: Insurance Utilization', 'mahaverse_view', 'mahaverse', 183)
 ON DUPLICATE KEY UPDATE label = VALUES(label), perm_group = VALUES(perm_group), sort_order = VALUES(sort_order);
 
 -- 4) Default matrix-aligned grants (adjust after run via Admin Role Access UI)
@@ -111,11 +114,13 @@ WHERE p.perm_key IN (
 )
 ON DUPLICATE KEY UPDATE access_scope = VALUES(access_scope);
 
--- RBT: view + notes self only for sessions; view clients/staff for UI
+-- RBT: view + notes self only for sessions; clients assigned-only (self)
 INSERT INTO rbac_role_grants (role_name, permission_id, access_scope)
 SELECT 'rbt', p.id, CASE p.perm_key
   WHEN 'scheduling.session.view' THEN 'self'
   WHEN 'scheduling.session.notes' THEN 'self'
+  WHEN 'clients.view' THEN 'self'
+  WHEN 'clients.read' THEN 'self'
   ELSE 'all'
 END
 FROM rbac_permissions p

@@ -2,7 +2,7 @@
 -- Run after staff table exists.
 --
 -- If production already has `ssn_encrypted` (e.g. VARCHAR(32)) and `location`, use instead:
---   migrate-staff-prod-to-test-parity.sql
+--   20260412_215308_migrate-staff-prod-to-test-parity.sql
 -- which MODIFIES ssn width and ADDS only the missing columns.
 
 ALTER TABLE staff

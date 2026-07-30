@@ -40,7 +40,7 @@ try {
 if (!rbac_tables_exist($conn)) {
     echo json_encode([
         'success' => false,
-        'message' => 'RBAC tables not installed. Run migration/shared/create_rbac_tables.sql',
+        'message' => 'RBAC tables not installed. Run migration/shared/20260729_222552_create_rbac_tables.sql',
     ]);
     exit;
 }

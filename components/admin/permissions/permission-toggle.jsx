@@ -28,7 +28,7 @@ export default function PermissionToggle({
     <div
       className={cn(
         !compact &&
-          "flex flex-nowrap items-center justify-between gap-3 rounded-lg border px-3 py-2.5 transition-colors border-slate-200/80 bg-white hover:border-slate-300 min-h-[2.75rem]",
+          "flex w-full min-w-0 flex-nowrap items-center justify-between gap-3 rounded-lg border px-3 py-2.5 transition-colors border-slate-200/80 bg-white hover:border-slate-300 min-h-[2.75rem]",
         compact &&
           "flex items-center gap-2 rounded-md px-1 py-0.5 transition-colors",
         modified &&

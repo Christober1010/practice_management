@@ -1,0 +1,11 @@
+{
+  "clientFirst": "FirstName",
+  "clientLast": "LastName",
+  "staffFirst": "Mani",
+  "staffLast": "rbt",
+  "authNumber": "Auth1234",
+  "serviceCode": "97151",
+  "address": "100 Import Test St, Chicago, IL 60601",
+  "dos": "2026-11-10",
+  "note": "Edit build-test-excels.js IDENTITY then re-run to regenerate with your real client/staff/auth."
+}

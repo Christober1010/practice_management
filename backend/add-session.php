@@ -40,7 +40,13 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
 require_once __DIR__ . '/session_rate_lib.php';
 
-$authUser = requireAuthReadWrite('scheduling.read', 'scheduling.write', 'mahaverse');
+// Mutations stay scheduling-write. Claims Billing (biller) lists sessions with billing.read.
+$methodEarly = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+if (in_array($methodEarly, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+    $authUser = requireAuth('scheduling.write', 'mahaverse');
+} else {
+    $authUser = requireAuthAny(['scheduling.read', 'billing.read'], 'mahaverse');
+}
 
 // Main Logic
 $method = $_SERVER['REQUEST_METHOD'];

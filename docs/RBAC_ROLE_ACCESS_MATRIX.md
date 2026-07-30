@@ -1,6 +1,6 @@
 # Mahaverse RBAC: role access and scopes
 
-This document describes **default** grants after running [`migrate_rbac_matrix_v1.sql`](migrate_rbac_matrix_v1.sql). Admins can change any cell in **Admin → Role permissions**; production values live in `rbac_role_grants` (and may differ from this table).
+This document describes **default** grants after running [`20260729_222552_migrate_rbac_matrix_v1.sql`](../migration/shared/20260729_222552_migrate_rbac_matrix_v1.sql). Admins can change any cell in **Admin → Role permissions**; production values live in `rbac_role_grants` (and may differ from this table).
 
 **App scope:** all rows below are `app_scope = mahaverse` unless noted.
 
@@ -8,8 +8,8 @@ This document describes **default** grants after running [`migrate_rbac_matrix_v
 
 | Scope | Meaning |
 |--------|--------|
-| **all** | Permission applies organization-wide (subject to the permission key itself). |
-| **self** | Permission applies only when the action targets data linked to the logged-in user (e.g. session `provider_id` matches `users.link_staff_id` / staff record, or client rows allowed for that user). Backend helpers enforce this; **self** is not automatic on every endpoint. |
+| **all** | Permission applies organization-wide (subject to the permission key itself). For **`clients.view` / `clients.read`**, the client list API returns the org roster (active rows for non-admin). |
+| **self** | Permission applies only when the action targets data linked to the logged-in user (e.g. session `provider_id` matches `users.link_staff_id` / staff record, or client rows allowed for that user). For **`clients.view`**, that means `staff_client_assignments` or `link_client_id` only. Backend helpers enforce this; **self** is not automatic on every endpoint. |
 
 **Roles** map to `users.role` (lowercase). Users with role **admin** typically bypass UI gates; API enforcement still uses the DB matrix where implemented.
 
@@ -22,7 +22,7 @@ This document describes **default** grants after running [`migrate_rbac_matrix_v
 | **admin** | Full (`all`) | Full (`all`) | Full (`all`) | Full (`all`) | Full (`all`) | Full (`all`) | Full (`all`) |
 | **planner** | Full session CRUD (`all`) | — | — | — | — | — | — |
 | **bcba** | Create/view/notes/update **self**; no session delete | Read `all`; view **self**; no create/archive | Read + write `all` | — | Read/write + domains/programs/targets manage `all`; no `master_data.prompts` | Read `all` | — |
-| **rbt** | View session + notes **self** only; no create/update/delete | Read + view `all` | Read `all` | — | — | — | — |
+| **rbt** | View session + notes **self** only; no create/update/delete | Read + view **self** (assigned) | Read `all` | — | — | — | — |
 | **biller** | — | Read/view/update `all`; **no** `clients.create` | — | — | — | Read/write + fine provider/service/diagnosis keys `all` | Read/write `all` |
 | **parent** | — | — | — | — | — | — | — (dashboard only) |
 | **client** | — | Read/view/update **self** (own record) | — | — | — | — | — |
@@ -102,12 +102,14 @@ That includes all navigation and view keys, legacy coarse keys (`clients.write`,
 | `view.clients` | all |
 | `view.launchpad` | all |
 | `view.staff` | all |
-| `clients.read` | all |
-| `clients.view` | all |
+| `clients.read` | **self** |
+| `clients.view` | **self** |
 | `staff.read` | all |
 | `scheduling.read` | all |
 | `scheduling.session.view` | **self** |
 | `scheduling.session.notes` | **self** |
+
+**Client roster:** `clients.view` / `clients.read` **self** = assigned or linked clients only. Set to **all** in Admin → Role permissions for org-wide lists (e.g. biller). Backend honors this scope in `get-clients.php`.
 
 **Not granted by default:** session create/update/delete, `scheduling.write`, staff write, master data manage keys, etc.
 
@@ -189,7 +191,7 @@ These may appear on **admin** (full grant) or older saved matrices. APIs often t
 
 | Artifact | Purpose |
 |----------|---------|
-| [`migrate_rbac_matrix_v1.sql`](migrate_rbac_matrix_v1.sql) | Default `rbac_role_grants` + `access_scope` |
+| [`20260729_222552_migrate_rbac_matrix_v1.sql`](../migration/shared/20260729_222552_migrate_rbac_matrix_v1.sql) | Default `rbac_role_grants` + `access_scope` |
 | [`rbac-matrix.php`](rbac-matrix.php) | JSON for Admin UI |
 | [`rbac_helpers.php`](rbac_helpers.php) | Server checks + legacy key expansion |
 | [`RBAC_MATRIX_QA.md`](RBAC_MATRIX_QA.md) | Manual QA steps |

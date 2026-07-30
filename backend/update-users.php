@@ -46,7 +46,7 @@ function ensureUserRolePersisted(PDO $conn, $userId, string $expectedRole): void
     if (strcasecmp($stored, $expectedRole) !== 0) {
         throw new RuntimeException(
             "Role '{$expectedRole}' could not be saved (database stored '{$stored}'). " .
-            "Run migration/shared/migrate_users_role_varchar_v1.sql on this database."
+            "Run migration/shared/20260722_230003_migrate_users_role_varchar_v1.sql on this database."
         );
     }
 }

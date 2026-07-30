@@ -1,6 +1,6 @@
 # RBAC matrix QA checklist
 
-Run database migration first: [migrate_rbac_matrix_v1.sql](migrate_rbac_matrix_v1.sql) (adds `access_scope`, `users.link_staff_id` / `link_client_id`, new permissions, default grants). Adjust grants in **Admin → Role permissions** as needed.
+Run database migration first: [20260729_222552_migrate_rbac_matrix_v1.sql](../migration/shared/20260729_222552_migrate_rbac_matrix_v1.sql) (adds `access_scope`, `users.link_staff_id` / `link_client_id`, new permissions, default grants). Adjust grants in **Admin → Role permissions** as needed.
 
 ## Admin UI (Role permissions)
 

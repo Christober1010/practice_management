@@ -67,7 +67,7 @@ GOOGLE_DRIVE_OAUTH_REDIRECT_URI=https://www.mahabehavioralhealth.com/mahaverse-b
 **Steps:**
 1. Open your database management tool (phpMyAdmin, MySQL Workbench, etc.)
 2. Select your test database
-3. Run the SQL from `migration/shared/create_google_drive_oauth_tokens_table.sql`:
+3. Run the SQL from `migration/shared/20260325_205126_create_google_drive_oauth_tokens_table.sql`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS GoogleDriveOAuthTokens (

@@ -300,7 +300,9 @@ export default function ClaimsView() {
         });
         const json = await resp.json();
         if (!resp.ok || !Array.isArray(json)) {
-          throw new Error(json?.error || "Failed to load sessions");
+          throw new Error(
+            json?.error || json?.message || "Failed to load sessions"
+          );
         }
         const activeSessions = json.filter(
           (row) => String(row.status || row.STATUS || "").toLowerCase() !== "cancelled"

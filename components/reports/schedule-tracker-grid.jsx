@@ -2,7 +2,7 @@
 
 import { mahaverseFetch } from "@/lib/mahaverse-api";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -14,116 +14,32 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Calendar, ChevronDown, Check } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Calendar } from "lucide-react";
 import toast from "react-hot-toast";
 import { reportDosInRange } from "@/lib/report-dos-format";
 import { fetchClientsUtil } from "@/app/utils/fetchClients";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ScheduleTrackerTable from "./schedule-tracker-table";
 import { formatMoneyDisplay } from "./schedule-tracker-table-utils";
+import ReportFilterMultiSelect from "./report-filter-multi-select";
+import {
+  clientFilterKey,
+  clientOptionLabelFromRow,
+  rowMatchesClients,
+  rowMatchesStaff,
+  staffFilterKey,
+  staffOptionLabelFromRow,
+  uniquePersonOptionsFromRows,
+} from "./report-person-filter-utils";
 import {
   SCHEDULE_TRACKER_STATUSES,
   normalizeTrackerStatus,
 } from "./report-column-exclusions";
 
-/** Prefix for multiselect value when row has no client_id (match by normalized name). */
-const CLIENT_NAME_VALUE_PREFIX = "__name__:";
-const STAFF_NAME_VALUE_PREFIX = "__staff__:";
-
-function normalizeNameParts(first, last) {
-  return `${first || ""} ${last || ""}`
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ");
-}
-
-function clientOptionValueFromRow(row) {
-  const id = row.client_id ? String(row.client_id).trim() : "";
-  if (id) return id;
-  const nk = normalizeNameParts(row.client_first_name, row.client_last_name);
-  if (!nk) return null;
-  return `${CLIENT_NAME_VALUE_PREFIX}${nk}`;
-}
-
-function clientOptionLabelFromRow(row) {
-  const name = `${row.client_first_name || ""} ${row.client_last_name || ""}`.trim();
-  const id = row.client_id ? String(row.client_id).trim() : "";
-  if (name) return name;
-  if (id) return `Client ${id.length > 10 ? `${id.slice(0, 8)}…` : id}`;
-  return "Unknown client";
-}
-
-function clientFilterKey(row) {
-  const cid = String(row.client_id ?? "").trim();
-  if (cid) return cid;
-  const nk = normalizeNameParts(row.client_first_name, row.client_last_name);
-  return nk ? `${CLIENT_NAME_VALUE_PREFIX}${nk}` : null;
-}
-
-function rowMatchesClients(row, selectedIds, referenceRows) {
-  if (!selectedIds.length) return true;
-  return selectedIds.some((sel) => {
-    const rowKey = clientFilterKey(row);
-    if (rowKey && rowKey === sel) return true;
-    if (sel.startsWith(CLIENT_NAME_VALUE_PREFIX)) {
-      const selName = sel.slice(CLIENT_NAME_VALUE_PREFIX.length);
-      const rowName = normalizeNameParts(row.client_first_name, row.client_last_name);
-      return rowName === selName;
-    }
-    const cid = String(row.client_id ?? "").trim();
-    if (cid && cid === sel) return true;
-    const ref = referenceRows.find((r) => String(r.client_id ?? "").trim() === sel);
-    if (ref) {
-      const refName = normalizeNameParts(ref.client_first_name, ref.client_last_name);
-      const rowName = normalizeNameParts(row.client_first_name, row.client_last_name);
-      if (refName && rowName && refName === rowName) return true;
-    }
-    return false;
-  });
-}
-
 function rowMatchesServiceCodes(row, selectedCodes) {
   if (!selectedCodes.length) return true;
   const code = String(row.service_code_with_modifiers ?? "").trim();
   return code !== "" && selectedCodes.includes(code);
-}
-
-function staffFilterKey(row) {
-  const pid = String(row.provider_id ?? "").trim();
-  if (pid) return pid;
-  const nk = normalizeNameParts(row.staff_first_name, row.staff_last_name);
-  return nk ? `${STAFF_NAME_VALUE_PREFIX}${nk}` : null;
-}
-
-function staffOptionLabelFromRow(row) {
-  const name = `${row.staff_first_name || ""} ${row.staff_last_name || ""}`.trim();
-  const id = row.provider_id ? String(row.provider_id).trim() : "";
-  if (name) return name;
-  if (id) return `Staff ${id.length > 10 ? `${id.slice(0, 8)}…` : id}`;
-  return "Unknown staff";
-}
-
-function rowMatchesStaff(row, selectedIds, referenceRows) {
-  if (!selectedIds.length) return true;
-  return selectedIds.some((sel) => {
-    const rowKey = staffFilterKey(row);
-    if (rowKey && rowKey === sel) return true;
-    if (sel.startsWith(STAFF_NAME_VALUE_PREFIX)) {
-      const selName = sel.slice(STAFF_NAME_VALUE_PREFIX.length);
-      const rowName = normalizeNameParts(row.staff_first_name, row.staff_last_name);
-      return rowName === selName;
-    }
-    const pid = String(row.provider_id ?? "").trim();
-    if (pid && pid === sel) return true;
-    const ref = referenceRows.find((r) => String(r.provider_id ?? "").trim() === sel);
-    if (ref) {
-      const refName = normalizeNameParts(ref.staff_first_name, ref.staff_last_name);
-      const rowName = normalizeNameParts(row.staff_first_name, row.staff_last_name);
-      if (refName && rowName && refName === rowName) return true;
-    }
-    return false;
-  });
 }
 
 function parseHours(value) {
@@ -143,120 +59,6 @@ function miscHrsNumeric(row, drafts) {
   if (raw === "" || raw == null) return 0;
   const n = Number(String(raw).trim());
   return Number.isFinite(n) ? n : 0;
-}
-
-/** Multi-select for tracker filters (clients, service codes, …) — staff-modal–style. */
-function TrackerFilterMultiSelect({
-  options,
-  selected,
-  onChange,
-  placeholder,
-  disabled,
-  searchPlaceholder = "Search…",
-  emptySearchMessage = "No matches",
-}) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const dropdownRef = useRef(null);
-
-  const filteredOptions = useMemo(
-    () => options.filter((o) => o.label.toLowerCase().includes(search.toLowerCase())),
-    [options, search]
-  );
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setOpen(false);
-        setSearch("");
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const toggle = (value) => {
-    if (selected.includes(value)) {
-      onChange(selected.filter((item) => item !== value));
-    } else {
-      onChange([...selected, value]);
-    }
-  };
-
-  const summary =
-    selected.length === 0
-      ? placeholder
-      : selected.length === 1
-        ? options.find((o) => o.value === selected[0])?.label ?? "1 selected"
-        : `${selected.length} selected`;
-
-  return (
-    <div ref={dropdownRef} className="relative w-full min-w-[12rem]">
-      <Button
-        type="button"
-        variant="outline"
-        role="combobox"
-        aria-expanded={open}
-        disabled={disabled}
-        className={cn(
-          "w-full justify-between font-normal border-slate-200 bg-transparent",
-          !selected.length && "text-muted-foreground"
-        )}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setOpen(!open);
-          if (open) setSearch("");
-        }}
-      >
-        <span className="truncate text-left">{summary}</span>
-        <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-      </Button>
-      {open && (
-        <div className="absolute z-50 w-full mt-2 border border-slate-200 rounded-lg shadow-lg bg-white">
-          <div className="p-2 border-b border-slate-100">
-            <Input
-              placeholder={searchPlaceholder}
-              value={search}
-              className="border-slate-200 focus:border-teal-500 focus:ring-teal-500"
-              onChange={(e) => setSearch(e.target.value)}
-              onClick={(e) => {
-                e.stopPropagation();
-              }}
-            />
-          </div>
-          <div className="max-h-52 overflow-y-auto py-1">
-            {filteredOptions.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-slate-500">{emptySearchMessage}</div>
-            ) : (
-              filteredOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className="w-full px-3 py-2 flex items-center gap-2 text-sm text-left hover:bg-slate-100"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    toggle(option.value);
-                  }}
-                >
-                  <Check
-                    className={cn(
-                      "h-4 w-4 shrink-0",
-                      selected.includes(option.value) ? "opacity-100 text-teal-600" : "opacity-0"
-                    )}
-                  />
-                  <span className="truncate" title={option.label}>
-                    {option.label}
-                  </span>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
 }
 
 const inputFilterClass =
@@ -721,34 +523,28 @@ export default function ScheduleTrackerGrid({ onRegisterReload, onLoadingChange 
     );
   }, [allRows, activeStatus]);
 
-  const clientOptionsFromRows = useMemo(() => {
-    const byValue = new Map();
-    for (const r of rowsForActiveTab) {
-      const v = clientFilterKey(r);
-      if (!v) continue;
-      if (!byValue.has(v)) {
-        byValue.set(v, { value: v, label: clientOptionLabelFromRow(r) });
-      }
-    }
-    return Array.from(byValue.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [rowsForActiveTab]);
+  const clientOptionsFromRows = useMemo(
+    () =>
+      uniquePersonOptionsFromRows(rowsForActiveTab, {
+        keyFn: clientFilterKey,
+        labelFn: clientOptionLabelFromRow,
+      }),
+    [rowsForActiveTab]
+  );
 
   useEffect(() => {
     const valid = new Set(clientOptionsFromRows.map((o) => o.value));
     setSelectedClientIds((prev) => prev.filter((id) => valid.has(id)));
   }, [clientOptionsFromRows]);
 
-  const staffOptionsFromRows = useMemo(() => {
-    const byValue = new Map();
-    for (const r of rowsForActiveTab) {
-      const v = staffFilterKey(r);
-      if (!v) continue;
-      if (!byValue.has(v)) {
-        byValue.set(v, { value: v, label: staffOptionLabelFromRow(r) });
-      }
-    }
-    return Array.from(byValue.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [rowsForActiveTab]);
+  const staffOptionsFromRows = useMemo(
+    () =>
+      uniquePersonOptionsFromRows(rowsForActiveTab, {
+        keyFn: staffFilterKey,
+        labelFn: staffOptionLabelFromRow,
+      }),
+    [rowsForActiveTab]
+  );
 
   useEffect(() => {
     const valid = new Set(staffOptionsFromRows.map((o) => o.value));
@@ -1213,7 +1009,7 @@ export default function ScheduleTrackerGrid({ onRegisterReload, onLoadingChange 
         <CardContent className="p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-center lg:gap-4">
             <div className="w-full lg:flex-1 lg:min-w-[14rem] lg:max-w-md">
-              <TrackerFilterMultiSelect
+              <ReportFilterMultiSelect
                 options={clientOptionsFromRows}
                 selected={selectedClientIds}
                 onChange={setSelectedClientIds}
@@ -1228,7 +1024,7 @@ export default function ScheduleTrackerGrid({ onRegisterReload, onLoadingChange 
               />
             </div>
             <div className="w-full lg:w-52 lg:min-w-[12rem] min-w-0">
-              <TrackerFilterMultiSelect
+              <ReportFilterMultiSelect
                 options={staffOptionsFromRows}
                 selected={selectedStaffIds}
                 onChange={setSelectedStaffIds}
@@ -1243,7 +1039,7 @@ export default function ScheduleTrackerGrid({ onRegisterReload, onLoadingChange 
               />
             </div>
             <div className="w-full lg:w-52 lg:min-w-[12rem] min-w-0">
-              <TrackerFilterMultiSelect
+              <ReportFilterMultiSelect
                 options={serviceCodeOptionsFromRows}
                 selected={selectedServiceCodes}
                 onChange={setSelectedServiceCodes}

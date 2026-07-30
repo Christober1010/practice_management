@@ -114,7 +114,8 @@ export default function SessionImportModal({ isOpen, onClose, onImported }) {
         return;
       }
       const imported = data.imported ?? 0;
-      if (imported === 0) {
+      const updated = data.updated ?? 0;
+      if (imported === 0 && updated === 0) {
         const firstErr = data.rows?.find((r) => r.errors?.length)?.errors?.[0];
         toast.error(
           firstErr
@@ -124,10 +125,13 @@ export default function SessionImportModal({ isOpen, onClose, onImported }) {
         setValidation(data);
         return;
       }
+      const parts = [];
+      if (imported > 0) parts.push(`imported ${imported}`);
+      if (updated > 0) parts.push(`updated ${updated} (Scheduled → Rendered)`);
       toast.success(
         data.session_ids?.length
-          ? `Imported ${imported} session(s) — IDs: ${data.session_ids.join(", ")}`
-          : `Imported ${imported} session(s)`
+          ? `${parts.join(", ")} — IDs: ${data.session_ids.join(", ")}`
+          : parts.join(", ")
       );
       onImported?.();
       handleClose();
@@ -152,8 +156,10 @@ export default function SessionImportModal({ isOpen, onClose, onImported }) {
           </DialogTitle>
           <DialogDescription>
             Upload a CL_PA_RPT Excel export ({SESSION_CALENDAR_EXCEL_COLUMNS.length}{" "}
-            columns). Rows are matched to clients, staff, and authorizations before
-            creating calendar sessions.
+            columns; optional &quot;Exclude Session&quot;). Rows are matched to clients, staff,
+            and authorizations. Duplicates with the same client + DOS + start time +
+            service code are rejected, except re-importing Scheduled → Rendered updates
+            the existing session.
           </DialogDescription>
         </DialogHeader>
 
@@ -252,6 +258,7 @@ export default function SessionImportModal({ isOpen, onClose, onImported }) {
                       <th className="px-2 py-2 text-left">Start</th>
                       <th className="px-2 py-2 text-left">Code</th>
                       <th className="px-2 py-2 text-left">Status</th>
+                      <th className="px-2 py-2 text-left">Exclude</th>
                       {validation && (
                         <th className="px-2 py-2 text-left">Validation</th>
                       )}
@@ -271,10 +278,15 @@ export default function SessionImportModal({ isOpen, onClose, onImported }) {
                           </td>
                           <td className="px-2 py-2">{row.serviceCode || "—"}</td>
                           <td className="px-2 py-2">{row.status}</td>
+                          <td className="px-2 py-2">{row.excludeSession || "No"}</td>
                           {validation && (
                             <td className="px-2 py-2">
                               {v?.ready ? (
-                                <span className="text-emerald-700">Ready</span>
+                                <span className="text-emerald-700">
+                                  {v?.action === "update"
+                                    ? "Update (→ Rendered)"
+                                    : "Ready"}
+                                </span>
                               ) : (
                                 <span className="text-red-700" title={v?.errors?.join("; ")}>
                                   {v?.errors?.[0] || "Error"}

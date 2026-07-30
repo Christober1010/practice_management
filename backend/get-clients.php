@@ -277,15 +277,23 @@ try {
         try {
             $rbacConn = getDBConnection();
             $role = strtolower((string) ($authUser['role'] ?? ''));
-            // Only admin sees the full client roster. Everyone else: active + assigned only.
+            // Admin: full roster. Others: honor Role permissions access_scope
+            // (clients.view all = org roster; self = active + assigned/linked only).
             if ($role !== 'admin') {
                 try {
-                    $clientsData = array_filter($clientsData, function ($c) use ($authUser, $rbacConn) {
-                        if (!rbac_client_row_is_active($c)) {
-                            return false;
-                        }
-                        return rbac_user_may_access_client_row($authUser, $rbacConn, $c['client_id'] ?? '');
-                    });
+                    $rosterScope = function_exists('rbac_client_roster_access_scope')
+                        ? rbac_client_roster_access_scope($authUser, $rbacConn)
+                        : 'self';
+                    if ($rosterScope === null) {
+                        $clientsData = [];
+                    } else {
+                        $clientsData = array_filter($clientsData, function ($c) use ($authUser, $rbacConn) {
+                            if (!rbac_client_row_is_active($c)) {
+                                return false;
+                            }
+                            return rbac_user_may_access_client_row($authUser, $rbacConn, $c['client_id'] ?? '');
+                        });
+                    }
                 } catch (Exception $filterEx) {
                     // Fail closed for non-admin — never leak full roster.
                     error_log('get-clients assignment filter failed: ' . $filterEx->getMessage());

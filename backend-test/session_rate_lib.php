@@ -196,14 +196,43 @@ function session_rate_procedure_candidates(string $authCode, ?string $billingCod
 
 function session_rate_fetch_insurance_provider_for_auth(mysqli $conn, int $authId, string $clientId): ?string
 {
-    if ($authId <= 0 || trim($clientId) === '') {
+    if ($authId <= 0) {
         return null;
     }
     $match = session_rate_client_auth_where($conn, 'ca.');
+    $clientId = trim($clientId);
+
+    // Prefer join scoped to the session client (correct payer for this client).
+    if ($clientId !== '') {
+        $sql = "
+            SELECT ci.insurance_provider_id
+            FROM client_auth ca
+            INNER JOIN client_insurance ci ON ca.insurance_id = ci.insurance_id AND ci.client_id = ?
+            WHERE {$match['clause']}
+            LIMIT 1
+        ";
+        $stmt = $conn->prepare($sql);
+        if ($stmt) {
+            if ($match['dual']) {
+                $stmt->bind_param('sii', $clientId, $authId, $authId);
+            } else {
+                $stmt->bind_param('si', $clientId, $authId);
+            }
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            $pid = trim((string) ($row['insurance_provider_id'] ?? ''));
+            if ($pid !== '') {
+                return $pid;
+            }
+        }
+    }
+
+    // Fallback: auth → insurance without client_id filter (older / mismatched insurance rows).
     $sql = "
         SELECT ci.insurance_provider_id
         FROM client_auth ca
-        INNER JOIN client_insurance ci ON ca.insurance_id = ci.insurance_id AND ci.client_id = ?
+        INNER JOIN client_insurance ci ON ca.insurance_id = ci.insurance_id
         WHERE {$match['clause']}
         LIMIT 1
     ";
@@ -212,15 +241,65 @@ function session_rate_fetch_insurance_provider_for_auth(mysqli $conn, int $authI
         return null;
     }
     if ($match['dual']) {
-        $stmt->bind_param('sii', $clientId, $authId, $authId);
+        $stmt->bind_param('ii', $authId, $authId);
     } else {
-        $stmt->bind_param('si', $clientId, $authId);
+        $stmt->bind_param('i', $authId);
     }
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    $pid = trim((string)($row['insurance_provider_id'] ?? ''));
+    $pid = trim((string) ($row['insurance_provider_id'] ?? ''));
     return $pid !== '' ? $pid : null;
+}
+
+/**
+ * When payer cannot be resolved (or has no CPT mapping): No only if every
+ * non-archived mapping for the procedure code is Billable=No; otherwise Yes.
+ *
+ * @param string[] $procedureCodes
+ * @return 'Yes'|'No'
+ */
+function session_resolve_billable_by_code_consensus(mysqli $conn, array $procedureCodes): string
+{
+    if (!session_rate_psc_has_billable_column($conn)) {
+        return 'Yes';
+    }
+    foreach ($procedureCodes as $procedureCode) {
+        $procedureCode = strtoupper(trim((string) $procedureCode));
+        if ($procedureCode === '') {
+            continue;
+        }
+        // Do not require status=ACTIVE — inactive rows still indicate intent;
+        // prefer Active via ORDER in payer-specific lookup instead.
+        $sql = "
+            SELECT LOWER(TRIM(IFNULL(psc.billable, 'Yes'))) AS billable
+            FROM master_provider_service_code psc
+            INNER JOIN master_service_code sc ON psc.service_code_id = sc.code_id
+            WHERE UPPER(TRIM(sc.code)) = ?
+              AND (psc.archived = 0 OR psc.archived = '0' OR IFNULL(psc.archived, 0) = 0)
+        ";
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) {
+            continue;
+        }
+        $stmt->bind_param('s', $procedureCode);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $seen = [];
+        while ($res && ($row = $res->fetch_assoc())) {
+            $b = strtolower(trim((string) ($row['billable'] ?? 'yes')));
+            $seen[$b === 'no' || $b === 'n' || $b === '0' || $b === 'false' ? 'no' : 'yes'] = true;
+        }
+        $stmt->close();
+        if (!$seen) {
+            continue;
+        }
+        if (isset($seen['no']) && !isset($seen['yes'])) {
+            return 'No';
+        }
+        return 'Yes';
+    }
+    return 'Yes';
 }
 
 function session_rate_fetch_auth_billing_codes(mysqli $conn, int $authId): ?string
@@ -247,6 +326,131 @@ function session_rate_fetch_auth_billing_codes(mysqli $conn, int $authId): ?stri
     }
     $raw = trim((string)($row['billing_codes'] ?? ''));
     return $raw !== '' ? $raw : null;
+}
+
+function session_rate_psc_has_billable_column(mysqli $conn): bool
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $cached = false;
+    $r = @$conn->query("SHOW COLUMNS FROM `master_provider_service_code` LIKE 'billable'");
+    if ($r && $r->num_rows > 0) {
+        $cached = true;
+    }
+    if ($r) {
+        $r->free();
+    }
+    return $cached;
+}
+
+/** Pull leading CPT/HCPCS digits (e.g. 97151NB / 97153 - U2… → 97151 / 97153). */
+function session_rate_normalize_procedure_code($raw): string
+{
+    $raw = strtoupper(trim((string) $raw));
+    if ($raw === '') {
+        return '';
+    }
+    if (preg_match('/^(\d{4,5})/', $raw, $m)) {
+        return $m[1];
+    }
+    $tok = preg_split('/[\s\-]+/', $raw, 2);
+
+    return trim((string) ($tok[0] ?? $raw));
+}
+
+/**
+ * Resolve Billable (Yes/No) for a session.
+ * Prefer sessions.billable when present; else master_provider_service_code.billable
+ * for the auth's **insurance** provider (same as rate lookup — not staff provider_id).
+ * Defaults to Yes when unknown (so claim generation still runs).
+ *
+ * @param array $sessionRow sessions row (auth_id, client_id, service_code, auth_code, billable?)
+ * @return 'Yes'|'No'
+ */
+function session_resolve_billable(mysqli $conn, array $sessionRow): string
+{
+    if (array_key_exists('billable', $sessionRow) && $sessionRow['billable'] !== null && $sessionRow['billable'] !== '') {
+        $v = strtolower(trim((string) $sessionRow['billable']));
+        if (in_array($v, ['no', 'n', '0', 'false'], true)) {
+            return 'No';
+        }
+        if (in_array($v, ['yes', 'y', '1', 'true'], true)) {
+            return 'Yes';
+        }
+    }
+
+    if (!session_rate_psc_has_billable_column($conn)) {
+        return 'Yes';
+    }
+
+    $authId = (int) ($sessionRow['auth_id'] ?? 0);
+    $clientId = trim((string) ($sessionRow['client_id'] ?? ''));
+    $insuranceProviderId = null;
+    if ($authId > 0) {
+        $insuranceProviderId = session_rate_fetch_insurance_provider_for_auth($conn, $authId, $clientId);
+    }
+    if ($insuranceProviderId === null || $insuranceProviderId === '') {
+        $insuranceProviderId = trim((string) ($sessionRow['insurance_provider_id'] ?? ''));
+        if ($insuranceProviderId === '') {
+            $insuranceProviderId = null;
+        }
+    }
+
+    $authCode = trim((string) ($sessionRow['auth_code'] ?? ''));
+    $sc = trim((string) ($sessionRow['service_code'] ?? ''));
+    if ($authCode === '' && $sc !== '') {
+        $authCode = $sc;
+    }
+    $billingCodes = $authId > 0 ? session_rate_fetch_auth_billing_codes($conn, $authId) : null;
+    $candidates = session_rate_procedure_candidates($authCode, $billingCodes);
+    if ($sc !== '') {
+        $scCode = session_rate_parse_procedure_code($sc);
+        if ($scCode !== '' && !in_array($scCode, $candidates, true)) {
+            array_unshift($candidates, $scCode);
+        }
+    }
+    if (count($candidates) === 0) {
+        return 'Yes';
+    }
+
+    if ($insuranceProviderId === null || $insuranceProviderId === '') {
+        return session_resolve_billable_by_code_consensus($conn, $candidates);
+    }
+
+    foreach ($candidates as $procedureCode) {
+        $procedureCode = strtoupper(trim((string) $procedureCode));
+        if ($procedureCode === '') {
+            continue;
+        }
+        $sql = "
+            SELECT psc.billable
+            FROM master_provider_service_code psc
+            INNER JOIN master_service_code sc ON psc.service_code_id = sc.code_id
+            WHERE psc.provider_id = ?
+              AND UPPER(TRIM(sc.code)) = ?
+              AND psc.archived = 0
+            ORDER BY CASE WHEN UPPER(TRIM(IFNULL(psc.status, ''))) = 'ACTIVE' THEN 0 ELSE 1 END, psc.id DESC
+            LIMIT 1
+        ";
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) {
+            continue;
+        }
+        $stmt->bind_param('ss', $insuranceProviderId, $procedureCode);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row) {
+            continue;
+        }
+        $billable = strtolower(trim((string) ($row['billable'] ?? 'Yes')));
+        return in_array($billable, ['no', 'n', '0', 'false'], true) ? 'No' : 'Yes';
+    }
+
+    // Payer resolved but no mapping for this CPT — use code-wide consensus (No only if all are No).
+    return session_resolve_billable_by_code_consensus($conn, $candidates);
 }
 
 function session_rate_lookup_provider_mapping(mysqli $conn, string $providerId, string $procedureCode): ?array

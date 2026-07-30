@@ -9,6 +9,6 @@
 set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SHARED="$REPO_ROOT/migration/shared"
-mysql "$@" < "$SHARED/create_rbac_tables.sql"
-mysql "$@" < "$SHARED/create_auth_tokens_table.sql"
-echo "Applied: create_rbac_tables.sql, create_auth_tokens_table.sql"
+mysql "$@" < "$SHARED/20260729_222552_create_rbac_tables.sql"
+mysql "$@" < "$SHARED/20260405_113210_create_auth_tokens_table.sql"
+echo "Applied: 20260729_222552_create_rbac_tables.sql, 20260405_113210_create_auth_tokens_table.sql"

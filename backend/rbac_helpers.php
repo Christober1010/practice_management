@@ -10,6 +10,7 @@ if (!function_exists('rbac_mahaverse_perm_keys')) {
             'nav.dashboard','nav.scheduling','nav.clients','nav.staff','nav.users','nav.master_data','nav.manage_data','nav.reports','nav.launchpad','nav.billing',
             'view.dashboard','view.scheduling','view.clients','view.staff','view.users','view.master_data','view.manage_data','view.reports','view.launchpad','view.billing',
             'view.domains','view.programs','view.targets','view.prompts','view.behavior_categories','view.behaviors','view.provider','view.provider_service_code','view.service_code','view.diagnosis','view.locations','view.facility_types','view.treatment_types','view.document_types',
+            'view.reports_session_log','view.reports_session_import','view.reports_insurance_utilization',
             'clients.read','clients.write','staff.read','staff.write','users.read','users.write','scheduling.read','scheduling.write','reports.read','reports.write','master_data.read','master_data.write','manage_data.read','manage_data.write','billing.read','billing.write',
             'scheduling.session.create','scheduling.session.view','scheduling.session.notes','scheduling.session.update','scheduling.session.delete',
             'clients.create','clients.view','clients.update','clients.archive',
@@ -515,11 +516,24 @@ function rbac_filter_sessions_for_user($conn, $user, $sessions) {
     if ($role === 'admin') {
         return $sessions;
     }
+
+    $isExcluded = static function ($s) {
+        $exclude = strtolower(trim((string) ($s['exclude_session'] ?? $s['excludeSession'] ?? 'No')));
+        return $exclude === 'yes' || $exclude === '1' || $exclude === 'true';
+    };
+
+    // Org-wide client roster (e.g. Biller clients.view=all): all non-excluded sessions.
+    $rosterScope = rbac_client_roster_access_scope($user, $conn);
+    if ($rosterScope === 'all') {
+        return array_values(array_filter($sessions, static function ($s) use ($isExcluded) {
+            return !$isExcluded($s);
+        }));
+    }
+
     $allowedClients = array_flip(rbac_assigned_client_ids_for_user($conn, $user));
     $allowedStaff = array_flip(rbac_visible_staff_ids_for_user($conn, $user));
-    return array_values(array_filter($sessions, function ($s) use ($allowedClients, $allowedStaff) {
-        $exclude = strtolower(trim((string) ($s['exclude_session'] ?? $s['excludeSession'] ?? 'No')));
-        if ($exclude === 'yes' || $exclude === '1' || $exclude === 'true') {
+    return array_values(array_filter($sessions, function ($s) use ($allowedClients, $allowedStaff, $isExcluded) {
+        if ($isExcluded($s)) {
             return false;
         }
         $cid = (string) ($s['client_id'] ?? '');
@@ -539,6 +553,63 @@ function rbac_filter_sessions_for_user($conn, $user, $sessions) {
 }
 
 /**
+ * Roster visibility scope from Role permissions (UI-managed access_scope).
+ *
+ * Prefers clients.view (tri-state in Admin → Role permissions). Does not widen
+ * self view via clients.read=all (BCBA matrix keeps read=all, view=self).
+ *
+ * @param array $user
+ * @param mysqli|null $conn
+ * @return 'all'|'self'|null  null = no client roster access
+ */
+function rbac_client_roster_access_scope($user, $conn) {
+    if (!$user || empty($user['role'])) {
+        return null;
+    }
+    $role = strtolower((string) $user['role']);
+    if ($role === 'admin') {
+        return 'all';
+    }
+
+    $map = [];
+    try {
+        if ($conn && function_exists('rbac_tables_exist') && rbac_tables_exist($conn)) {
+            $map = rbac_fetch_grant_map_from_db($conn, $role);
+        }
+    } catch (Exception $e) {
+        $map = [];
+    }
+
+    if (count($map) > 0) {
+        if (isset($map['clients.view'])) {
+            return $map['clients.view'] === 'self' ? 'self' : 'all';
+        }
+        if (isset($map['clients.read'])) {
+            return $map['clients.read'] === 'self' ? 'self' : 'all';
+        }
+        if (
+            rbac_user_has_permission_key($role, 'clients.read', 'mahaverse', $map)
+            || rbac_user_has_permission_key($role, 'clients.view', 'mahaverse', $map)
+        ) {
+            return 'self';
+        }
+        return null;
+    }
+
+    // Legacy flat keys (no rbac_role_grants rows): biller org-wide; therapists assigned-only.
+    if (
+        !rbac_user_has_permission_key($role, 'clients.read', 'mahaverse')
+        && !rbac_user_has_permission_key($role, 'clients.view', 'mahaverse')
+    ) {
+        return null;
+    }
+    if ($role === 'biller') {
+        return 'all';
+    }
+    return 'self';
+}
+
+/**
  * @param mysqli $conn
  */
 function rbac_user_may_access_client_row($user, $conn, $clientId) {
@@ -549,14 +620,16 @@ function rbac_user_may_access_client_row($user, $conn, $clientId) {
     if ($role === 'admin') {
         return true;
     }
-    $map = rbac_fetch_grant_map_from_db($conn, $role);
-    if (
-        !rbac_user_has_permission_key($role, 'clients.read', 'mahaverse', $map)
-        && !rbac_user_has_permission_key($role, 'clients.view', 'mahaverse', $map)
-    ) {
+
+    $rosterScope = rbac_client_roster_access_scope($user, $conn);
+    if ($rosterScope === null) {
         return false;
     }
-    // Non-admin: only linked client or staff_client_assignments (never full roster).
+    if ($rosterScope === 'all') {
+        return true;
+    }
+
+    // self: linked client or staff_client_assignments only.
     $cid = rbac_resolve_client_id_for_user($user);
     if ($cid && (string) $cid === (string) $clientId) {
         return true;
@@ -601,43 +674,50 @@ function rbac_user_may_client_action($user, $conn, $action, $clientId = null) {
         return true;
     }
     $map = rbac_fetch_grant_map_from_db($conn, $role);
-    $perm = [
-        'create' => 'clients.create',
-        'update' => 'clients.update',
-        'archive' => 'clients.archive',
-        'view' => 'clients.view',
-    ][$action] ?? null;
-    if (!$perm) {
-        return false;
-    }
-    $scope = rbac_grant_scope_for_perm($map, $perm);
-    if ($scope === null) {
-        if ($action === 'view') {
+    // Legacy coarse write (literal grant only — do not treat update/archive as write).
+    $hasCoarseWrite = isset($map['clients.write']);
+
+    if ($action === 'view') {
+        $scope = rbac_grant_scope_for_perm($map, 'clients.view');
+        if ($scope === null) {
             return rbac_user_has_permission_key($role, 'clients.read', 'mahaverse', $map);
         }
-        if ($action === 'create') {
-            return rbac_user_has_permission_key($role, 'clients.create', 'mahaverse', $map)
-                || rbac_user_has_permission_key($role, 'clients.write', 'mahaverse', $map);
-        }
-        if ($action === 'update' || $action === 'archive') {
-            return rbac_user_has_permission_key($role, 'clients.update', 'mahaverse', $map)
-                || rbac_user_has_permission_key($role, 'clients.archive', 'mahaverse', $map)
-                || rbac_user_has_permission_key($role, 'clients.write', 'mahaverse', $map);
-        }
-        return false;
-    }
-    if ($scope === 'all') {
-        if ($action === 'create') {
+        if ($scope === 'all') {
             return true;
         }
         if (!$clientId) {
             return false;
         }
-        // Non-admin with scope "all" still cannot touch unassigned clients.
         return rbac_user_may_access_client_row($user, $conn, $clientId);
     }
+
     if ($action === 'create') {
+        if (!isset($map['clients.create']) && !$hasCoarseWrite) {
+            return false;
+        }
+        return true;
+    }
+
+    if ($action === 'update') {
+        if (!isset($map['clients.update']) && !$hasCoarseWrite) {
+            return false;
+        }
+        $scope = isset($map['clients.update']) ? $map['clients.update'] : 'all';
+    } elseif ($action === 'archive') {
+        // Archive must not be implied by Edit (clients.update).
+        if (!isset($map['clients.archive']) && !$hasCoarseWrite) {
+            return false;
+        }
+        $scope = isset($map['clients.archive']) ? $map['clients.archive'] : 'all';
+    } else {
         return false;
+    }
+
+    if ($scope === 'all') {
+        if (!$clientId) {
+            return false;
+        }
+        return true;
     }
     if (!$clientId) {
         return false;

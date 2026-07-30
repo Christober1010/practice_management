@@ -16,6 +16,8 @@ $authUser = requireAuth('scheduling.session.notes', 'mahaverse');
 
 mahaverse_require_helper('client_auth_units_helpers');
 mahaverse_require_helper('behavior_helpers');
+require_once __DIR__ . '/session_rate_lib.php';
+require_once __DIR__ . '/scheduling_session_lib.php';
 
 // Database credentials
 $host = "db5018419668.hosting-data.io";
@@ -426,21 +428,6 @@ function finalize_session_ready_to_bill_notes(mysqli $conn, string $clientId, in
     $authExisting = isset($row['authorized_hours']) ? (float)$row['authorized_hours'] : 0.0;
     $repairAuthDb = $hasAuthCol && $authExisting <= 0 && $newRendered > 0;
 
-    $cols = sessions_has_claim_columns_notes($conn);
-    $claimIdExisting = trim((string)($row['claim_id'] ?? ''));
-    $claimStatusExisting = trim((string)($row['claim_status'] ?? ''));
-
-    $nextClaimId = $claimIdExisting;
-    if ($cols['claim_id'] && $nextClaimId === '') {
-        $nextClaimId = build_claim_id_notes($sessionId, $row['start_utc'] ?? null);
-    }
-
-    $submitted = $cols['claim_status'] && stripos($claimStatusExisting, 'submitted') !== false;
-    $nextClaimStatus = $claimStatusExisting;
-    if ($cols['claim_status'] && !$submitted) {
-        $nextClaimStatus = 'Ready to Bill';
-    }
-
     $sets = ['`STATUS` = ?', 'rendered_hours = ?'];
     $types = 'sd';
     $bind = ['Rendered', $newRendered];
@@ -455,17 +442,6 @@ function finalize_session_ready_to_bill_notes(mysqli $conn, string $clientId, in
         $sets[] = 'authorized_hours = ?';
         $types .= 'd';
         $bind[] = $newRendered;
-    }
-
-    if ($cols['claim_id'] && $nextClaimId !== '') {
-        $sets[] = 'claim_id = ?';
-        $types .= 's';
-        $bind[] = $nextClaimId;
-    }
-    if ($cols['claim_status'] && !$submitted) {
-        $sets[] = 'claim_status = ?';
-        $types .= 's';
-        $bind[] = $nextClaimStatus !== '' ? $nextClaimStatus : 'Ready to Bill';
     }
 
     $sql = 'UPDATE sessions SET ' . implode(', ', $sets) . ' WHERE session_id = ? AND client_id = ?';
@@ -489,6 +465,26 @@ function finalize_session_ready_to_bill_notes(mysqli $conn, string $clientId, in
     $affected = $upd->affected_rows;
     $upd->close();
 
+    // Claim id/status from Billable (provider service mapping), not Exclude session.
+    ensure_session_claim_ready($conn, $sessionId, $row['start_utc'] ?? null);
+
+    $claimId = null;
+    $claimStatus = null;
+    $cols = sessions_has_claim_columns_notes($conn);
+    if ($cols['claim_id'] || $cols['claim_status']) {
+        $claimStmt = $conn->prepare('SELECT claim_id, claim_status FROM sessions WHERE session_id = ? LIMIT 1');
+        if ($claimStmt) {
+            $claimStmt->bind_param('i', $sessionId);
+            $claimStmt->execute();
+            $claimRow = $claimStmt->get_result()->fetch_assoc();
+            $claimStmt->close();
+            if ($claimRow) {
+                $claimId = $cols['claim_id'] ? ($claimRow['claim_id'] ?? null) : null;
+                $claimStatus = $cols['claim_status'] ? ($claimRow['claim_status'] ?? null) : null;
+            }
+        }
+    }
+
     $authSync = null;
     $authId = (int)($row['auth_id'] ?? 0);
     if ($authId > 0) {
@@ -497,8 +493,8 @@ function finalize_session_ready_to_bill_notes(mysqli $conn, string $clientId, in
 
     return [
         'session_id' => $sessionId,
-        'claim_id' => $cols['claim_id'] ? $nextClaimId : null,
-        'claim_status' => $cols['claim_status'] ? $nextClaimStatus : null,
+        'claim_id' => $claimId,
+        'claim_status' => $claimStatus,
         'rendered_hours' => $newRendered,
         'rows_affected' => $affected,
         'auth_units' => $authSync,

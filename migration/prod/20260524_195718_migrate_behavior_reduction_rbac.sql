@@ -1,5 +1,5 @@
 -- RBAC permissions for Behavior Reduction master data (safe to re-run)
--- Column names match rbac_permissions: perm_key, perm_group, app_scope (see create_rbac_tables.sql)
+-- Column names match rbac_permissions: perm_key, perm_group, app_scope (see 20260729_222552_create_rbac_tables.sql)
 
 INSERT INTO rbac_permissions (perm_key, label, perm_group, app_scope, sort_order) VALUES
 ('view.behavior_categories', 'Behavior Categories', 'mahaverse_view', 'mahaverse', 245),
@@ -8,7 +8,7 @@ INSERT INTO rbac_permissions (perm_key, label, perm_group, app_scope, sort_order
 ('master_data.behaviors', 'Data collection: Behaviors (manage)', 'mahaverse_action', 'mahaverse', 516)
 ON DUPLICATE KEY UPDATE label = VALUES(label), perm_group = VALUES(perm_group), sort_order = VALUES(sort_order);
 
--- Admin: grant new permissions
+-- Admin: all mahaverse permissions (includes new rows above if admin grant is rebuilt)
 INSERT INTO rbac_role_grants (role_name, permission_id, access_scope)
 SELECT 'admin', p.id, 'all'
 FROM rbac_permissions p
@@ -21,7 +21,7 @@ WHERE p.app_scope = 'mahaverse'
   )
 ON DUPLICATE KEY UPDATE access_scope = VALUES(access_scope);
 
--- BCBA: same pattern as domains/programs/targets
+-- BCBA: same pattern as domains/programs/targets (manage behaviors + view screens)
 INSERT INTO rbac_role_grants (role_name, permission_id, access_scope)
 SELECT 'bcba', p.id, 'all'
 FROM rbac_permissions p

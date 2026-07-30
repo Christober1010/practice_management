@@ -23,8 +23,8 @@ Before UI testing, confirm these are deployed to **mahaverse-backend-test**:
 
 **SQL migrations run on test DB:**
 
-- [ ] `create-behavior-reduction-tables.sql`
-- [ ] `migrate_behavior_reduction_rbac.sql`
+- [ ] `20260524_193000_create-behavior-reduction-tables.sql`
+- [ ] `20260524_195718_migrate_behavior_reduction_rbac.sql`
 
 **Quick API smoke (browser Network tab or curl):**
 

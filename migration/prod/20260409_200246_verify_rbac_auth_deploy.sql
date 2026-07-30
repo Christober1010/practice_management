@@ -1,6 +1,6 @@
--- verify_rbac_auth_deploy.sql
+-- 20260409_200246_verify_rbac_auth_deploy.sql
 -- Run against production (or staging) MySQL after deploying PHP and migrations.
--- Usage: mysql -u USER -p DATABASE < backend/scripts/verify_rbac_auth_deploy.sql
+-- Usage: mysql -u USER -p DATABASE < backend/scripts/20260409_200246_verify_rbac_auth_deploy.sql
 
 SELECT '--- Tables present ---' AS step;
 

@@ -1,7 +1,5 @@
 # Prod DB — applied migrations
 
-Mark each row when the script has been run against the **prod** database (`dbs14484433`).
+**Superseded by** [`MIGRATION-FOLLOWUP.md`](MIGRATION-FOLLOWUP.md).
 
-| Applied | Date | File | Notes |
-|---------|------|------|-------|
-| ⬜ | | | |
+Mark Prod columns and the **At a glance** / **Deploy / change log** sections there (`dbs14484433`).

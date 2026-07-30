@@ -18,7 +18,8 @@ test.describe("Manage Data", () => {
     expect(json.success).toBe(true);
   });
 
-  test("loads payer payments", async ({ page }) => {
+  // Nav item hidden — payer payments are on Session Log / Schedule Tracker.
+  test.skip("loads payer payments", async ({ page }) => {
     const paymentsResponse = waitForApi(page, "/reports.php");
 
     await gotoApp(page);

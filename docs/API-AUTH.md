@@ -1,6 +1,6 @@
 # Backend-test API authentication
 
-Mandatory Bearer token auth on all business endpoints. Login issues tokens stored in `AuthTokens` ([`migration/shared/create_auth_tokens_table.sql`](../migration/shared/create_auth_tokens_table.sql)).
+Mandatory Bearer token auth on all business endpoints. Login issues tokens stored in `AuthTokens` ([`migration/shared/20260405_113210_create_auth_tokens_table.sql`](../migration/shared/20260405_113210_create_auth_tokens_table.sql)).
 
 **Prerequisite:** Run migration on test DB — see [AUTH-PREREQ-TEST.md](AUTH-PREREQ-TEST.md).
 

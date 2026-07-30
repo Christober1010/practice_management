@@ -11,7 +11,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
-$authUser = requireAuth('scheduling.read', 'mahaverse');
+$authUser = requireAuthAny(['scheduling.read', 'billing.read'], 'mahaverse');
 
 $host = 'db5018419668.hosting-data.io';
 $user = 'dbu1183438';

@@ -102,13 +102,14 @@ export default function PermissionScopeToggle({
         <Select value={scopePick} onValueChange={setScopePick} disabled={controlsDisabled}>
           <SelectTrigger
             className={cn(
-              "shrink-0 border-slate-200",
-              compact ? "h-8 min-w-[7rem] text-xs" : "h-9 min-w-[7.5rem]"
+              // Override Select's default w-full so the control doesn't overflow the row.
+              "w-auto shrink-0 border-slate-200 focus:ring-offset-0",
+              compact ? "h-8 min-w-[6.5rem] text-xs" : "h-9 min-w-[6.5rem]"
             )}
           >
             <SelectValue placeholder="Scope" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="z-[200]">
             <SelectItem value="self">Self</SelectItem>
             <SelectItem value="all">All</SelectItem>
           </SelectContent>
@@ -121,7 +122,7 @@ export default function PermissionScopeToggle({
     <div
       className={cn(
         !compact &&
-          "flex flex-nowrap items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors border-slate-200/80 bg-white hover:border-slate-300 min-h-[2.75rem]",
+          "flex w-full min-w-0 flex-nowrap items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors border-slate-200/80 bg-white hover:border-slate-300 min-h-[2.75rem]",
         compact &&
           "flex flex-row flex-nowrap items-center gap-2 rounded-md px-1 py-0.5 transition-colors",
         modified &&

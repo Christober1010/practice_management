@@ -51,6 +51,8 @@ function session_log_sessions_columns(mysqli $conn): array
     $cached = [
         'claim_id' => false,
         'claim_status' => false,
+        'service_code' => false,
+        'auth_id' => false,
         'status_col' => 'STATUS',
     ];
     $r = @$conn->query('SHOW COLUMNS FROM `sessions`');
@@ -65,6 +67,12 @@ function session_log_sessions_columns(mysqli $conn): array
             if ($f === 'claim_status') {
                 $cached['claim_status'] = true;
             }
+            if ($f === 'service_code') {
+                $cached['service_code'] = true;
+            }
+            if ($f === 'auth_id') {
+                $cached['auth_id'] = true;
+            }
         }
         $r->free();
         if (!isset($names['STATUS']) && isset($names['status'])) {
@@ -72,6 +80,89 @@ function session_log_sessions_columns(mysqli $conn): array
         }
     }
     return $cached;
+}
+
+/**
+ * SQL ON fragment linking sessions.auth_id to client_auth (auth_id and/or id).
+ */
+function session_log_client_auth_on_session(mysqli $conn): string
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $hasAuthId = false;
+    $hasId = false;
+    $r = @$conn->query('SHOW COLUMNS FROM `client_auth`');
+    if ($r) {
+        while ($row = $r->fetch_assoc()) {
+            $f = (string)($row['Field'] ?? '');
+            if ($f === 'auth_id') {
+                $hasAuthId = true;
+            }
+            if ($f === 'id') {
+                $hasId = true;
+            }
+        }
+        $r->free();
+    }
+    if ($hasAuthId && $hasId) {
+        $cached = '(ca.auth_id = s.auth_id OR ca.id = s.auth_id)';
+    } elseif ($hasId && !$hasAuthId) {
+        $cached = 'ca.id = s.auth_id';
+    } else {
+        $cached = 'ca.auth_id = s.auth_id';
+    }
+    return $cached;
+}
+
+/**
+ * Correlated SELECT expressions for payer id/name from session auth → insurance.
+ * Returns ['id' => sql, 'name' => sql] or nulls when auth_id is unavailable.
+ */
+function session_log_payer_select_sql(mysqli $conn, bool $hasSessionAuthId): array
+{
+    if (!$hasSessionAuthId) {
+        return [
+            'id' => 'NULL AS payer_id',
+            'name' => 'NULL AS payer_name',
+        ];
+    }
+    $authOn = session_log_client_auth_on_session($conn);
+    $idSql = "(
+        SELECT COALESCE(
+            NULLIF(TRIM(ci.insurance_provider_id), ''),
+            CONCAT('ins:', ci.insurance_id)
+        )
+        FROM client_auth ca
+        INNER JOIN client_insurance ci ON ci.insurance_id = ca.insurance_id
+        WHERE {$authOn}
+          AND s.auth_id IS NOT NULL
+          AND (
+            IFNULL(CAST(s.client_id AS CHAR), '') = ''
+            OR ci.client_id = s.client_id
+          )
+        ORDER BY CASE WHEN ci.client_id = s.client_id THEN 0 ELSE 1 END
+        LIMIT 1
+    ) AS payer_id";
+    $nameSql = "(
+        SELECT COALESCE(
+            NULLIF(TRIM(mp.provider_name), ''),
+            NULLIF(TRIM(ci.insurance_provider), '')
+        )
+        FROM client_auth ca
+        INNER JOIN client_insurance ci ON ci.insurance_id = ca.insurance_id
+        LEFT JOIN master_providers mp ON mp.id = ci.insurance_provider_id
+        WHERE {$authOn}
+          AND s.auth_id IS NOT NULL
+          AND (
+            IFNULL(CAST(s.client_id AS CHAR), '') = ''
+            OR ci.client_id = s.client_id
+          )
+        ORDER BY CASE WHEN ci.client_id = s.client_id THEN 0 ELSE 1 END
+        LIMIT 1
+    ) AS payer_name";
+    return ['id' => $idSql, 'name' => $nameSql];
 }
 
 function session_log_table_exists(mysqli $conn): bool
@@ -294,6 +385,15 @@ function session_log_map_row(array $row): array
         'scheduled_hours' => isset($row['scheduled_hours']) ? (float)$row['scheduled_hours'] : null,
         'rendered_hours' => isset($row['rendered_hours']) ? (float)$row['rendered_hours'] : null,
         'auth_code' => $row['auth_code'] ?? null,
+        'service_code' => isset($row['service_code']) && trim((string)$row['service_code']) !== ''
+            ? trim((string)$row['service_code'])
+            : null,
+        'payer_id' => isset($row['payer_id']) && trim((string)$row['payer_id']) !== ''
+            ? trim((string)$row['payer_id'])
+            : null,
+        'payer_name' => isset($row['payer_name']) && trim((string)$row['payer_name']) !== ''
+            ? trim((string)$row['payer_name'])
+            : null,
         'location_address' => $row['location_address'] ?? null,
         'claim_id' => $row['claim_id'] ?? null,
         'claim_status' => $row['claim_status'] ?? null,
@@ -327,6 +427,8 @@ if ($method === 'GET') {
     $statusCol = $cols['status_col'];
     $claimIdSql = $cols['claim_id'] ? 's.claim_id' : 'NULL AS claim_id';
     $claimStatusSql = $cols['claim_status'] ? 's.claim_status' : 'NULL AS claim_status';
+    $serviceCodeSql = !empty($cols['service_code']) ? 's.service_code' : 'NULL AS service_code';
+    $payerSelect = session_log_payer_select_sql($conn, !empty($cols['auth_id']));
 
     if ($dosFrom === '' && $dosTo === '') {
         $dosTo = date('Y-m-d');
@@ -361,6 +463,9 @@ if ($method === 'GET') {
             s.start_utc,
             s.end_utc,
             s.auth_code,
+            {$serviceCodeSql},
+            {$payerSelect['id']},
+            {$payerSelect['name']},
             s.location_address,
             s.scheduled_hours,
             s.rendered_hours,

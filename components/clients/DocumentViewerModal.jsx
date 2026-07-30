@@ -81,7 +81,8 @@ export default function DocumentViewerModal({
   };
 
   const [viewBlobUrl, setViewBlobUrl] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const willFetchBlob = isDriveFile || !!uploadsRelPath;
+  const [loading, setLoading] = useState(willFetchBlob);
   const [error, setError] = useState(null);
   const [detectedContentType, setDetectedContentType] = useState(null);
 
@@ -102,7 +103,8 @@ export default function DocumentViewerModal({
   // Load file as blob for viewing (works for Drive + local proxy + avoids iframe/CORS weirdness)
   useEffect(() => {
     let currentBlobUrl = null;
-    
+    let cancelled = false;
+
     const shouldFetch = isOpen && (isDriveFile || !!uploadsRelPath);
     if (!shouldFetch) {
       setViewBlobUrl(null);
@@ -114,35 +116,39 @@ export default function DocumentViewerModal({
 
     setLoading(true);
     setError(null);
-    
+    setViewBlobUrl(null);
+    setDetectedContentType(null);
+
     mahaverseFetch(viewUrl)
-      .then(response => {
+      .then((response) => {
         if (!response.ok) {
           throw new Error('Failed to load file');
         }
         const ct = response.headers.get('content-type');
-        if (ct) setDetectedContentType(ct);
+        if (ct && !cancelled) setDetectedContentType(ct);
         return response.blob();
       })
-      .then(blob => {
+      .then((blob) => {
+        if (cancelled) return;
         const blobUrl = URL.createObjectURL(blob);
         currentBlobUrl = blobUrl;
         setViewBlobUrl(blobUrl);
         setLoading(false);
       })
-      .catch(err => {
+      .catch((err) => {
+        if (cancelled) return;
         console.error('View error:', err);
         setError(err.message);
         setLoading(false);
       });
 
-    // Cleanup blob URL on unmount or when component closes
     return () => {
+      cancelled = true;
       if (currentBlobUrl) {
         URL.revokeObjectURL(currentBlobUrl);
       }
     };
-  }, [isOpen, isDriveFile, viewUrl]);
+  }, [isOpen, isDriveFile, uploadsRelPath, viewUrl]);
 
   // Prefer blob URLs when we fetched them; otherwise fall back to direct URL.
   const effectiveViewUrl = viewBlobUrl || viewUrl;
@@ -225,27 +231,27 @@ export default function DocumentViewerModal({
 
         {/* Content: min-h-0 so flex child can shrink; iframe fills remaining height */}
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-4 bg-slate-50">
-          {canDisplayInline ? (
+          {loading ? (
+            <div className="flex flex-1 items-center justify-center min-h-[12rem]">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4" />
+                <p className="text-slate-600">Loading document…</p>
+              </div>
+            </div>
+          ) : error ? (
+            <div className="flex flex-1 flex-col items-center justify-center text-center p-8 min-h-[12rem]">
+              <p className="text-red-600 mb-4">Error loading document: {error}</p>
+              <Button
+                onClick={handleDownload}
+                className="bg-teal-600 hover:bg-teal-700"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download File
+              </Button>
+            </div>
+          ) : canDisplayInline ? (
             <div className="w-full min-h-0 flex-1 flex items-stretch justify-center">
-              {loading ? (
-                <div className="flex flex-1 items-center justify-center min-h-[12rem]">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600 mx-auto mb-4"></div>
-                    <p className="text-slate-600">Loading document...</p>
-                  </div>
-                </div>
-              ) : error ? (
-                <div className="flex flex-1 flex-col items-center justify-center text-center p-8 min-h-[12rem]">
-                  <p className="text-red-600 mb-4">Error loading document: {error}</p>
-                  <Button
-                    onClick={handleDownload}
-                    className="bg-teal-600 hover:bg-teal-700"
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Download File
-                  </Button>
-                </div>
-              ) : mimeType === 'application/pdf' ? (
+              {mimeType === 'application/pdf' ? (
                 <iframe
                   src={effectiveViewUrl}
                   className="w-full flex-1 min-h-[min(60vh,480px)] border border-slate-300 rounded-lg bg-white"
@@ -257,7 +263,6 @@ export default function DocumentViewerModal({
                   alt={filename}
                   className="max-w-full max-h-[min(70vh,720px)] w-auto h-auto object-contain rounded-lg shadow-lg mx-auto"
                   onError={(e) => {
-                    // If image fails to load, show error message
                     const target = e.target;
                     target.style.display = 'none';
                     const parent = target.parentElement;

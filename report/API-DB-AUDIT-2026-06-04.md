@@ -134,7 +134,7 @@ These should return **401** after full prod deploy:
 
 ### Before prod UI + API cutover
 
-1. Run on prod DB: `migration/shared/create_auth_tokens_table.sql` (if missing).
+1. Run on prod DB: `migration/shared/20260405_113210_create_auth_tokens_table.sql` (if missing).
 2. Deploy **entire** `backend/` + `.htaccess` to `mahaverse-backend-logics/`.
 3. Re-run ping; expect protected GETs → **401** without token.
 4. Fix `get-sessions.php` if still **500** with valid token:

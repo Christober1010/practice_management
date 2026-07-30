@@ -1,7 +1,5 @@
 # Test DB — applied migrations
 
-Mark each row when the script has been run against the **test** database (`dbs14649042`).
+**Superseded by** [`MIGRATION-FOLLOWUP.md`](MIGRATION-FOLLOWUP.md).
 
-| Applied | Date | File | Notes |
-|---------|------|------|-------|
-| ⬜ | | | |
+Mark Test columns and the **At a glance** / **Deploy / change log** sections there (`dbs14649042`).

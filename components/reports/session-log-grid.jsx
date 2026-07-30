@@ -12,6 +12,16 @@ import toast from "react-hot-toast";
 import SessionLogTable, { SESSION_LOG_STATUSES } from "./session-log-table";
 import { formatMoneyDisplay } from "./schedule-tracker-table-utils";
 import SessionImportModal from "@/components/scheduling/session-import-modal";
+import ReportFilterMultiSelect from "./report-filter-multi-select";
+import {
+  clientFilterKey,
+  clientOptionLabelFromRow,
+  rowMatchesClients,
+  rowMatchesStaff,
+  staffFilterKey,
+  staffOptionLabelFromRow,
+  uniquePersonOptionsFromRows,
+} from "./report-person-filter-utils";
 
 function defaultDosTo() {
   return new Date().toISOString().slice(0, 10);
@@ -124,6 +134,51 @@ function apFieldsDirty(sessionId, amounts, row) {
   });
 }
 
+/** Prefer sessions.service_code; fall back to billing/auth code when empty. */
+function serviceCodeFromRow(row) {
+  const sc = String(row.service_code ?? "").trim();
+  if (sc) return sc;
+  return String(row.auth_code ?? "").trim();
+}
+
+const PAYER_NAME_VALUE_PREFIX = "__payer__:";
+
+function payerFilterKey(row) {
+  const id = String(row.payer_id ?? "").trim();
+  if (id) return id;
+  const name = String(row.payer_name ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  return name ? `${PAYER_NAME_VALUE_PREFIX}${name}` : null;
+}
+
+function payerOptionLabelFromRow(row) {
+  const name = String(row.payer_name ?? "").trim();
+  if (name) return name;
+  const id = String(row.payer_id ?? "").trim();
+  if (id) return `Payer ${id.length > 10 ? `${id.slice(0, 8)}…` : id}`;
+  return "Unknown payer";
+}
+
+function rowMatchesPayers(row, selectedIds) {
+  if (!selectedIds.length) return true;
+  const rowKey = payerFilterKey(row);
+  if (!rowKey) return false;
+  return selectedIds.some((sel) => {
+    if (rowKey === sel) return true;
+    if (sel.startsWith(PAYER_NAME_VALUE_PREFIX)) {
+      const selName = sel.slice(PAYER_NAME_VALUE_PREFIX.length);
+      const rowName = String(row.payer_name ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+      return rowName === selName;
+    }
+    return false;
+  });
+}
+
 export default function SessionLogGrid({ onRegisterReload, onLoadingChange }) {
   const [allRows, setAllRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -133,8 +188,10 @@ export default function SessionLogGrid({ onRegisterReload, onLoadingChange }) {
   const [amounts, setAmounts] = useState({});
   const [filterDosFrom, setFilterDosFrom] = useState(defaultDosFrom);
   const [filterDosTo, setFilterDosTo] = useState(defaultDosTo);
-  const [filterClient, setFilterClient] = useState("");
-  const [filterStaff, setFilterStaff] = useState("");
+  const [selectedClientIds, setSelectedClientIds] = useState([]);
+  const [selectedStaffIds, setSelectedStaffIds] = useState([]);
+  const [selectedServiceCodes, setSelectedServiceCodes] = useState([]);
+  const [selectedPayerIds, setSelectedPayerIds] = useState([]);
   const [filterCheckNumber, setFilterCheckNumber] = useState("");
   const [activeTab, setActiveTab] = useState(tabSlug("Scheduled"));
   const [selectedRowIds, setSelectedRowIds] = useState([]);
@@ -184,23 +241,74 @@ export default function SessionLogGrid({ onRegisterReload, onLoadingChange }) {
     onLoadingChange?.(loading);
   }, [loading, onLoadingChange]);
 
+  const clientOptionsFromRows = useMemo(
+    () =>
+      uniquePersonOptionsFromRows(allRows, {
+        keyFn: clientFilterKey,
+        labelFn: clientOptionLabelFromRow,
+      }),
+    [allRows]
+  );
+
+  useEffect(() => {
+    const valid = new Set(clientOptionsFromRows.map((o) => o.value));
+    setSelectedClientIds((prev) => prev.filter((id) => valid.has(id)));
+  }, [clientOptionsFromRows]);
+
+  const staffOptionsFromRows = useMemo(
+    () =>
+      uniquePersonOptionsFromRows(allRows, {
+        keyFn: staffFilterKey,
+        labelFn: staffOptionLabelFromRow,
+      }),
+    [allRows]
+  );
+
+  useEffect(() => {
+    const valid = new Set(staffOptionsFromRows.map((o) => o.value));
+    setSelectedStaffIds((prev) => prev.filter((id) => valid.has(id)));
+  }, [staffOptionsFromRows]);
+
+  const serviceCodeOptionsFromRows = useMemo(() => {
+    const codes = new Set();
+    for (const r of allRows) {
+      const c = serviceCodeFromRow(r);
+      if (c) codes.add(c);
+    }
+    return Array.from(codes)
+      .sort((a, b) => a.localeCompare(b))
+      .map((c) => ({ value: c, label: c }));
+  }, [allRows]);
+
+  useEffect(() => {
+    const valid = new Set(serviceCodeOptionsFromRows.map((o) => o.value));
+    setSelectedServiceCodes((prev) => prev.filter((c) => valid.has(c)));
+  }, [serviceCodeOptionsFromRows]);
+
+  const payerOptionsFromRows = useMemo(
+    () =>
+      uniquePersonOptionsFromRows(allRows, {
+        keyFn: payerFilterKey,
+        labelFn: payerOptionLabelFromRow,
+      }),
+    [allRows]
+  );
+
+  useEffect(() => {
+    const valid = new Set(payerOptionsFromRows.map((o) => o.value));
+    setSelectedPayerIds((prev) => prev.filter((id) => valid.has(id)));
+  }, [payerOptionsFromRows]);
+
   const filteredBySearch = useMemo(() => {
-    const clientQ = filterClient.trim().toLowerCase();
-    const staffQ = filterStaff.trim().toLowerCase();
     const checkQ = filterCheckNumber.trim().toLowerCase();
     return allRows.filter((row) => {
-      if (clientQ) {
-        const name = `${row.client_first_name || ""} ${row.client_last_name || ""}`
-          .trim()
-          .toLowerCase();
-        if (!name.includes(clientQ)) return false;
+      if (!rowMatchesClients(row, selectedClientIds, allRows)) return false;
+      if (!rowMatchesStaff(row, selectedStaffIds, allRows)) return false;
+      if (selectedServiceCodes.length > 0) {
+        const code = serviceCodeFromRow(row);
+        if (!code || !selectedServiceCodes.includes(code)) return false;
       }
-      if (staffQ) {
-        const name = `${row.staff_first_name || ""} ${row.staff_last_name || ""} ${row.provider_name || ""}`
-          .trim()
-          .toLowerCase();
-        if (!name.includes(staffQ)) return false;
-      }
+      if (!rowMatchesPayers(row, selectedPayerIds)) return false;
       if (checkQ) {
         const pk = String(row.session_id);
         const ck = String(amounts[pk]?.check_number ?? row.check_number ?? "")
@@ -210,7 +318,15 @@ export default function SessionLogGrid({ onRegisterReload, onLoadingChange }) {
       }
       return true;
     });
-  }, [allRows, filterClient, filterStaff, filterCheckNumber, amounts]);
+  }, [
+    allRows,
+    selectedClientIds,
+    selectedStaffIds,
+    selectedServiceCodes,
+    selectedPayerIds,
+    filterCheckNumber,
+    amounts,
+  ]);
 
   const counts = useMemo(() => {
     const c = Object.fromEntries(SESSION_LOG_STATUSES.map((s) => [s, 0]));
@@ -436,22 +552,76 @@ export default function SessionLogGrid({ onRegisterReload, onLoadingChange }) {
                 onChange={(e) => setFilterDosTo(e.target.value)}
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-[12rem] w-full sm:w-52">
               <Label className="text-xs text-slate-600">Client</Label>
-              <Input
-                className={inputFilterClass}
-                placeholder="Search client…"
-                value={filterClient}
-                onChange={(e) => setFilterClient(e.target.value)}
+              <ReportFilterMultiSelect
+                options={clientOptionsFromRows}
+                selected={selectedClientIds}
+                onChange={setSelectedClientIds}
+                placeholder={
+                  clientOptionsFromRows.length === 0
+                    ? "No clients in loaded rows"
+                    : "All clients"
+                }
+                disabled={loading || clientOptionsFromRows.length === 0}
+                searchPlaceholder="Search clients…"
+                emptySearchMessage="No clients found"
+                triggerClassName="h-8 text-xs bg-white"
+                searchInputClassName="h-8 text-xs"
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 min-w-[12rem] w-full sm:w-52">
               <Label className="text-xs text-slate-600">Staff</Label>
-              <Input
-                className={inputFilterClass}
-                placeholder="Search staff…"
-                value={filterStaff}
-                onChange={(e) => setFilterStaff(e.target.value)}
+              <ReportFilterMultiSelect
+                options={staffOptionsFromRows}
+                selected={selectedStaffIds}
+                onChange={setSelectedStaffIds}
+                placeholder={
+                  staffOptionsFromRows.length === 0
+                    ? "No staff in loaded rows"
+                    : "All staff"
+                }
+                disabled={loading || staffOptionsFromRows.length === 0}
+                searchPlaceholder="Search staff…"
+                emptySearchMessage="No staff found"
+                triggerClassName="h-8 text-xs bg-white"
+                searchInputClassName="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-1 min-w-[12rem] w-full sm:w-52">
+              <Label className="text-xs text-slate-600">Service code</Label>
+              <ReportFilterMultiSelect
+                options={serviceCodeOptionsFromRows}
+                selected={selectedServiceCodes}
+                onChange={setSelectedServiceCodes}
+                placeholder={
+                  serviceCodeOptionsFromRows.length === 0
+                    ? "No codes in loaded rows"
+                    : "All service codes"
+                }
+                disabled={loading || serviceCodeOptionsFromRows.length === 0}
+                searchPlaceholder="Search codes…"
+                emptySearchMessage="No codes found"
+                triggerClassName="h-8 text-xs bg-white"
+                searchInputClassName="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-1 min-w-[12rem] w-full sm:w-52">
+              <Label className="text-xs text-slate-600">Payer</Label>
+              <ReportFilterMultiSelect
+                options={payerOptionsFromRows}
+                selected={selectedPayerIds}
+                onChange={setSelectedPayerIds}
+                placeholder={
+                  payerOptionsFromRows.length === 0
+                    ? "No payers in loaded rows"
+                    : "All payers"
+                }
+                disabled={loading || payerOptionsFromRows.length === 0}
+                searchPlaceholder="Search payers…"
+                emptySearchMessage="No payers found"
+                triggerClassName="h-8 text-xs bg-white"
+                searchInputClassName="h-8 text-xs"
               />
             </div>
             {showCheckFilter && (

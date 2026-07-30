@@ -103,12 +103,13 @@ export default function AppSidebar({
       icon: FolderOpen,
       color: "text-amber-600",
     },
-    {
-      id: "payerPayments",
-      label: "Payer Payments",
-      icon: Shield,
-      color: "text-emerald-600",
-    },
+    // Hidden for now — payer payments live on Session Log / Schedule Tracker.
+    // {
+    //   id: "payerPayments",
+    //   label: "Payer Payments",
+    //   icon: Shield,
+    //   color: "text-emerald-600",
+    // },
     {
       id: "provider",
       label: "Manage Providers",
@@ -275,7 +276,7 @@ export default function AppSidebar({
         subItems: manageDataSubItemsFiltered,
       });
     }
-    if (can(PERM.VIEW_REPORTS) && reportsSubItemsFiltered.length > 0) {
+    if (reportsSubItemsFiltered.length > 0) {
       push({
         id: "reports",
         label: "Reports",

@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Eye, EyeOff, Shield, Heart } from "lucide-react";
+import { Eye, EyeOff, Shield, Heart, Check } from "lucide-react";
 import DashboardLayout from "@/components/layout/dashboard-layout";
 import LogoutConfirmationModal from "@/components/launchpad/LogoutConfirmationModal";
 import img from "../../public/favicon.ico";
@@ -91,6 +91,14 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [otp, setOtp] = useState("");
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  // react-hot-toast can stay paused forever (hover / nested Toasters); keep welcome local.
+  const [welcomeMessage, setWelcomeMessage] = useState(null);
+
+  useEffect(() => {
+    if (!welcomeMessage) return;
+    const t = setTimeout(() => setWelcomeMessage(null), 4000);
+    return () => clearTimeout(t);
+  }, [welcomeMessage]);
 
   // Check for existing session on component mount
   useEffect(() => {
@@ -258,18 +266,8 @@ export default function LoginPage() {
         // Set user state to trigger dashboard render
         setUser(data.user);
 
-        // Defer toast until after login UI (and its Toaster) unmounts so the
-        // root <Toaster /> owns it; otherwise dismiss can get stuck paused.
         const welcomeName = data.user.first_name || data.user.username || "there";
-        const welcomeId = `welcome-${data.user.id || welcomeName}`;
-        setTimeout(() => {
-          toast.success(`Welcome back, ${welcomeName}!`, {
-            id: welcomeId,
-            duration: 4000,
-          });
-          // Belt-and-suspenders: clear even if hover/pause left the toast stuck
-          setTimeout(() => toast.dismiss(welcomeId), 4500);
-        }, 0);
+        setWelcomeMessage(`Welcome back, ${welcomeName}!`);
 
         // If we were asked to redirect (e.g., Launchpad sync), navigate after login.
         const params = new URLSearchParams(
@@ -301,11 +299,9 @@ export default function LoginPage() {
             localStorage.setItem("auth_expires_at", lpData.expires_at);
             launchpadOk = true;
 
-            toast.success(
-              `Welcome, ${lpData.user?.username || "Staff"}!`,
-              { id: "welcome-launchpad", duration: 4000 }
+            setWelcomeMessage(
+              `Welcome, ${lpData.user?.username || "Staff"}!`
             );
-            setTimeout(() => toast.dismiss("welcome-launchpad"), 4500);
 
             const params = new URLSearchParams(
               typeof window !== "undefined" ? window.location.search || "" : ""
@@ -364,6 +360,7 @@ export default function LoginPage() {
     dispatch(setClients([]));
 
     setUser(null);
+    setWelcomeMessage(null);
     setEmail("");
     setPassword("");
     setLoginError("");
@@ -498,6 +495,20 @@ export default function LoginPage() {
           onConfirm={confirmLogout}
           onCancel={() => setIsLogoutModalOpen(false)}
         />
+        {welcomeMessage ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="pointer-events-none fixed left-1/2 top-4 z-[9999] -translate-x-1/2"
+          >
+            <div className="pointer-events-none flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-md">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
+                <Check className="h-3 w-3" strokeWidth={3} />
+              </span>
+              {welcomeMessage}
+            </div>
+          </div>
+        ) : null}
       </>
     );
   }

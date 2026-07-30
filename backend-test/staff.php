@@ -977,7 +977,7 @@ function handleUpdateStaff($conn)
                 $docStmt->close();
             } elseif (count($newDocsPayload) > 0) {
                 $documentsTableMissing = true;
-                error_log('staff_documents: table missing but request included documents; run create_staff_documents_table.sql');
+                error_log('staff_documents: table missing but request included documents; run 20260325_205126_create_staff_documents_table.sql');
             }
         }
 
@@ -987,7 +987,7 @@ function handleUpdateStaff($conn)
         }
         if ($documentsTableMissing) {
             $updateResponse["documents_table_missing"] = true;
-            $updateResponse["documents_hint"] = "Create table staff_documents (see migration/shared/create_staff_documents_table.sql).";
+            $updateResponse["documents_hint"] = "Create table staff_documents (see migration/shared/20260325_205126_create_staff_documents_table.sql).";
         }
         echo json_encode($updateResponse);
     } else {

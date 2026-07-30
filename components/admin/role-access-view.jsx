@@ -433,7 +433,7 @@ export default function RoleAccessView() {
         <CardHeader>
           <CardTitle>Role access</CardTitle>
           <CardDescription>
-            Run SQL migrations (<code className="text-xs">backend/create_rbac_tables.sql</code> or Launchpad equivalent), then reload.
+            Run SQL migrations (<code className="text-xs">migration/shared/20260729_222552_create_rbac_tables.sql</code> or Launchpad equivalent), then reload.
           </CardDescription>
         </CardHeader>
       </Card>

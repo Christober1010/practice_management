@@ -1,5 +1,5 @@
 -- Client intake signature/file attachments (Drive or local storage references).
--- Run after create_client_intake_packets_table.sql on Launchpad prod and test DBs.
+-- Run after 20260629_214125_create_client_intake_packets_table.sql on Launchpad prod and test DBs.
 
 CREATE TABLE IF NOT EXISTS ClientIntakeAttachments (
   attachment_id INT AUTO_INCREMENT PRIMARY KEY,

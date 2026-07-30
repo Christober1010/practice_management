@@ -85,7 +85,7 @@ export default function PermissionModule({
     <AccordionItem
       value={moduleId}
       className={cn(
-        "rounded-xl border border-slate-200/90 bg-slate-50/40 shadow-sm border-b-0",
+        "rounded-xl border border-slate-200/90 bg-slate-50/40 shadow-sm border-b-0 min-w-0",
         "transition-shadow duration-200 data-[state=open]:shadow-md"
       )}
     >
@@ -149,8 +149,8 @@ export default function PermissionModule({
         </div>
       </AccordionPrimitive.Header>
 
-      <AccordionContent className="px-3 pb-3 pt-2">
-        <div className="flex flex-col gap-2">
+      <AccordionContent className="px-3 pb-3 pt-2 data-[state=open]:overflow-visible">
+        <div className="flex min-w-0 flex-col gap-2">
           {detailRows.length > 0 ? (
             <>
               {masterRows.length > 0 ? (
