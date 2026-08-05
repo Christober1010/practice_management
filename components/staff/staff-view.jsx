@@ -106,7 +106,7 @@ export default function StaffView({ userRole }) {
   const allowStaffArchive = allowsStaffArchive(canAny);
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("Active");
   const [typeFilter, setTypeFilter] = useState("all");
   const [showArchived, setShowArchived] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);

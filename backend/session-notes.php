@@ -51,13 +51,98 @@ function ensureSessionEntryTable($conn) {
         created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         PRIMARY KEY (id),
-        UNIQUE KEY uniq_client_session_date (client_id, session_date),
+        UNIQUE KEY uniq_client_session_id (client_id, session_id),
         KEY idx_session_id (session_id),
+        KEY idx_note_entry_client (client_id),
+        KEY idx_client_session_date (client_id, session_date),
         CONSTRAINT fk_session_entry_client FOREIGN KEY (client_id) REFERENCES clients (client_id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
     if (!$conn->query($sql)) {
         throw new Exception("Failed to ensure client_session_note_entries table: " . $conn->error);
     }
+
+    // Existing DBs: InnoDB may use uniq_client_session_date as the FK support
+    // index for client_id — add a client_id KEY + new unique BEFORE dropping it.
+    $idx = @$conn->query("SHOW INDEX FROM `client_session_note_entries` WHERE Key_name = 'idx_note_entry_client'");
+    if ($idx && $idx->num_rows === 0) {
+        $idx->free();
+        @$conn->query('ALTER TABLE `client_session_note_entries` ADD KEY `idx_note_entry_client` (`client_id`)');
+    } elseif ($idx) {
+        $idx->free();
+    }
+    $idx = @$conn->query("SHOW INDEX FROM `client_session_note_entries` WHERE Key_name = 'uniq_client_session_id'");
+    if ($idx && $idx->num_rows === 0) {
+        $idx->free();
+        @$conn->query(
+            'ALTER TABLE `client_session_note_entries` ADD UNIQUE KEY `uniq_client_session_id` (`client_id`, `session_id`)'
+        );
+    } elseif ($idx) {
+        $idx->free();
+    }
+    $idx = @$conn->query("SHOW INDEX FROM `client_session_note_entries` WHERE Key_name = 'uniq_client_session_date'");
+    if ($idx && $idx->num_rows > 0) {
+        $idx->free();
+        @$conn->query('ALTER TABLE `client_session_note_entries` DROP INDEX `uniq_client_session_date`');
+    } elseif ($idx) {
+        $idx->free();
+    }
+}
+
+/**
+ * Find note entry for a client session.
+ * Prefer session_id match; only fall back to a legacy date row with NULL session_id.
+ */
+function find_session_note_entry_row(mysqli $conn, string $clientId, string $sessionDate, ?string $sessionId): ?array
+{
+    if ($sessionId !== null && $sessionId !== '') {
+        $stmt = $conn->prepare('
+            SELECT id, client_id, session_date, session_id, payload, created_at, updated_at
+            FROM client_session_note_entries
+            WHERE client_id = ? AND CAST(session_id AS CHAR) = ?
+            LIMIT 1
+        ');
+        if (!$stmt) {
+            throw new Exception('Failed to prepare statement: ' . $conn->error);
+        }
+        $stmt->bind_param('ss', $clientId, $sessionId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($row) {
+            return $row;
+        }
+
+        // Legacy: one note per client+date with no session_id — claimable by first linked session.
+        $stmt = $conn->prepare('
+            SELECT id, client_id, session_date, session_id, payload, created_at, updated_at
+            FROM client_session_note_entries
+            WHERE client_id = ? AND session_date = ? AND (session_id IS NULL OR TRIM(session_id) = \'\')
+            LIMIT 1
+        ');
+        if (!$stmt) {
+            throw new Exception('Failed to prepare statement: ' . $conn->error);
+        }
+        $stmt->bind_param('ss', $clientId, $sessionDate);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return $row ?: null;
+    }
+
+    $stmt = $conn->prepare('
+        SELECT id, client_id, session_date, session_id, payload, created_at, updated_at
+        FROM client_session_note_entries
+        WHERE client_id = ? AND session_date = ? AND (session_id IS NULL OR TRIM(session_id) = \'\')
+        LIMIT 1
+    ');
+    if (!$stmt) {
+        throw new Exception('Failed to prepare statement: ' . $conn->error);
+    }
+    $stmt->bind_param('ss', $clientId, $sessionDate);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row ?: null;
 }
 
 function handleGetTrials($conn, $clientId, $targetId, $sessionDate) {
@@ -98,24 +183,13 @@ function handleGetTrials($conn, $clientId, $targetId, $sessionDate) {
     echo json_encode(['success' => true, 'data' => $trials]);
 }
 
-function handleGetSessionEntry($conn, $clientId, $sessionDate) {
+function handleGetSessionEntry($conn, $clientId, $sessionDate, $sessionId = null) {
     ensureSessionEntryTable($conn);
 
-    $stmt = $conn->prepare("
-        SELECT id, client_id, session_date, session_id, payload, created_at, updated_at
-        FROM client_session_note_entries
-        WHERE client_id = ? AND session_date = ?
-        LIMIT 1
-    ");
-    if (!$stmt) {
-        throw new Exception("Failed to prepare statement: " . $conn->error);
-    }
-
-    $stmt->bind_param("ss", $clientId, $sessionDate);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $row = $result->fetch_assoc();
-    $stmt->close();
+    $sessionIdNorm = $sessionId !== null && trim((string)$sessionId) !== ''
+        ? (string)$sessionId
+        : null;
+    $row = find_session_note_entry_row($conn, (string)$clientId, (string)$sessionDate, $sessionIdNorm);
 
     if (!$row) {
         echo json_encode(['success' => true, 'data' => null]);
@@ -185,6 +259,7 @@ function handleGet($conn) {
     $clientId = $_GET['client_id'] ?? null;
     $targetId = $_GET['target_id'] ?? null;
     $sessionDate = $_GET['session_date'] ?? date('Y-m-d');
+    $sessionId = $_GET['session_id'] ?? null;
 
     $authU = getAuthenticatedUser();
     if ($authU && $clientId && !rbac_user_may_access_client_row($authU, $conn, (string) $clientId)) {
@@ -204,7 +279,7 @@ function handleGet($conn) {
         return;
     }
 
-    handleGetSessionEntry($conn, $clientId, $sessionDate);
+    handleGetSessionEntry($conn, $clientId, $sessionDate, $sessionId);
 }
 
 /**
@@ -301,19 +376,7 @@ function persist_session_note_entry(mysqli $conn, array $input): string
         throw new Exception('Failed to encode session_notes payload');
     }
 
-    $existingStmt = $conn->prepare('
-        SELECT id FROM client_session_note_entries
-        WHERE client_id = ? AND session_date = ?
-        LIMIT 1
-    ');
-    if (!$existingStmt) {
-        throw new Exception('Failed to prepare statement: ' . $conn->error);
-    }
-    $existingStmt->bind_param('ss', $clientId, $sessionDate);
-    $existingStmt->execute();
-    $existingResult = $existingStmt->get_result();
-    $existingRow = $existingResult->fetch_assoc();
-    $existingStmt->close();
+    $existingRow = find_session_note_entry_row($conn, $clientId, $sessionDate, $sessionId);
 
     if ($existingRow) {
         if ($sessionId !== null) {
@@ -428,7 +491,10 @@ function finalize_session_ready_to_bill_notes(mysqli $conn, string $clientId, in
     $authExisting = isset($row['authorized_hours']) ? (float)$row['authorized_hours'] : 0.0;
     $repairAuthDb = $hasAuthCol && $authExisting <= 0 && $newRendered > 0;
 
-    $sets = ['`STATUS` = ?', 'rendered_hours = ?'];
+    $statusCol = function_exists('sessions_status_column')
+        ? sessions_status_column($conn)
+        : 'STATUS';
+    $sets = ["`{$statusCol}` = ?", 'rendered_hours = ?'];
     $types = 'sd';
     $bind = ['Rendered', $newRendered];
 

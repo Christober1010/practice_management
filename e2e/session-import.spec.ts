@@ -23,7 +23,7 @@ async function openSessionImport(page: import("@playwright/test").Page) {
   await clickSidebar(page, "Reports");
   await clickSidebar(page, "Session Import");
   await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
-  await expect(page.getByText("Session Import (External)").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Session Import" }).first()).toBeVisible();
   const res = await trackerResponse;
   expect(res.url()).toContain("context=schedule_tracker");
   const json = await res.json();

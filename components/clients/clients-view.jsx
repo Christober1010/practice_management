@@ -114,6 +114,7 @@ const CLIENT_STATUS_OPTIONS = [
   "Initial Authorization",
   "Active Treatment",
   "Reauthorization",
+  "Service Terminated",
 ];
 
 function generateUUID() {
@@ -167,7 +168,7 @@ export default function ClientsView({ userRole }) {
   // UI-only state
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilters, setStatusFilters] = useState([]);
-  const [activeInactiveFilter, setActiveInactiveFilter] = useState("all");
+  const [activeInactiveFilter, setActiveInactiveFilter] = useState("active");
   const [modalInitialTab, setModalInitialTab] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -502,6 +503,8 @@ export default function ClientsView({ userRole }) {
         return "bg-emerald-100 text-emerald-800";
       case "Reauthorization":
         return "bg-violet-100 text-violet-800";
+      case "Service Terminated":
+        return "bg-rose-100 text-rose-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -2180,36 +2183,6 @@ export default function ClientsView({ userRole }) {
                                                       </p>
                                                     </div>
                                                   </div>
-
-                                                  {Array.isArray(auth.ready_to_bill_sessions) &&
-                                                    auth.ready_to_bill_sessions.length > 0 && (
-                                                      <div className="mt-4 pt-3 border-t border-slate-200">
-                                                        <p className="text-green-700 mb-2 text-sm font-semibold">
-                                                          Completed sessions (Ready to Bill)
-                                                        </p>
-                                                        <div className="space-y-1 text-sm">
-                                                          {auth.ready_to_bill_sessions.map(
-                                                            (sess) => (
-                                                              <div
-                                                                key={sess.session_id}
-                                                                className="flex flex-wrap justify-between gap-2 text-slate-700"
-                                                              >
-                                                                <span>
-                                                                  {sess.service_date}
-                                                                </span>
-                                                                <span>
-                                                                  {sess.units} unit
-                                                                  {sess.units === 1 ? "" : "s"}
-                                                                  {sess.hours != null
-                                                                    ? ` (${sess.hours} hr)`
-                                                                    : ""}
-                                                                </span>
-                                                              </div>
-                                                            ),
-                                                          )}
-                                                        </div>
-                                                      </div>
-                                                    )}
                                                 </div>
                                               );
                                             },

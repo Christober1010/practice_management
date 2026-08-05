@@ -667,9 +667,12 @@ function import_billing_codes_match($billingCodes, $serviceCode)
     if ($raw === $svc) {
         return true;
     }
+    // Exact token match only. Do NOT use prefix matching (e.g. str_starts_with):
+    // billing "97155NB" must not match import service code "97155" when both
+    // auth rows share the same authorization number.
     foreach (preg_split('/[,\s]+/', $raw) as $token) {
         $token = trim($token);
-        if ($token === $svc || str_starts_with($token, $svc)) {
+        if ($token !== '' && $token === $svc) {
             return true;
         }
     }
@@ -921,7 +924,7 @@ function import_build_session_payload(array $parsed, array $resolved): array
         'quickNote' => $parsed['quickNote'],
         'status' => $parsed['status'],
         'excludeSession' => $parsed['excludeSession'] ?? 'No',
-        'serviceType' => $parsed['serviceType'] ?? 'Indirect',
+        'serviceType' => $parsed['serviceType'] ?? 'Direct',
         'scheduled_hours' => $parsed['scheduledHours'],
         'rendered_hours' => $parsed['renderedHours'],
         'recurring' => ['frequency' => 'No'],

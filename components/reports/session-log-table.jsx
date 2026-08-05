@@ -86,7 +86,7 @@ const PAYMENT_FIELD_MAP = {
   ap_date: "ap_date",
 };
 
-function columnsForStatus(activeStatus) {
+function columnsForStatus(activeStatus, { hideMiscAndDiff = false } = {}) {
   const base = [
     "dos",
     "client",
@@ -96,11 +96,13 @@ function columnsForStatus(activeStatus) {
     "rendered_hours",
   ];
   if (activeStatus === "Rendered") {
-    base.push("misc_hrs", "diff");
+    if (!hideMiscAndDiff) base.push("misc_hrs", "diff");
   } else if (activeStatus === "Pending Payment") {
-    base.push("misc_hrs", "diff", ...PAYMENT_MIDDLE);
+    if (!hideMiscAndDiff) base.push("misc_hrs", "diff");
+    base.push(...PAYMENT_MIDDLE);
   } else if (activeStatus === "Received Payment") {
-    base.push("misc_hrs", "diff", ...RECEIVED_PAYMENT_MIDDLE);
+    if (!hideMiscAndDiff) base.push("misc_hrs", "diff");
+    base.push(...RECEIVED_PAYMENT_MIDDLE);
   }
   base.push("location", "claim_id", "claim_status");
   return base;
@@ -213,8 +215,9 @@ export default function SessionLogTable({
   amounts,
   setPaymentField,
   inputFilterClass,
+  hideMiscAndDiff = false,
 }) {
-  const columns = columnsForStatus(activeStatus);
+  const columns = columnsForStatus(activeStatus, { hideMiscAndDiff });
   const totalColCount = columns.length + (showRowCheckboxes ? 1 : 0);
   const firstSumIdx = columns.findIndex(
     (k) => HOUR_SUM_KEYS.has(k) || MONEY_KEYS.has(k)

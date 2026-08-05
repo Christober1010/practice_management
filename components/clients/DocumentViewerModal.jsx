@@ -194,13 +194,16 @@ export default function DocumentViewerModal({
     <DismissableLayerBranch
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 p-4 transition-opacity duration-300 !pointer-events-auto"
       onClick={(e) => {
+        e.stopPropagation();
         if (e.target === e.currentTarget) onClose();
       }}
+      onPointerDown={(e) => e.stopPropagation()}
       role="presentation"
     >
       <div
         className="bg-white pointer-events-auto rounded-xl shadow-2xl flex max-h-[90vh] w-full max-w-5xl min-h-0 flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
@@ -213,7 +216,11 @@ export default function DocumentViewerModal({
             <Button
               variant="outline"
               size="sm"
-              onClick={handleDownload}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDownload();
+              }}
             >
               <Download className="h-4 w-4 mr-2" />
               Download
@@ -221,7 +228,12 @@ export default function DocumentViewerModal({
             <Button
               variant="ghost"
               size="sm"
-              onClick={onClose}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onClose();
+              }}
               className="text-slate-600 hover:text-slate-800"
             >
               <X className="h-5 w-5" />

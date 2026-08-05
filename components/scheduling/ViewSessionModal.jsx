@@ -86,8 +86,8 @@ export default function ViewSessionModal({
                 session.serviceType ||
                   session.service_type ||
                   session.direct_or_indirect_service ||
-                  "Indirect"
-              )}
+                  "Direct"
+                )}
             </p>
           </div>
 

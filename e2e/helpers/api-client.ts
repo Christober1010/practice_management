@@ -54,6 +54,14 @@ export class MahaverseApiClient {
     });
   }
 
+  patch(path: string, data?: unknown) {
+    return this.request.fetch(this.url(path), {
+      method: "PATCH",
+      headers: this.headers(),
+      data: data ?? {},
+    });
+  }
+
   delete(path: string, data?: unknown) {
     return this.request.delete(this.url(path), {
       headers: this.headers(),
@@ -65,7 +73,11 @@ export class MahaverseApiClient {
     return response.json();
   }
 
-  async expectOk(path: string, method: "GET" | "POST" | "PUT" | "DELETE" = "GET", body?: unknown) {
+  async expectOk(
+    path: string,
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE" = "GET",
+    body?: unknown
+  ) {
     const res =
       method === "GET"
         ? await this.get(path)
@@ -73,7 +85,9 @@ export class MahaverseApiClient {
           ? await this.post(path, body)
           : method === "PUT"
             ? await this.put(path, body)
-            : await this.delete(path, body);
+            : method === "PATCH"
+              ? await this.patch(path, body)
+              : await this.delete(path, body);
     const data = await this.json(res);
     assertNoSchemaDrift(data, path, res.status());
     expect(res.ok(), `${method} ${path} → ${res.status()} ${getApiErrorText(data)}`).toBeTruthy();

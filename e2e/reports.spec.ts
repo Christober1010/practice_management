@@ -10,7 +10,7 @@ test.describe("Reports", () => {
     await clickSidebar(page, "Reports");
 
     await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
-    await expect(page.getByText("Session Import (External)").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Session Import" }).first()).toBeVisible();
 
     const res = await reportsResponse;
     expect(res.url()).toContain("context=schedule_tracker");

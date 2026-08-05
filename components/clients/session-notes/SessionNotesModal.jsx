@@ -213,7 +213,14 @@ export default function SessionNotesModal({
           );
           const sd = await readJsonFromResponse(sessionRes);
           if (Array.isArray(sd) && sd.length > 0) {
-            setSessionData(sd[0]);
+            // Prefer the calendar card that opened notes — never default to the
+            // first same-day row (multiple providers/sessions share one client+date).
+            const linked = linkedSessionId != null ? String(linkedSessionId).trim() : "";
+            const match =
+              linked && !linked.startsWith("temp-")
+                ? sd.find((s) => String(s?.session_id) === linked)
+                : null;
+            setSessionData(match || sd[0]);
           } else if (sd?.session_id) {
             setSessionData(sd);
           } else {
@@ -224,14 +231,21 @@ export default function SessionNotesModal({
           console.log("No session found for date:", err);
         }
 
-        // Client modules + saved session notes (single coordinated load)
+        // Client modules + saved session notes (keyed by session_id when linked)
+        const linkedNotesId =
+          linkedSessionId != null ? String(linkedSessionId).trim() : "";
+        const notesQuery = new URLSearchParams({
+          client_id: String(clientId),
+          session_date: String(apiSessionDate),
+        });
+        if (linkedNotesId && !linkedNotesId.startsWith("temp-")) {
+          notesQuery.set("session_id", linkedNotesId);
+        }
         const [modulesRes, savedRes] = await Promise.all([
           mahaverseFetch(`/client-modules.php?client_id=${encodeURIComponent(String(clientId))}`,
             { headers: getMahaverseAuthHeaders() }
           ),
-          mahaverseFetch(`/session-notes.php?client_id=${encodeURIComponent(
-              String(clientId)
-            )}&session_date=${encodeURIComponent(String(apiSessionDate))}`,
+          mahaverseFetch(`/session-notes.php?${notesQuery.toString()}`,
             { headers: getMahaverseAuthHeaders() }
           ),
         ]);
@@ -297,7 +311,7 @@ export default function SessionNotesModal({
     };
 
     fetchSessionAndClientData();
-  }, [isOpen, clientId, apiSessionDate, baseUrl]);
+  }, [isOpen, clientId, apiSessionDate, baseUrl, linkedSessionId]);
 
   // Prefill clinical/attendance fields (don’t clobber edits)
   useEffect(() => {
@@ -325,7 +339,8 @@ export default function SessionNotesModal({
   }, [isOpen, sessionData, apiSessionDate, client, appointmentTimezone]);
 
   const resolveSchedulingSessionId = () => {
-    const raw = sessionData?.session_id ?? linkedSessionId;
+    // Calendar-linked id wins over whatever row the date fetch hydrated.
+    const raw = linkedSessionId ?? sessionData?.session_id;
     if (raw === null || raw === undefined || raw === "") return null;
     const s = String(raw).trim();
     if (!s || s.startsWith("temp-")) return null;
@@ -396,7 +411,7 @@ export default function SessionNotesModal({
       toast.success(
         claimId ? `Session completed — ${claimId} (ready to bill)` : "Session completed — ready to bill"
       );
-      onSessionBillingFinalized?.();
+      onSessionBillingFinalized?.(data?.data?.billing ?? null);
       onClose();
     } catch (err) {
       console.error(err);

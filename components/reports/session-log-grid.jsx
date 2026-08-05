@@ -179,7 +179,11 @@ function rowMatchesPayers(row, selectedIds) {
   });
 }
 
-export default function SessionLogGrid({ onRegisterReload, onLoadingChange }) {
+export default function SessionLogGrid({
+  onRegisterReload,
+  onLoadingChange,
+  hideMiscAndDiff = false,
+}) {
   const [allRows, setAllRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingChanges, setSavingChanges] = useState(false);
@@ -205,6 +209,12 @@ export default function SessionLogGrid({ onRegisterReload, onLoadingChange }) {
       const q = new URLSearchParams();
       if (filterDosFrom.trim()) q.set("dos_from", filterDosFrom.trim());
       if (filterDosTo.trim()) q.set("dos_to", filterDosTo.trim());
+      try {
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz) q.set("tz", tz);
+      } catch {
+        /* ignore */
+      }
       const res = await mahaverseFetch(`/session-log.php?${q.toString()}`);
       const json = await res.json();
       if (!json.success) {
@@ -367,7 +377,7 @@ export default function SessionLogGrid({ onRegisterReload, onLoadingChange }) {
     activeStatus === "Pending Payment" ||
     activeStatus === "Received Payment";
 
-  const canEditMisc = activeStatus === "Rendered";
+  const canEditMisc = !hideMiscAndDiff && activeStatus === "Rendered";
   const canEditPayment =
     activeStatus === "Pending Payment" || activeStatus === "Received Payment";
   const canEditAp = activeStatus === "Received Payment";
@@ -766,6 +776,7 @@ export default function SessionLogGrid({ onRegisterReload, onLoadingChange }) {
           amounts={amounts}
           setPaymentField={setPaymentField}
           inputFilterClass={inputFilterClass}
+          hideMiscAndDiff={hideMiscAndDiff}
         />
       )}
 

@@ -65,7 +65,16 @@ test("me-permissions + rbac-matrix", async () => {
 
 test("dashboard-stats + get-all", async () => {
   const api = ctx.api!;
-  await api.expectOk("dashboard-stats.php");
+  const { data } = await api.expectOk("dashboard-stats.php");
+  const dash = (data.data || data) as ApiJson;
+  // Scoped payload (after dashboard-stats.php deploy)
+  expect(dash).toHaveProperty("activeClients");
+  expect(dash).toHaveProperty("sessionsToday");
+  if ("myClients" in dash) {
+    expect(typeof dash.myClients).toBe("number");
+    expect(["all", "self"]).toContain(dash.scope);
+    expect(Array.isArray(dash.todaySessions)).toBe(true);
+  }
   await api.expectOk("get-all.php");
 });
 

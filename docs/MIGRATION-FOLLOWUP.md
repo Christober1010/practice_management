@@ -13,10 +13,10 @@ Fill these first — this is the quick answer to “how far are we?”
 
 | Env | DB | Last migration applied (filename) | Applied on | Code last pushed (date) | Commit / note |
 |-----|-----|-----------------------------------|------------|-------------------------|---------------|
-| **Test (dev)** | `dbs14649042` | `20260729_222622_rbac_report_view_permissions.sql` | 2026-07-30 | 2026-07-30 | In sync — all migrations through watermark applied |
-| **Prod** | `dbs14484433` | `20260729_222622_rbac_report_view_permissions.sql` | 2026-07-30 | 2026-07-30 | In sync with test |
+| **Test (dev)** | `dbs14649042` | `20260805_125100_mileage_claims_pay_date_check.sql` | 2026-08-05 | 2026-08-05 | In sync — all shared migrations + backend/frontend pushed |
+| **Prod** | `dbs14484433` | `20260805_125100_mileage_claims_pay_date_check.sql` | 2026-08-05 | 2026-08-05 | In sync — all shared migrations + backend/frontend pushed |
 
-**Gap check:** none — test and prod are at the same watermark.
+**Gap check:** None — test and prod aligned through mileage payment fields (pay date / check #).
 
 | Env | Launchpad last migration | Applied on | Code last pushed | Commit / note |
 |-----|--------------------------|------------|------------------|---------------|
@@ -42,8 +42,9 @@ Newest first. One row per push or migration batch.
 
 | Date | Env | Type | What changed | Migrations run | Notes |
 |------|-----|------|--------------|----------------|-------|
-| 2026-07-30 | test + prod | both | Baseline: environments confirmed up to date | Through `20260729_222622_rbac_report_view_permissions.sql` (Mahaverse) and `20260729_222608_create_rbac_tables.sql` (Launchpad) | Starting point for this follow-up sheet — no open gap |
-| | | code / SQL / both | | | |
+| 2026-08-05 | test + prod | both | Mileage payment status / pay date / check #; dashboard Active Clients/Staff + Upcoming Sessions; Appointments Day default; client/staff Active filter defaults; client status Service Terminated; session note unique; service_type default Direct; session STATUS varchar + related RBAC | Through `20260805_125100_mileage_claims_pay_date_check.sql` (see registry #31–40) | User confirmed all SQL + code pushed to test and prod |
+| 2026-07-31 | test + prod | both | Fix sessions STATUS not persisting (VARCHAR + backfill); harden status read/write in add-session / scheduling_session_lib | `20260731_183000_sessions_fix_status_varchar.sql` | Applied with 2026-08-05 catch-up |
+| 2026-07-30 | test + prod | both | Baseline: environments confirmed up to date | Through `20260729_222622_rbac_report_view_permissions.sql` (Mahaverse) and `20260729_222608_create_rbac_tables.sql` (Launchpad) | Starting point for this follow-up sheet |
 
 Examples of **Type**: `code` (backend/frontend only), `SQL` (DB only), `both`.
 
@@ -118,6 +119,16 @@ Confirmed applied on both DBs as of 2026-07-30.
 | 28 | `migration/shared/20260729_222552_create_rbac_tables.sql` | ✅ | ✅ | 2026-07-30 | 2026-07-30 | Confirmed current |
 | 29 | `migration/shared/20260729_222552_migrate_rbac_matrix_v1.sql` | ✅ | ✅ | 2026-07-30 | 2026-07-30 | Confirmed current |
 | 30 | `migration/shared/20260729_222622_rbac_report_view_permissions.sql` | ✅ | ✅ | 2026-07-30 | 2026-07-30 | Confirmed current |
+| 31 | `migration/shared/20260731_183000_sessions_fix_status_varchar.sql` | ✅ | ✅ | 2026-08-05 | 2026-08-05 | Fixes blank STATUS (VARCHAR + backfill) |
+| 32 | `migration/shared/20260731_203000_create_mileage_tables.sql` | ✅ | ✅ | 2026-08-05 | 2026-08-05 | Mileage settings / claims / legs (create IF NOT EXISTS) |
+| 33 | `migration/shared/20260731_203100_rbac_reports_mileage.sql` | ✅ | ✅ | 2026-08-05 | 2026-08-05 | Reports → Mileage RBAC |
+| 34 | `migration/shared/20260801_163000_rbac_mileage_scope_self.sql` | ✅ | ✅ | 2026-08-05 | 2026-08-05 | Mileage scope Self |
+| 35 | `migration/shared/20260801_170000_rbac_reports_session_log_billing.sql` | ✅ | ✅ | 2026-08-05 | 2026-08-05 | Session log billing RBAC |
+| 36 | `migration/shared/20260802_200000_rbac_mileage_rate_config.sql` | ✅ | ✅ | 2026-08-05 | 2026-08-05 | Manage Data → Mileage Rate |
+| 37 | `migration/shared/20260805_054945_session_note_entries_unique_by_session.sql` | ✅ | ✅ | 2026-08-05 | 2026-08-05 | Unique session note entries per session |
+| 38 | `migration/shared/20260805_063000_sessions_service_type_default_direct.sql` | ✅ | ✅ | 2026-08-05 | 2026-08-05 | service_type default Direct |
+| 39 | `migration/shared/20260805_124500_mileage_claims_payment_status.sql` | ✅ | ✅ | 2026-08-05 | 2026-08-05 | payment_status column |
+| 40 | `migration/shared/20260805_125100_mileage_claims_pay_date_check.sql` | ✅ | ✅ | 2026-08-05 | 2026-08-05 | pay_date + check_number (watermark) |
 
 ### Test-only (`migration/test/`)
 
@@ -195,5 +206,6 @@ When promoting a feature from test → prod:
 
 ## Notes / known gaps
 
-- 2026-07-30: Test and prod confirmed in sync through `20260729_222622_rbac_report_view_permissions.sql`. No open gaps.
+- 2026-08-05: Test and prod confirmed in sync through `20260805_125100_mileage_claims_pay_date_check.sql`. Code pushed to both envs. No open gaps.
+- 2026-07-30: Prior baseline through `20260729_222622_rbac_report_view_permissions.sql`.
 -

@@ -40,7 +40,7 @@ export async function importSessionsFromExcel(page: Page, excelPath: string) {
   await gotoApp(page);
   await clickSidebar(page, "Reports");
   await clickSidebar(page, "Session Log");
-  await expect(page.getByText("Session Log (Internal)").first()).toBeVisible({
+  await expect(page.getByRole("heading", { name: "Session Log" }).first()).toBeVisible({
     timeout: 20_000,
   });
   await page.getByRole("button", { name: /import session/i }).click();

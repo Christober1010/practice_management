@@ -92,7 +92,7 @@ const initialForm = {
   locationAddress: "",
   quickNote: "",
   excludeSession: "No",
-  serviceType: "Indirect",
+  serviceType: "Direct",
   startDateTime: "",
   startTZ: "",
   endDateTime: "",
@@ -479,7 +479,7 @@ export default function NewSessionFormModal({
             editingSession.serviceType ||
               editingSession.service_type ||
               editingSession.direct_or_indirect_service ||
-              "Indirect"
+              "Direct"
           ).toLowerCase() === "direct"
             ? "Direct"
             : "Indirect",
@@ -1397,9 +1397,19 @@ export default function NewSessionFormModal({
                               setField("serviceType", e.target.value)
                             }
                           >
-                            <option value="Indirect">Indirect</option>
                             <option value="Direct">Direct</option>
+                            <option value="Indirect">Indirect</option>
                           </select>
+                          <p className="text-xs text-muted-foreground leading-relaxed">
+                            <span className="font-medium text-foreground/80">Direct</span>
+                            {" — "}
+                            face-to-face client service (counts in session log /
+                            resource hours).{" "}
+                            <span className="font-medium text-foreground/80">Indirect</span>
+                            {" — "}
+                            non–face-to-face work (e.g. documentation or
+                            coordination); excluded from session log.
+                          </p>
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="exclude-session">Exclude session</Label>

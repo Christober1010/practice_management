@@ -33,7 +33,7 @@ test.describe("Session Log report", () => {
 
     await gotoApp(page);
     await openMahaverseView(page, "reportsSessionLog");
-    await expect(page.getByText("Session Log (Internal)")).toBeVisible({
+    await expect(page.getByRole("heading", { name: "Session Log" })).toBeVisible({
       timeout: 30_000,
     });
     await expect(page.getByRole("tab", { name: /Scheduled/i })).toBeVisible();

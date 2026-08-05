@@ -9,14 +9,14 @@ if (!function_exists('rbac_mahaverse_perm_keys')) {
         return array_values(array_unique(array_merge([
             'nav.dashboard','nav.scheduling','nav.clients','nav.staff','nav.users','nav.master_data','nav.manage_data','nav.reports','nav.launchpad','nav.billing',
             'view.dashboard','view.scheduling','view.clients','view.staff','view.users','view.master_data','view.manage_data','view.reports','view.launchpad','view.billing',
-            'view.domains','view.programs','view.targets','view.prompts','view.behavior_categories','view.behaviors','view.provider','view.provider_service_code','view.service_code','view.diagnosis','view.locations','view.facility_types','view.treatment_types','view.document_types',
-            'view.reports_session_log','view.reports_session_import','view.reports_insurance_utilization',
+            'view.domains','view.programs','view.targets','view.prompts','view.behavior_categories','view.behaviors','view.mileage_rate','view.provider','view.provider_service_code','view.service_code','view.diagnosis','view.locations','view.facility_types','view.treatment_types','view.document_types',
+            'view.reports_session_log','view.reports_session_log_billing','view.reports_session_import','view.reports_insurance_utilization','view.reports_mileage',
             'clients.read','clients.write','staff.read','staff.write','users.read','users.write','scheduling.read','scheduling.write','reports.read','reports.write','master_data.read','master_data.write','manage_data.read','manage_data.write','billing.read','billing.write',
             'scheduling.session.create','scheduling.session.view','scheduling.session.notes','scheduling.session.update','scheduling.session.delete',
             'clients.create','clients.view','clients.update','clients.archive',
             'staff.archive','users.delete','users.deactivate',
             'master_data.domains','master_data.programs','master_data.targets','master_data.prompts','master_data.behavior_categories','master_data.behaviors',
-            'manage_data.provider','manage_data.provider_service','manage_data.service_code','manage_data.diagnosis',
+            'manage_data.provider','manage_data.provider_service','manage_data.service_code','manage_data.diagnosis','manage_data.mileage_rate',
         ])));
     }
 
@@ -260,7 +260,7 @@ if (!function_exists('rbac_mahaverse_perm_keys')) {
             'scheduling.read' => ['scheduling.read', 'scheduling.session.view', 'scheduling.session.notes'],
             'scheduling.write' => ['scheduling.write', 'scheduling.session.create', 'scheduling.session.update', 'scheduling.session.delete'],
             'master_data.write' => ['master_data.write', 'master_data.domains', 'master_data.programs', 'master_data.targets', 'master_data.prompts', 'master_data.behavior_categories', 'master_data.behaviors'],
-            'manage_data.write' => ['manage_data.write', 'manage_data.provider', 'manage_data.provider_service', 'manage_data.service_code', 'manage_data.diagnosis'],
+            'manage_data.write' => ['manage_data.write', 'manage_data.provider', 'manage_data.provider_service', 'manage_data.service_code', 'manage_data.diagnosis', 'manage_data.mileage_rate'],
         ];
         return $aliases[$permKey] ?? [$permKey];
     }
@@ -550,6 +550,73 @@ function rbac_filter_sessions_for_user($conn, $user, $sessions) {
         }
         return false;
     }));
+}
+
+/**
+ * Mileage claims visibility scope (Admin → Role permissions Off / Self / All).
+ * Prefers view.reports_mileage; falls back to reports.read.
+ *
+ * @param array $user
+ * @param mysqli|null $conn
+ * @return 'all'|'self'|null
+ */
+function rbac_mileage_access_scope($user, $conn) {
+    if (!$user || empty($user['role'])) {
+        return null;
+    }
+    $role = strtolower((string) $user['role']);
+    if ($role === 'admin') {
+        return 'all';
+    }
+
+    $map = [];
+    try {
+        if ($conn && function_exists('rbac_tables_exist') && rbac_tables_exist($conn)) {
+            $map = rbac_fetch_grant_map_from_db($conn, $role);
+        }
+    } catch (Exception $e) {
+        $map = [];
+    }
+
+    if (count($map) > 0) {
+        if (isset($map['view.reports_mileage'])) {
+            return $map['view.reports_mileage'] === 'self' ? 'self' : 'all';
+        }
+        if (
+            rbac_user_has_permission_key($role, 'view.reports_mileage', 'mahaverse', $map)
+            || rbac_user_has_permission_key($role, 'reports.read', 'mahaverse', $map)
+            || rbac_user_has_permission_key($role, 'view.reports', 'mahaverse', $map)
+        ) {
+            return 'self';
+        }
+        return null;
+    }
+
+    if (
+        rbac_user_has_permission_key($role, 'view.reports_mileage', 'mahaverse')
+        || rbac_user_has_permission_key($role, 'reports.read', 'mahaverse')
+    ) {
+        return 'self';
+    }
+    return null;
+}
+
+/**
+ * True if user may access a mileage claim for the given provider_id.
+ */
+function rbac_user_may_access_mileage_provider($user, $conn, $providerId = null) {
+    $scope = rbac_mileage_access_scope($user, $conn);
+    if ($scope === null) {
+        return false;
+    }
+    if ($scope === 'all') {
+        return true;
+    }
+    $sid = rbac_resolve_staff_id_for_user($conn, $user);
+    if (!$sid || $providerId === null || $providerId === '') {
+        return false;
+    }
+    return (string) $sid === (string) $providerId;
 }
 
 /**

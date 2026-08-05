@@ -53,6 +53,8 @@ function session_log_sessions_columns(mysqli $conn): array
         'claim_status' => false,
         'service_code' => false,
         'auth_id' => false,
+        'service_type' => false,
+        'exclude_session' => false,
         'status_col' => 'STATUS',
     ];
     $r = @$conn->query('SHOW COLUMNS FROM `sessions`');
@@ -72,6 +74,12 @@ function session_log_sessions_columns(mysqli $conn): array
             }
             if ($f === 'auth_id') {
                 $cached['auth_id'] = true;
+            }
+            if ($f === 'service_type') {
+                $cached['service_type'] = true;
+            }
+            if ($f === 'exclude_session') {
+                $cached['exclude_session'] = true;
             }
         }
         $r->free();
@@ -331,7 +339,56 @@ function session_log_split_name(?string $full): array
     return [$parts[0] ?? '', $parts[1] ?? ''];
 }
 
-function session_log_map_row(array $row): array
+/** Clinic-facing IANA timezone (matches Appointments / Mileage day boundaries). */
+function session_log_normalize_timezone(?string $tz): string
+{
+    $tz = trim((string)$tz);
+    if ($tz === '' || !preg_match('/^[A-Za-z0-9_+\-\/]+$/', $tz)) {
+        return 'America/Chicago';
+    }
+    try {
+        new DateTimeZone($tz);
+        return $tz;
+    } catch (Exception $e) {
+        return 'America/Chicago';
+    }
+}
+
+/**
+ * Inclusive local DOS from/to → UTC [start, end) for filtering sessions.start_utc.
+ * Avoids DATE(start_utc) which drops evening local sessions onto the next UTC day.
+ *
+ * @return array{0:string,1:string}
+ */
+function session_log_range_utc_bounds(string $dosFrom, string $dosTo, ?string $tz = null): array
+{
+    $zone = new DateTimeZone(session_log_normalize_timezone($tz));
+    $startLocal = new DateTimeImmutable($dosFrom . ' 00:00:00', $zone);
+    $endLocal = (new DateTimeImmutable($dosTo . ' 00:00:00', $zone))->modify('+1 day');
+    $utc = new DateTimeZone('UTC');
+    return [
+        $startLocal->setTimezone($utc)->format('Y-m-d H:i:s'),
+        $endLocal->setTimezone($utc)->format('Y-m-d H:i:s'),
+    ];
+}
+
+function session_log_local_ymd_from_utc(?string $startUtc, ?string $tz = null): ?string
+{
+    if ($startUtc === null || trim((string)$startUtc) === '') {
+        return null;
+    }
+    try {
+        $dt = new DateTimeImmutable((string)$startUtc, new DateTimeZone('UTC'));
+        return $dt
+            ->setTimezone(new DateTimeZone(session_log_normalize_timezone($tz)))
+            ->format('Y-m-d');
+    } catch (Exception $e) {
+        $ts = strtotime((string)$startUtc);
+        return $ts !== false ? date('Y-m-d', $ts) : null;
+    }
+}
+
+function session_log_map_row(array $row, ?string $tz = null): array
 {
     $sessionStatus = session_log_session_status($row);
     $logStatus = session_log_normalize_status($row['log_status'] ?? null);
@@ -352,13 +409,7 @@ function session_log_map_row(array $row): array
     [$staffFirst, $staffLast] = session_log_split_name($providerName);
 
     $startUtc = $row['start_utc'] ?? null;
-    $dos = null;
-    if ($startUtc) {
-        $ts = strtotime((string)$startUtc);
-        if ($ts !== false) {
-            $dos = date('Y-m-d', $ts);
-        }
-    }
+    $dos = session_log_local_ymd_from_utc($startUtc !== null ? (string)$startUtc : null, $tz);
 
     $sessionId = (int)($row['session_id'] ?? 0);
 
@@ -423,6 +474,7 @@ if ($method === 'GET') {
     $dosFrom = isset($_GET['dos_from']) ? trim((string)$_GET['dos_from']) : '';
     $dosTo = isset($_GET['dos_to']) ? trim((string)$_GET['dos_to']) : '';
     $tab = isset($_GET['tab']) ? trim((string)$_GET['tab']) : '';
+    $tz = session_log_normalize_timezone(isset($_GET['tz']) ? (string)$_GET['tz'] : null);
     $cols = session_log_sessions_columns($conn);
     $statusCol = $cols['status_col'];
     $claimIdSql = $cols['claim_id'] ? 's.claim_id' : 'NULL AS claim_id';
@@ -434,24 +486,40 @@ if ($method === 'GET') {
         $dosTo = date('Y-m-d');
         $dosFrom = date('Y-m-d', strtotime('-7 days'));
     }
+    if ($dosFrom !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dosFrom)) {
+        session_log_fail(400, 'dos_from must be YYYY-MM-DD');
+    }
+    if ($dosTo !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dosTo)) {
+        session_log_fail(400, 'dos_to must be YYYY-MM-DD');
+    }
 
+    // Skip Indirect + Exclude session=Yes (same rules as session import flags).
     $where = ["UPPER(TRIM(IFNULL(s.`{$statusCol}`, ''))) <> 'CANCELLED'"];
+    if (!empty($cols['service_type'])) {
+        $where[] = "UPPER(TRIM(IFNULL(s.service_type, ''))) = 'DIRECT'";
+    }
+    if (!empty($cols['exclude_session'])) {
+        $where[] = "UPPER(TRIM(IFNULL(s.exclude_session, 'No'))) <> 'YES'";
+    }
     $types = '';
     $params = [];
 
     if ($dosFrom !== '' && $dosTo !== '') {
-        $where[] = 'DATE(s.start_utc) BETWEEN ? AND ?';
+        [$rangeStartUtc, $rangeEndUtc] = session_log_range_utc_bounds($dosFrom, $dosTo, $tz);
+        $where[] = 's.start_utc >= ? AND s.start_utc < ?';
         $types .= 'ss';
-        $params[] = $dosFrom;
-        $params[] = $dosTo;
+        $params[] = $rangeStartUtc;
+        $params[] = $rangeEndUtc;
     } elseif ($dosFrom !== '') {
-        $where[] = 'DATE(s.start_utc) >= ?';
+        [$rangeStartUtc] = session_log_range_utc_bounds($dosFrom, $dosFrom, $tz);
+        $where[] = 's.start_utc >= ?';
         $types .= 's';
-        $params[] = $dosFrom;
+        $params[] = $rangeStartUtc;
     } elseif ($dosTo !== '') {
-        $where[] = 'DATE(s.start_utc) <= ?';
+        [, $rangeEndUtc] = session_log_range_utc_bounds($dosTo, $dosTo, $tz);
+        $where[] = 's.start_utc < ?';
         $types .= 's';
-        $params[] = $dosTo;
+        $params[] = $rangeEndUtc;
     }
 
     $sql = "
@@ -502,7 +570,7 @@ if ($method === 'GET') {
     $result = $stmt->get_result();
     $rows = [];
     while ($row = $result->fetch_assoc()) {
-        $mapped = session_log_map_row($row);
+        $mapped = session_log_map_row($row, $tz);
         if ($tab !== '') {
             $tabLower = strtolower($tab);
             $tabKey = strtolower($mapped['tab']);

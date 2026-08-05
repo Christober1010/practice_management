@@ -4,7 +4,7 @@ import { mahaverseFetch } from "@/lib/mahaverse-api";
 
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, Calendar, Activity, Target, BookOpen } from "lucide-react"
+import { Users, Calendar, Activity, CreditCard, Clock } from "lucide-react"
 import MetricCard from "@/components/ui/metric-card"
 import ActivityFeed from "@/components/ui/activity-feed"
 
@@ -16,7 +16,6 @@ export default function AdminDashboard() {
     sessionsToday: 0,
     pendingSessions: 0,
     upcomingSessions: 0,
-    totalTargets: 0,
     activities: []
   })
 
@@ -52,7 +51,6 @@ export default function AdminDashboard() {
             sessionsToday: data.data.sessionsToday || 0,
             pendingSessions: data.data.pendingSessions || 0,
             upcomingSessions: data.data.upcomingSessions || 0,
-            totalTargets: data.data.totalTargets || 0,
             activities: data.data.activities || []
           })
         } else {
@@ -67,7 +65,6 @@ export default function AdminDashboard() {
           sessionsToday: 0,
           pendingSessions: 0,
           upcomingSessions: 0,
-          totalTargets: 0,
           activities: []
         })
       } finally {
@@ -107,11 +104,11 @@ export default function AdminDashboard() {
       color: "bg-indigo-500",
     },
     {
-      title: "Total Targets",
-      value: loading ? "..." : stats.totalTargets.toString(),
-      change: "Client targets",
+      title: "Upcoming Sessions",
+      value: loading ? "..." : stats.upcomingSessions.toString(),
+      change: "Scheduled this week",
       changeType: "neutral",
-      icon: Target,
+      icon: Clock,
       color: "bg-purple-500",
     },
   ]

@@ -7,12 +7,15 @@ import ScheduleTrackerGrid from "./schedule-tracker-grid";
 import ScheduleTrackerImport from "./schedule-tracker-import";
 import SessionLogGrid from "./session-log-grid";
 import InsuranceUtilizationView from "./insurance-utilization-view";
+import MileageView from "./mileage-view";
 
-export default function ReportsView({ initialTab = "sessionImport" }) {
+export default function ReportsView({ initialTab = "sessionImport", userRole = null }) {
   const reloadGridRef = useRef(null);
   const [gridLoading, setGridLoading] = useState(false);
   const isInsuranceView = initialTab === "insuranceUtilization";
   const isSessionLog = initialTab === "sessionLog";
+  const isSessionLogBilling = initialTab === "sessionLogBilling";
+  const isMileage = initialTab === "mileage";
 
   const handleReload = useCallback(() => {
     reloadGridRef.current?.();
@@ -22,24 +25,29 @@ export default function ReportsView({ initialTab = "sessionImport" }) {
     reloadGridRef.current = reload;
   }, []);
 
-  const subtitle = isInsuranceView
-    ? "Insurance Utilization Analytics"
-    : isSessionLog
-      ? "Session Log (Internal)"
-      : "Session Import (External)";
+  const title = isMileage
+    ? "Mileage Reimbursement"
+    : isInsuranceView
+      ? "Insurance Utilization"
+      : isSessionLogBilling
+        ? "Session Log-Billing"
+        : isSessionLog
+          ? "Session Log"
+          : "Session Import";
 
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-slate-800">Reports</h2>
-          <p className="text-slate-600 mt-1">{subtitle}</p>
+          <h2 className="text-3xl font-bold text-slate-800">{title}</h2>
         </div>
       </div>
 
-      {isInsuranceView ? (
+      {isMileage ? (
+        <MileageView userRole={userRole} />
+      ) : isInsuranceView ? (
         <InsuranceUtilizationView />
-      ) : isSessionLog ? (
+      ) : isSessionLog || isSessionLogBilling ? (
         <>
           <div className="flex items-center justify-end gap-2 shrink-0">
             <Button
@@ -56,6 +64,7 @@ export default function ReportsView({ initialTab = "sessionImport" }) {
           <SessionLogGrid
             onRegisterReload={handleRegisterReload}
             onLoadingChange={setGridLoading}
+            hideMiscAndDiff={isSessionLogBilling}
           />
         </>
       ) : (

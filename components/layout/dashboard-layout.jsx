@@ -26,6 +26,7 @@ import TargetsList from "@/components/master-data/targets-list";
 import PromptsList from "@/components/master-data/prompts-list";
 import BehaviorCategoriesList from "@/components/master-data/behavior-categories-list";
 import BehaviorsList from "@/components/master-data/behaviors-list";
+import MileageRateView from "@/components/manage-data/mileage-rate-view";
 import ManageDataView from "@/components/manage-data/manage-data-view";
 import ProviderView from "@/components/manage-data/provider-view";
 import ProviderServiceCodeView from "@/components/manage-data/provider-service-code-view";
@@ -150,11 +151,15 @@ export default function DashboardLayout({ userRole, onLogout }) {
         return <BehaviorsList />;
       case "reports":
       case "reportsSessionImport":
-        return <ReportsView initialTab="sessionImport" />;
+        return <ReportsView initialTab="sessionImport" userRole={userRole} />;
       case "reportsSessionLog":
-        return <ReportsView initialTab="sessionLog" />;
+        return <ReportsView initialTab="sessionLog" userRole={userRole} />;
+      case "reportsSessionLogBilling":
+        return <ReportsView initialTab="sessionLogBilling" userRole={userRole} />;
       case "reportsInsuranceUtilization":
-        return <ReportsView initialTab="insuranceUtilization" />;
+        return <ReportsView initialTab="insuranceUtilization" userRole={userRole} />;
+      case "reportsMileage":
+        return <ReportsView initialTab="mileage" userRole={userRole} />;
       case "locations":
         return <LocationsView />;
       case "manageData":
@@ -173,6 +178,8 @@ export default function DashboardLayout({ userRole, onLogout }) {
         return <TreatmentTypesSetup />;
       case "documentTypes":
         return <DocumentTypesSetup />;
+      case "mileageRate":
+        return <MileageRateView />;
       case "payerPayments":
         return <PayerPaymentsView />;
       default:

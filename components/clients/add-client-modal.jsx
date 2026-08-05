@@ -94,6 +94,7 @@ const WORKFLOW_CLIENT_STATUS_OPTIONS = [
   "Initial Authorization",
   "Active Treatment",
   "Reauthorization",
+  "Service Terminated",
 ];
 
 const CLIENT_STATUS_ALIASES = {
@@ -102,6 +103,8 @@ const CLIENT_STATUS_ALIASES = {
   "Re Auth": "Reauthorization",
   "Active Tx": "Active Treatment",
   ActiveTreatment: "Active Treatment",
+  Terminated: "Service Terminated",
+  "Service terminated": "Service Terminated",
 };
 
 function normalizeClientStatusForForm(raw) {
@@ -1378,10 +1381,20 @@ export default function AddClientModal({
   };
 
   const handleClose = () => {
+    setViewingDocument(null);
     setFormData(initialClientState);
     setErrors({});
     setActiveTab("personal");
     onClose();
+  };
+
+  const handleDialogOpenChange = (open) => {
+    // Nested document viewer: dismiss viewer first; keep Edit Client open.
+    if (!open && viewingDocument) {
+      setViewingDocument(null);
+      return;
+    }
+    if (!open) handleClose();
   };
 
   const isLastTab = activeTab === tabOrder[tabOrder.length - 1];
@@ -1587,11 +1600,33 @@ export default function AddClientModal({
     );
   };
 
+  useEffect(() => {
+    if (!isOpen) setViewingDocument(null);
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+    <>
+    <Dialog open={isOpen} onOpenChange={handleDialogOpenChange}>
+      <DialogContent
+        className="max-w-6xl max-h-[90vh] overflow-y-auto"
+        onPointerDownOutside={(e) => {
+          if (viewingDocument) e.preventDefault();
+        }}
+        onInteractOutside={(e) => {
+          if (viewingDocument) e.preventDefault();
+        }}
+        onFocusOutside={(e) => {
+          if (viewingDocument) e.preventDefault();
+        }}
+        onEscapeKeyDown={(e) => {
+          if (viewingDocument) {
+            e.preventDefault();
+            setViewingDocument(null);
+          }
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-teal-600" />
@@ -1822,6 +1857,9 @@ export default function AddClientModal({
                         </SelectItem>
                         <SelectItem value="Reauthorization">
                           Reauthorization
+                        </SelectItem>
+                        <SelectItem value="Service Terminated">
+                          Service Terminated
                         </SelectItem>
                       </>,
                       "Select status"
@@ -3396,15 +3434,6 @@ export default function AddClientModal({
                                                               {hours(auth.units_serviced)} Hour(s)
                                                             </span>
                                                           )}
-                                                          {auth.ready_to_bill_sessions?.length > 0 && (
-                                                            <div className="mt-1 space-y-0.5 text-[10px] text-slate-500">
-                                                              {auth.ready_to_bill_sessions.map((sess) => (
-                                                                <div key={sess.session_id}>
-                                                                  {sess.service_date}: {sess.units} u
-                                                                </div>
-                                                              ))}
-                                                            </div>
-                                                          )}
                                                         </div>
                                                         <div className="col-span-2 text-slate-600 pt-2">
                                                           0
@@ -3670,7 +3699,9 @@ export default function AddClientModal({
                                         type="button"
                                         variant="outline"
                                         size="sm"
-                                        onClick={() => {
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
                                           setViewingDocument({
                                             path: doc.document_path,
                                             filename: doc.document_original_filename || doc.document_filename || 'document',
@@ -3895,7 +3926,8 @@ export default function AddClientModal({
           </div>
         </form>
       </DialogContent>
-      {viewingDocument && (
+    </Dialog>
+      {viewingDocument ? (
         <DocumentViewerModal
           isOpen={!!viewingDocument}
           documentPath={viewingDocument.path}
@@ -3904,7 +3936,7 @@ export default function AddClientModal({
           baseUrl={baseUrl}
           onClose={() => setViewingDocument(null)}
         />
-      )}
-    </Dialog>
+      ) : null}
+    </>
   );
 }

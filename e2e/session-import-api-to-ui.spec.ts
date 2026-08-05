@@ -66,7 +66,7 @@ async function openSessionImport(page: import("@playwright/test").Page) {
   await gotoApp(page);
   await clickSidebar(page, "Reports");
   await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
-  await expect(page.getByText("Session Import (External)").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Session Import" }).first()).toBeVisible();
 }
 
 function clientLabel(row: ReportRow) {

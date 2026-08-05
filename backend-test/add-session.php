@@ -115,7 +115,8 @@ try {
                     $types .= "s";
                 }
                 if (isset($_GET['status'])) {
-                    $whereConditions[] = "s.STATUS = ?";
+                    $statusColFilter = sessions_status_column($conn);
+                    $whereConditions[] = "s.`{$statusColFilter}` = ?";
                     $params[] = $_GET['status'];
                     $types .= "s";
                 }
@@ -177,12 +178,13 @@ try {
             $authHoursSelect = $sessionsHasAuthorizedHours ? ', authorized_hours' : '';
             $excludeSelect = sessions_has_exclude_session_column($conn) ? ', exclude_session' : '';
             $serviceTypeSelect = sessions_has_service_type_column($conn) ? ', service_type' : '';
+            $statusColGet = sessions_status_column($conn);
 
             // Get the current session
             $stmt = $conn->prepare("
         SELECT client_id, auth_id, provider_id, provider_name, supervising_provider_id, supervising_provider_name,
                start_utc, end_utc, start_tz, end_tz, auth_code, place_of_service, location_address,
-               quick_note, recurring, recurring_days, status{$authHoursSelect}, scheduled_hours, rendered_hours, recurring_id{$excludeSelect}{$serviceTypeSelect}
+               quick_note, recurring, recurring_days, `{$statusColGet}` AS status{$authHoursSelect}, scheduled_hours, rendered_hours, recurring_id{$excludeSelect}{$serviceTypeSelect}
         FROM sessions WHERE session_id = ?
     ");
             $stmt->bind_param("i", $sessionId);
@@ -268,7 +270,7 @@ try {
                         'start_utc' => $currentSession['start_utc'],
                         'end_utc' => $currentSession['end_utc'],
                         'scheduled_hours' => $currentSession['scheduled_hours'],
-                        'status' => $currentSession['status']
+                        'status' => session_row_status_value($currentSession, 'Scheduled')
                     ];
                     file_put_contents('debug.log', "Edit Mode: SINGLE - Updating session_id: $sessionId\n", FILE_APPEND);
                 }
@@ -306,7 +308,7 @@ try {
                         ?? $input['service_type']
                         ?? $input['direct_or_indirect_service']
                         ?? $input['directOrIndirectService'])
-                    : ($currentSession['service_type'] ?? 'Indirect');
+                    : ($currentSession['service_type'] ?? 'Direct');
                 $serviceType = normalize_session_service_type($serviceTypeRaw);
 
                 foreach ($sessionsToUpdate as $session) {
@@ -329,10 +331,13 @@ try {
                         $status = 'Rendered';
                     } else {
                         // Keep current status if quickNote is not being updated
-                        if (isset($input['status'])) {
-                            $status = ucfirst(strtolower((string)$input['status']));
+                        if (isset($input['status']) || isset($input['STATUS'])) {
+                            $status = session_row_status_value(
+                                ['status' => $input['status'] ?? $input['STATUS'] ?? null],
+                                'Scheduled'
+                            );
                         } else {
-                            $status = $currentSession['status'];
+                            $status = session_row_status_value($currentSession, 'Scheduled');
                         }
                     }
                     $authorizedHours = isset($input['authorizedHours'])
@@ -410,7 +415,10 @@ try {
                         $supervisingProviderName = (string)($currentSession['supervising_provider_name'] ?? '');
                         $authCode = (string)$currentSession['auth_code'];
                         $quickNote = (string)($currentSession['quick_note'] ?? '');
-                        $status = ucfirst(strtolower((string)($currentSession['status'] ?? 'Rendered')));
+                        $status = session_row_status_value($currentSession, 'Rendered');
+                        if (!session_is_completed_status($status)) {
+                            $status = 'Rendered';
+                        }
                         $renderedHours = floatval($currentSession['rendered_hours'] ?? 0);
                         $authorizedHours = floatval($currentSession['authorized_hours'] ?? 0);
                         $targetRecurringFrequency = (string)($currentSession['recurring'] ?? 'No');
@@ -436,8 +444,8 @@ try {
                     file_put_contents('debug.log', "Updating session_id: $sessionId with hours change: $hoursChange\n", FILE_APPEND);
 
                     // Auth balance delta must reflect both hours changes and cancellation/uncancellation.
-                    $originalStatus = ucfirst(strtolower((string)($session['status'] ?? $currentSession['status'] ?? 'Scheduled')));
-                    $newStatus = ucfirst(strtolower((string)($status ?? 'Scheduled')));
+                    $originalStatus = session_row_status_value($session, session_row_status_value($currentSession, 'Scheduled'));
+                    $newStatus = session_row_status_value(['status' => $status], 'Scheduled');
                     $oldActive = strtolower($originalStatus) !== 'cancelled';
                     $newActive = strtolower($newStatus) !== 'cancelled';
 
@@ -453,6 +461,7 @@ try {
                     }
 
                     $authHoursSet = $sessionsHasAuthorizedHours ? "authorized_hours = ?,\n                    " : "";
+                    $statusColPut = sessions_status_column($conn);
 
                     $updateSql = "
                 UPDATE sessions SET
@@ -472,7 +481,7 @@ try {
                     recurring = ?,
                     recurring_days = ?,
                     recurring_id = ?,
-                    STATUS = ?,
+                    `{$statusColPut}` = ?,
                     " . ($includeCancelFields ? "cancelled_by = ?, cancelled_reason = ?," : "") . "
                     {$authHoursSet}scheduled_hours = ?,
                     rendered_hours = ?
@@ -690,20 +699,22 @@ try {
                     }
 
                     if ($sessionsHasAuthorizedHours) {
+                        $statusColIns = sessions_status_column($conn);
                         $insertStmt = $conn->prepare("
                             INSERT INTO sessions (
                                 client_id, provider_id, provider_name, supervising_provider_id, supervising_provider_name,
                                 start_utc, end_utc, start_tz, end_tz, auth_code, recurring, recurring_days, place_of_service,
-                                location_address, quick_note, status, authorized_hours, scheduled_hours, rendered_hours,
+                                location_address, quick_note, `{$statusColIns}`, authorized_hours, scheduled_hours, rendered_hours,
                                 recurring_id, auth_id
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ");
                     } else {
+                        $statusColIns = sessions_status_column($conn);
                         $insertStmt = $conn->prepare("
                             INSERT INTO sessions (
                                 client_id, provider_id, provider_name, supervising_provider_id, supervising_provider_name,
                                 start_utc, end_utc, start_tz, end_tz, auth_code, recurring, recurring_days, place_of_service,
-                                location_address, quick_note, status, scheduled_hours, rendered_hours,
+                                location_address, quick_note, `{$statusColIns}`, scheduled_hours, rendered_hours,
                                 recurring_id, auth_id
                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ");

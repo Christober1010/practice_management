@@ -72,17 +72,21 @@ function sessions_has_service_type_column(mysqli $conn): bool
     return $ok;
 }
 
-/** Normalize service type to Direct|Indirect (default Indirect). */
+/** Normalize service type to Direct|Indirect (default Direct). */
 function normalize_session_service_type($value): string
 {
     if ($value === null || $value === '') {
-        return 'Indirect';
+        return 'Direct';
     }
     $normalized = strtolower(trim((string) $value));
+    if (in_array($normalized, ['indirect', 'i'], true)) {
+        return 'Indirect';
+    }
     if (in_array($normalized, ['direct', 'd'], true)) {
         return 'Direct';
     }
-    return 'Indirect';
+    // Unknown values → Direct (safer for session log / billing eligibility).
+    return 'Direct';
 }
 
 /**
@@ -196,7 +200,7 @@ function session_is_completed_status($status): bool
 /** Completed / billed session — only time and location may change on update. */
 function session_row_is_completed(array $row): bool
 {
-    if (session_is_completed_status($row['status'] ?? $row['STATUS'] ?? '')) {
+    if (session_is_completed_status(session_row_status_value($row, ''))) {
         return true;
     }
     if (floatval($row['rendered_hours'] ?? 0) > 0) {
@@ -256,6 +260,30 @@ function sessions_status_column(mysqli $conn): string
         $r->free();
     }
     return $col;
+}
+
+/**
+ * Read session status from a DB/API row (handles STATUS vs status key casing).
+ * Empty string is treated as missing so callers can apply a real fallback.
+ */
+function session_row_status_value(array $row, string $fallback = 'Scheduled'): string
+{
+    $raw = $row['status'] ?? $row['STATUS'] ?? null;
+    if ($raw === null) {
+        return $fallback;
+    }
+    $trimmed = trim((string)$raw);
+    if ($trimmed === '') {
+        return $fallback;
+    }
+    $normalized = ucfirst(strtolower($trimmed));
+    if ($normalized === 'Canceled') {
+        $normalized = 'Cancelled';
+    }
+    if ($normalized === 'Completed') {
+        $normalized = 'Rendered';
+    }
+    return $normalized;
 }
 
 function sessions_status_sql_expr(mysqli $conn, string $alias = 's'): string
@@ -995,7 +1023,7 @@ if (!empty($quickNoteContent)) {
 }
 
 // 3. Ensure 'Cancelled' status is preserved.
-if (strtoupper($submittedStatus) === 'CANCELLED') {
+if (is_string($submittedStatus) && strtoupper($submittedStatus) === 'CANCELLED') {
     $status = $submittedStatus;
 }
 
@@ -1227,20 +1255,22 @@ try {
     $pendingScheduleWindows = [];
 
     if ($sessionsHasAuthorizedHours) {
+        $statusCol = sessions_status_column($conn);
         $stmt = $conn->prepare("
 INSERT INTO sessions (
     client_id, provider_id, provider_name, supervising_provider_id, supervising_provider_name,
     start_utc, end_utc, start_tz, end_tz, auth_code, recurring, recurring_days, place_of_service,
-    location_address, quick_note, status, authorized_hours, scheduled_hours, rendered_hours,
+    location_address, quick_note, `{$statusCol}`, authorized_hours, scheduled_hours, rendered_hours,
     recurring_id, auth_id
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ");
     } else {
+        $statusCol = sessions_status_column($conn);
         $stmt = $conn->prepare("
 INSERT INTO sessions (
     client_id, provider_id, provider_name, supervising_provider_id, supervising_provider_name,
     start_utc, end_utc, start_tz, end_tz, auth_code, recurring, recurring_days, place_of_service,
-    location_address, quick_note, status, scheduled_hours, rendered_hours,
+    location_address, quick_note, `{$statusCol}`, scheduled_hours, rendered_hours,
     recurring_id, auth_id
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ");

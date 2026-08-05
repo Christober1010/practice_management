@@ -23,6 +23,7 @@ import {
   Shield,
   Activity,
   FolderOpen,
+  Car,
 } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
@@ -158,6 +159,12 @@ export default function AppSidebar({
       icon: FileText,
       color: "text-cyan-600",
     },
+    {
+      id: "mileageRate",
+      label: "Mileage Rate",
+      icon: Car,
+      color: "text-teal-700",
+    },
   ];
   const billingSubItems = [
     {
@@ -181,6 +188,12 @@ export default function AppSidebar({
       color: "text-teal-700",
     },
     {
+      id: "reportsSessionLogBilling",
+      label: "Session Log-Billing",
+      icon: FileText,
+      color: "text-teal-700",
+    },
+    {
       id: "reportsSessionImport",
       label: "Session Import",
       icon: FileText,
@@ -191,6 +204,12 @@ export default function AppSidebar({
       label: "Insurance Utilization",
       icon: Shield,
       color: "text-indigo-600",
+    },
+    {
+      id: "reportsMileage",
+      label: "Mileage",
+      icon: Car,
+      color: "text-teal-700",
     },
   ];
 

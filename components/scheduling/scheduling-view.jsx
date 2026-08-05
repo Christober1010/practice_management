@@ -245,6 +245,40 @@ function getColorClasses(session, todayDate) {
   }
 }
 
+/** Legend swatches — keep in sync with getColorClasses. */
+const SESSION_COLOR_LEGEND = [
+  {
+    key: "upcoming",
+    label: "Upcoming",
+    hint: "Future, not completed",
+    swatch: "bg-blue-100 border-blue-500",
+  },
+  {
+    key: "today",
+    label: "Today",
+    hint: "Today, not completed",
+    swatch: "bg-yellow-100 border-yellow-500",
+  },
+  {
+    key: "rendered",
+    label: "Completed",
+    hint: "Rendered / ready to bill",
+    swatch: "bg-green-100 border-green-600",
+  },
+  {
+    key: "unrendered",
+    label: "Missed",
+    hint: "Past, not completed",
+    swatch: "bg-red-100 border-red-600",
+  },
+  {
+    key: "cancelled",
+    label: "Cancelled",
+    hint: "Cancelled session",
+    swatch: "bg-gray-200 border-gray-500",
+  },
+];
+
 function normalizeSessionStatus(session) {
   const statusMap = {
     upcoming: "Scheduled",
@@ -269,7 +303,7 @@ export default function SchedulingView({ userRole }) {
   const allowNotes = allowsSchedulingSessionNotes(canAny);
 
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState("month");
+  const [viewMode, setViewMode] = useState("today");
   const [isNewSessionModalOpen, setIsNewSessionModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
   const [editingSession, setEditingSession] = useState(null);
@@ -2133,6 +2167,33 @@ export default function SchedulingView({ userRole }) {
                 </div>
               </div>
             </div>
+            <div
+              className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border/60 pt-3"
+              role="note"
+              aria-label="Session color legend"
+            >
+              <span className="text-xs font-medium text-muted-foreground shrink-0">
+                Color key
+              </span>
+              {SESSION_COLOR_LEGEND.map((item) => (
+                <div
+                  key={item.key}
+                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                  title={item.hint}
+                >
+                  <span
+                    className={`h-3 w-3 shrink-0 rounded-sm border ${item.swatch}`}
+                    aria-hidden
+                  />
+                  <span>
+                    <span className="font-medium text-foreground/80">
+                      {item.label}
+                    </span>
+                    <span className="hidden sm:inline"> — {item.hint}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -2212,7 +2273,38 @@ export default function SchedulingView({ userRole }) {
         linkedSessionDate={sessionNotesLink.date}
         linkedSessionId={sessionNotesLink.sessionId}
         initialTab="session-notes"
-        onSessionBillingFinalized={() => {
+        onSessionBillingFinalized={(billing) => {
+          if (billing && (billing.session_id != null || billing.claim_id)) {
+            const sid = String(billing.session_id ?? "");
+            const claimFromToast = billing.claim_id
+              ? String(billing.claim_id).replace(/^CLM/i, "")
+              : "";
+            setSessions((prev) =>
+              prev.map((s) => {
+                const id = String(s.sessionId ?? "");
+                const match =
+                  (sid && id === sid) ||
+                  (claimFromToast && id === claimFromToast);
+                if (!match) return s;
+                return {
+                  ...s,
+                  status: "Rendered",
+                  renderedHours:
+                    billing.rendered_hours != null
+                      ? Number(billing.rendered_hours)
+                      : s.renderedHours,
+                  claimId:
+                    billing.claim_id != null && billing.claim_id !== ""
+                      ? String(billing.claim_id)
+                      : s.claimId,
+                  claimStatus:
+                    billing.claim_status != null
+                      ? String(billing.claim_status)
+                      : s.claimStatus || "Ready to Bill",
+                };
+              })
+            );
+          }
           void refreshSessions();
         }}
       />

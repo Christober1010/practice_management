@@ -263,21 +263,22 @@ export default function LoginPage() {
           localStorage.removeItem("auth_expires_at");
         }
 
-        // Set user state to trigger dashboard render
-        setUser(data.user);
-
         const welcomeName = data.user.first_name || data.user.username || "there";
         setWelcomeMessage(`Welcome back, ${welcomeName}!`);
 
-        // If we were asked to redirect (e.g., Launchpad sync), navigate after login.
+        // If we were asked to redirect (e.g. opened via Launchpad login), go there
+        // without mounting the Mahaverse dashboard first (avoids spurious 401s).
         const params = new URLSearchParams(
           typeof window !== "undefined" ? window.location.search || "" : ""
         );
         const redirectParam = params.get("redirect");
         if (redirectParam && redirectParam.startsWith("/")) {
-          // Use hard navigation since Mahaverse isn't router-based
           window.location.href = redirectParam;
+          return;
         }
+
+        // Stay on Mahaverse — render the dashboard.
+        setUser(data.user);
       } else {
         // Fallback: Launchpad-only staff accounts (created via offer initiation)
         // exist only in the Launchpad backend. Try it before failing.

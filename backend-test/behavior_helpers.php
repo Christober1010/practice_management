@@ -229,7 +229,7 @@ function br_fetch_session_behavior_data(mysqli $conn, string $clientId, string $
     $date = $conn->real_escape_string($sessionDate);
     $sql = "SELECT * FROM client_session_behavior_data WHERE client_id = '$cid' AND session_date = '$date'";
     if ($sessionId !== null && $sessionId > 0) {
-        $sql .= ' AND (session_id IS NULL OR session_id = ' . (int)$sessionId . ')';
+        $sql .= ' AND session_id = ' . (int)$sessionId;
     }
     $sql .= ' ORDER BY created_at ASC';
     $rows = [];
@@ -251,7 +251,7 @@ function br_fetch_session_abc_data(mysqli $conn, string $clientId, string $sessi
     $date = $conn->real_escape_string($sessionDate);
     $sql = "SELECT * FROM client_session_abc_data WHERE client_id = '$cid' AND session_date = '$date'";
     if ($sessionId !== null && $sessionId > 0) {
-        $sql .= ' AND (session_id IS NULL OR session_id = ' . (int)$sessionId . ')';
+        $sql .= ' AND session_id = ' . (int)$sessionId;
     }
     $sql .= ' ORDER BY created_at ASC';
     $rows = [];
@@ -276,7 +276,7 @@ function br_persist_session_behavior_data(mysqli $conn, string $clientId, string
     $cid = $conn->real_escape_string($clientId);
     $date = $conn->real_escape_string($sessionDate);
     $sid = $sessionId !== null && $sessionId > 0 ? (int)$sessionId : 'NULL';
-    $conn->query("DELETE FROM client_session_behavior_data WHERE client_id = '$cid' AND session_date = '$date'" . ($sid !== 'NULL' ? " AND (session_id IS NULL OR session_id = $sid)" : ''));
+    $conn->query("DELETE FROM client_session_behavior_data WHERE client_id = '$cid' AND session_date = '$date'" . ($sid !== 'NULL' ? " AND session_id = $sid" : ' AND session_id IS NULL'));
     foreach ($behaviorRows as $row) {
         $bid = $conn->real_escape_string($row['id'] ?? '');
         if ($bid === '') {
@@ -314,7 +314,7 @@ function br_persist_session_abc_data(mysqli $conn, string $clientId, string $ses
     $cid = $conn->real_escape_string($clientId);
     $date = $conn->real_escape_string($sessionDate);
     $sid = $sessionId !== null && $sessionId > 0 ? (int)$sessionId : 'NULL';
-    $conn->query("DELETE FROM client_session_abc_data WHERE client_id = '$cid' AND session_date = '$date'" . ($sid !== 'NULL' ? " AND (session_id IS NULL OR session_id = $sid)" : ''));
+    $conn->query("DELETE FROM client_session_abc_data WHERE client_id = '$cid' AND session_date = '$date'" . ($sid !== 'NULL' ? " AND session_id = $sid" : ' AND session_id IS NULL'));
     foreach ($abcRows as $row) {
         $id = br_generate_id();
         $aid = isset($row['antecedent_id']) && $row['antecedent_id'] !== '' ? "'" . $conn->real_escape_string($row['antecedent_id']) . "'" : 'NULL';
