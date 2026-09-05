@@ -26,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Building2, MapPin } from "lucide-react";
 import toast from "react-hot-toast";
+import { highlightClaimFocusElement } from "@/lib/claim-warning-nav";
 
 const US_STATES = [
   'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
@@ -52,6 +53,8 @@ export default function AddLocationModal({
   onAdd,
   loading = false,
   editingLocation = null,
+  initialTab = null,
+  focusField = null,
 }) {
   const isEditing = !!editingLocation;
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
@@ -161,10 +164,27 @@ export default function AddLocationModal({
   }, [editingLocation, isEditing, isOpen]);
 
   useEffect(() => {
-    if (isOpen) {
-      setActiveTab("general");
-    }
-  }, [isOpen, editingLocation]);
+    if (!isOpen) return;
+    const tab =
+      initialTab && ["general", "facility", "billing"].includes(initialTab)
+        ? initialTab
+        : "general";
+    setActiveTab(tab);
+  }, [isOpen, editingLocation, initialTab]);
+
+  useEffect(() => {
+    if (!isOpen || !focusField) return;
+    const idMap = {
+      tax_id: "tax_id_professional",
+      facility_npi: "facility_npi_number",
+      billing_npi: "billing_npi_number",
+    };
+    const elementId = idMap[focusField] || focusField;
+    const t = window.setTimeout(() => {
+      highlightClaimFocusElement(elementId);
+    }, 400);
+    return () => window.clearTimeout(t);
+  }, [isOpen, focusField, activeTab, editingLocation]);
 
   // Load facility types from API
   useEffect(() => {
@@ -226,6 +246,24 @@ export default function AddLocationModal({
       toast.error("Facility NPI Number is required");
       return;
     }
+    const facilityNpiDigits = String(form.facility_npi_number).replace(/\D+/g, "");
+    if (facilityNpiDigits.length !== 10) {
+      toast.error("Facility NPI (Box 32a) must be exactly 10 digits");
+      return;
+    }
+    let billingNpiDigits = String(form.billing_npi_number || "").replace(/\D+/g, "");
+    if (!billingNpiDigits) {
+      billingNpiDigits = facilityNpiDigits;
+    }
+    if (billingNpiDigits.length !== 10) {
+      toast.error("Billing NPI (Box 33a) must be exactly 10 digits");
+      return;
+    }
+    const taxDigits = String(form.tax_id_professional || "").replace(/\D+/g, "");
+    if (taxDigits.length !== 9) {
+      toast.error("Tax ID (Box 25) must be exactly 9 digits");
+      return;
+    }
     if (!form.facility_name?.trim()) {
       toast.error("Facility name is required");
       return;
@@ -258,6 +296,9 @@ export default function AddLocationModal({
     const payload = {
       ...(isEditing ? { id: editingLocation.id } : {}),
       ...form,
+      facility_npi_number: facilityNpiDigits,
+      billing_npi_number: billingNpiDigits,
+      tax_id_professional: taxDigits,
     };
 
     try {
@@ -468,8 +509,15 @@ export default function AddLocationModal({
                   <Input
                     id="facility_npi_number"
                     value={form.facility_npi_number}
-                    onChange={(e) => handleChange("facility_npi_number", e.target.value)}
-                    placeholder="Enter Facility NPI Number"
+                    onChange={(e) =>
+                      handleChange(
+                        "facility_npi_number",
+                        e.target.value.replace(/\D+/g, "").slice(0, 10)
+                      )
+                    }
+                    placeholder="10-digit NPI"
+                    inputMode="numeric"
+                    maxLength={10}
                     required
                     disabled={loading}
                   />
@@ -621,12 +669,19 @@ export default function AddLocationModal({
                   </Select>
                 </div>
                 <div>
-                  <Label htmlFor="billing_npi_number">Billing NPI Number / Box 33a</Label>
+                  <Label htmlFor="billing_npi_number">Billing NPI Number / Box 33a *</Label>
                   <Input
                     id="billing_npi_number"
                     value={form.billing_npi_number}
-                    onChange={(e) => handleChange("billing_npi_number", e.target.value)}
-                    placeholder="Enter Billing NPI Number"
+                    onChange={(e) =>
+                      handleChange(
+                        "billing_npi_number",
+                        e.target.value.replace(/\D+/g, "").slice(0, 10)
+                      )
+                    }
+                    placeholder="10-digit NPI (defaults to facility NPI)"
+                    inputMode="numeric"
+                    maxLength={10}
                     disabled={loading}
                   />
                 </div>

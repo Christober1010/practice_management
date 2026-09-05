@@ -776,6 +776,11 @@ export default function OfferLetterView(props: {
                     autoComplete="off"
                     disabled={staffHasAccount}
                   />
+                  {!staffHasAccount && (
+                    <div className="text-xs text-slate-600">
+                      Internal account id only. The offer email tells the staff to sign in with their <span className="font-medium">email</span>.
+                    </div>
+                  )}
                   {staffHasAccount && (
                     <div className="text-xs text-slate-600">
                       Account already exists{selectedStaff?.created_by_username ? ` (${selectedStaff.created_by_username})` : ''}.

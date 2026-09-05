@@ -288,10 +288,12 @@ try {
                 $rowsAffected = 0;
                 $totalHoursChange = 0;
                 $totalAuthDelta = 0;
-                $includeCancelFields =
+                $wantsCancelMeta =
                     array_key_exists('cancelledBy', $input) ||
                     array_key_exists('cancelledReason', $input) ||
                     (isset($input['status']) && strcasecmp((string)$input['status'], 'Cancelled') === 0);
+                $includeCancelFields =
+                    $wantsCancelMeta && sessions_has_cancelled_fields_column($conn);
                 $excludeSessionRequested = array_key_exists('excludeSession', $input) || array_key_exists('exclude_session', $input)
                     ? ($input['excludeSession'] ?? $input['exclude_session'])
                     : null;
@@ -359,7 +361,14 @@ try {
                     }
 
                     if (!in_array($placeOfService, ['Home', 'Clinic', 'School', 'Virtual', 'Other'])) {
-                        throw new Exception("Invalid place_of_service: $placeOfService");
+                        if (strcasecmp((string)$status, 'Cancelled') === 0) {
+                            $existingPos = (string)($currentSession['place_of_service'] ?? '');
+                            $placeOfService = in_array($existingPos, ['Home', 'Clinic', 'School', 'Virtual', 'Other'], true)
+                                ? $existingPos
+                                : 'Other';
+                        } else {
+                            throw new Exception("Invalid place_of_service: $placeOfService");
+                        }
                     }
                     if (!in_array($status, ['Scheduled', 'Rendered', 'Cancelled'])) {
                         throw new Exception("Invalid status: $status. Must be 'Scheduled', 'Rendered', or 'Cancelled'");
@@ -407,13 +416,13 @@ try {
                     }
 
                     $lockRow = array_merge($currentSession, $session);
-                    if (session_row_is_completed($lockRow)) {
+                    $wasCompletedBeforeUpdate = session_row_is_completed($lockRow);
+                    if ($wasCompletedBeforeUpdate) {
+                        // Keep client / rendering provider / notes / status / hours / recurrence locked.
+                        // Allow supervising provider, auth (billing code), place of service, time, location.
                         $clientId = (string)$currentSession['client_id'];
                         $provider = (string)$currentSession['provider_id'];
                         $providerName = (string)$currentSession['provider_name'];
-                        $supervisingProvider = (string)($currentSession['supervising_provider_id'] ?? '');
-                        $supervisingProviderName = (string)($currentSession['supervising_provider_name'] ?? '');
-                        $authCode = (string)$currentSession['auth_code'];
                         $quickNote = (string)($currentSession['quick_note'] ?? '');
                         $status = session_row_status_value($currentSession, 'Rendered');
                         if (!session_is_completed_status($status)) {
@@ -510,8 +519,9 @@ try {
                         }
 
                         if ($sessionsHasAuthorizedHours) {
+                            // 19 strings (incl. cancel meta) + authorized/scheduled/rendered + session_id
                             $updateStmt->bind_param(
-                                "ssssssssssssssssssidddi",
+                                "sssssssssssssssssssdddi",
                                 $clientId,
                                 $provider,
                                 $providerName,
@@ -538,7 +548,7 @@ try {
                             );
                         } else {
                             $updateStmt->bind_param(
-                                "ssssssssssssssssssiddi",
+                                "sssssssssssssssssssddi",
                                 $clientId,
                                 $provider,
                                 $providerName,
@@ -565,8 +575,9 @@ try {
                         }
                     } else {
                         if ($sessionsHasAuthorizedHours) {
+                            // 17 strings + authorized/scheduled/rendered + session_id
                             $updateStmt->bind_param(
-                                "ssssssssssssssssidddi",
+                                "sssssssssssssssssdddi",
                                 $clientId,
                                 $provider,
                                 $providerName,
@@ -591,7 +602,7 @@ try {
                             );
                         } else {
                             $updateStmt->bind_param(
-                                "ssssssssssssssssiddi",
+                                "sssssssssssssssssddi",
                                 $clientId,
                                 $provider,
                                 $providerName,
@@ -636,18 +647,51 @@ try {
                     $putAuthId = isset($input['authId']) && $input['authId'] !== null && $input['authId'] !== ''
                         ? (int)$input['authId']
                         : (int)($session['auth_id'] ?? $currentSession['auth_id'] ?? 0);
-                    if (!session_row_is_completed(array_merge($currentSession, $session))) {
-                        session_persist_billing_rates(
-                            $conn,
-                            $sessionId,
-                            $putAuthId,
-                            $clientId,
-                            $authCode,
-                            $scheduledHours,
-                            $renderedHours
-                        );
-                        session_persist_auth_service_fields($conn, $sessionId, $putAuthId);
-                        session_persist_taxonomy_code($conn, $sessionId, $provider);
+                    $oldAuthId = (int)($session['auth_id'] ?? $currentSession['auth_id'] ?? 0);
+                    if ($putAuthId > 0) {
+                        $authIdStmt = $conn->prepare('UPDATE sessions SET auth_id = ? WHERE session_id = ?');
+                        if ($authIdStmt) {
+                            $authIdStmt->bind_param('ii', $putAuthId, $sessionId);
+                            $authIdStmt->execute();
+                            $authIdStmt->close();
+                        }
+                    }
+                    // Skip rate/auth re-persist on cancel — incomplete auth rows must not block cancellation.
+                    // On completed sessions, still refresh auth/rate fields when billing code changes (claim fixes).
+                    if (!session_status_is_cancelled($status)) {
+                        $authChanged = ($putAuthId > 0 && $putAuthId !== $oldAuthId)
+                            || ($authCode !== (string)($currentSession['auth_code'] ?? ''));
+                        if (!$wasCompletedBeforeUpdate || $authChanged) {
+                            session_persist_billing_rates(
+                                $conn,
+                                $sessionId,
+                                $putAuthId,
+                                $clientId,
+                                $authCode,
+                                $scheduledHours,
+                                $renderedHours
+                            );
+                            session_persist_auth_service_fields($conn, $sessionId, $putAuthId);
+                        }
+                        if (!$wasCompletedBeforeUpdate) {
+                            session_persist_taxonomy_code($conn, $sessionId, $provider);
+                        }
+                        // Moving scheduled units between authorizations when billing code changes.
+                        if (
+                            $authChanged
+                            && $oldAuthId > 0
+                            && $putAuthId > 0
+                            && $oldAuthId !== $putAuthId
+                            && floatval($originalScheduledHours) > 0
+                        ) {
+                            $hrs = floatval($originalScheduledHours);
+                            if (!updateClientAuthUnitsScheduled($conn, $clientId, $oldAuthId, $hrs)) {
+                                throw new Exception("Failed to return scheduled units to previous authorization auth_id=$oldAuthId");
+                            }
+                            if (!updateClientAuthUnitsScheduled($conn, $clientId, $putAuthId, -$hrs)) {
+                                throw new Exception("Failed to reserve scheduled units on new authorization auth_id=$putAuthId");
+                            }
+                        }
                     }
                     file_put_contents('debug.log', "Successfully updated session_id: $sessionId\n", FILE_APPEND);
                 }

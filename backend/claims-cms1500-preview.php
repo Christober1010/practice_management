@@ -247,6 +247,12 @@ function cms1500_resolve_claim_prior_auth_number(mysqli $conn, array $sessions, 
     return cms1500_prior_auth_number(null, $insurance);
 }
 
+function cms1500_normalize_npi($value): string
+{
+    $digits = preg_replace('/\D+/', '', (string)$value) ?? '';
+    return strlen($digits) === 10 ? $digits : '';
+}
+
 /**
  * Box 32: keep location legal name; street/city from session service address when present.
  *
@@ -257,7 +263,7 @@ function cms1500_resolve_claim_prior_auth_number(mysqli $conn, array $sessions, 
 function cms1500_service_facility_for_claim($location, $session, $client)
 {
     $name = $location['facility_name'] ?? '';
-    $npi = $location['facility_npi_number'] ?? '';
+    $npi = cms1500_normalize_npi($location['facility_npi_number'] ?? '');
     $raw = trim((string)($session['location_address'] ?? ''));
     if ($raw !== '') {
         $parts = preg_split('/,\s*/', $raw, -1, PREG_SPLIT_NO_EMPTY);
@@ -503,6 +509,7 @@ function cms1500_fill_location_billing_from_facility(array $loc): array
         ['billing_city', 'facility_city'],
         ['billing_state', 'facility_state'],
         ['billing_zip_code', 'facility_zip_code'],
+        ['billing_npi_number', 'facility_npi_number'],
     ];
     foreach ($pairs as $pair) {
         list($billingKey, $facKey) = $pair;
@@ -947,14 +954,17 @@ try {
         $warnings[] = 'Supervising provider (Box 31) is empty; set supervising BCBA on the session or staff record.';
     }
 
-    if (empty($location['billing_npi_number'])) {
-        $warnings[] = 'Selected location is missing billing NPI.';
+    $billingNpi = cms1500_normalize_npi($location['billing_npi_number'] ?? '');
+    $facilityNpi = cms1500_normalize_npi($location['facility_npi_number'] ?? '');
+    if ($billingNpi === '') {
+        $warnings[] = 'Selected location is missing a valid 10-digit billing NPI (Box 33a).';
     }
-    if (empty($location['facility_npi_number'])) {
-        $warnings[] = 'Selected location is missing facility NPI.';
+    if ($facilityNpi === '') {
+        $warnings[] = 'Selected location is missing a valid 10-digit facility NPI (Box 32a).';
     }
-    if (empty($location['tax_id_professional'])) {
-        $warnings[] = 'Selected location is missing tax ID.';
+    $taxDigits = preg_replace('/\D+/', '', (string)($location['tax_id_professional'] ?? '')) ?? '';
+    if (strlen($taxDigits) !== 9) {
+        $warnings[] = 'Selected location tax ID must be exactly 9 digits (Box 25).';
     }
     if (empty($insurance['insurance_id_number'])) {
         $warnings[] = 'Insurance row is missing insurance_id_number (Box 1a).';
@@ -1018,25 +1028,27 @@ try {
             : '',
         'billing_provider' => [
             'name' => $location['billing_provider_name'] ?? '',
-            'npi' => $location['billing_npi_number'] ?? '',
+            'npi' => $billingNpi,
             'address_line_1' => $location['billing_address'] ?? '',
             'address_line_2' => $location['billing_apt_unit'] ?? '',
             'city' => $location['billing_city'] ?? '',
             'state' => $location['billing_state'] ?? '',
             'zip' => $location['billing_zip_code'] ?? '',
             'taxonomy_code' => $location['taxonomy_code'] ?? '',
-            'tax_id' => $location['tax_id_professional'] ?? '',
+            'tax_id' => $taxDigits !== '' ? $taxDigits : ($location['tax_id_professional'] ?? ''),
         ],
         'service_facility' => cms1500_service_facility_for_claim($location, $firstSession, $client),
         'rendering_provider' => [
             'name' => $renderingProvider
                 ? trim(($renderingProvider['firstName'] ?? '') . ' ' . ($renderingProvider['lastName'] ?? ''))
                 : ($firstSession['provider_name'] ?? ''),
-            'npi' => $renderingProvider ? ($renderingProvider['npiNumber'] ?? '') : '',
+            'npi' => $renderingProvider
+                ? cms1500_normalize_npi($renderingProvider['npiNumber'] ?? '')
+                : '',
         ],
         'signing_provider' => [
             'name' => $signingProviderName,
-            'npi' => $signingProviderNpi,
+            'npi' => cms1500_normalize_npi($signingProviderNpi),
         ],
         'patient_account_number' => trim((string)($firstSession['claim_id'] ?? '')) !== ''
             ? trim((string)$firstSession['claim_id'])

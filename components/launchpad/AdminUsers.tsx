@@ -94,9 +94,10 @@ export default function AdminUsers() {
                       placeholder="e.g. jdoe"
                       autoComplete="off"
                     />
+                    <p className="text-xs text-slate-500">Internal id only. Welcome email tells them to sign in with email.</p>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="user-email">Email (optional)</Label>
+                    <Label htmlFor="user-email">Email (for login)</Label>
                     <Input
                       id="user-email"
                       type="email"

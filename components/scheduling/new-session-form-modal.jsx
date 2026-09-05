@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
+  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -40,6 +41,7 @@ import { getMahaverseAuthHeaders } from "@/lib/api-auth";
 import { sessionIsRenderedOrReadyToBill } from "@/lib/scheduling-session-status";
 import { schedulingSaveErrorMessage } from "@/lib/scheduling-errors";
 import { cn } from "@/lib/utils";
+import { highlightClaimFocusElement } from "@/lib/claim-warning-nav";
 import {
   authorizationBillingCodeLabel,
   authorizationBillingCodeMatches,
@@ -106,6 +108,87 @@ const initialForm = {
 /** PK string for client_auth row as shown in Redux */
 function authorizationPk(a) {
   return String(a?.auth_id ?? a?.id ?? "");
+}
+
+function formatClientAddress(addr) {
+  if (!addr || typeof addr !== "object") return "";
+  return [
+    addr.address_line_1,
+    addr.address_line_2,
+    addr.city,
+    addr.state,
+    addr.zipcode,
+    addr.country,
+  ]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function clientAddressOptions(client) {
+  const rows = Array.isArray(client?.addresses) ? client.addresses : [];
+  return rows
+    .map((addr) => ({
+      id: addr.id,
+      value: formatClientAddress(addr),
+      service_location: addr.service_location,
+    }))
+    .filter((addr) => addr.value);
+}
+
+function normalizeAddressKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/\b(united states of america|united states|usa)\b/g, "us")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function addressStreetKey(value) {
+  return normalizeAddressKey(String(value || "").split(",")[0] || "");
+}
+
+/**
+ * Map a stored session location onto a client address option.
+ * Imports/older saves often use a different string than the dropdown formatter,
+ * which makes Radix Select render a blank trigger when the value has no item.
+ */
+function resolveSessionLocationAddress(stored, addressOptions) {
+  const raw = String(stored || "").trim();
+  const options = (addressOptions || []).filter(
+    (addr) => addr?.value && addr.value !== "No address available"
+  );
+  if (!raw) {
+    return { value: "", matched: null };
+  }
+
+  const exact = options.find((addr) => addr.value === raw);
+  if (exact) return { value: exact.value, matched: exact };
+
+  const storedKey = normalizeAddressKey(raw);
+  const normalized = options.find(
+    (addr) => normalizeAddressKey(addr.value) === storedKey
+  );
+  if (normalized) return { value: normalized.value, matched: normalized };
+
+  const contained = options.find((addr) => {
+    const optionKey = normalizeAddressKey(addr.value);
+    return optionKey.includes(storedKey) || storedKey.includes(optionKey);
+  });
+  if (contained) return { value: contained.value, matched: contained };
+
+  const storedStreet = addressStreetKey(raw);
+  if (storedStreet) {
+    const streetHits = options.filter(
+      (addr) => addressStreetKey(addr.value) === storedStreet
+    );
+    if (streetHits.length === 1) {
+      return { value: streetHits[0].value, matched: streetHits[0] };
+    }
+  }
+
+  return { value: raw, matched: null };
 }
 
 /**
@@ -206,6 +289,10 @@ export default function NewSessionFormModal({
   locationFilterId = "",
   /** Only admins may change Exclude session (Yes/No). */
   canEditExcludeSession = false,
+  /** When false, new sessions may only start on today or future (clinic calendar). */
+  canCreatePastDates = true,
+  /** Deep-link focus: supervising | hours | pos */
+  focusField = null,
 }) {
   const [form, setForm] = useState(initialForm);
   const [errors, setErrors] = useState({});
@@ -218,6 +305,7 @@ export default function NewSessionFormModal({
   const [cancelReason, setCancelReason] = useState("");
   const [cancelMode, setCancelMode] = useState("single");
   const [isSaving, setIsSaving] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const dispatch = useDispatch();
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
@@ -225,6 +313,21 @@ export default function NewSessionFormModal({
     if (!isOpen) return;
     dispatch(fetchClients());
   }, [dispatch, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !focusField) return;
+    const idMap = {
+      supervising: "supervisingProvider",
+      hours: "renderedHours",
+      pos: "placeOfService",
+    };
+    const elementId = idMap[focusField] || focusField;
+    const t = window.setTimeout(() => {
+      highlightClaimFocusElement(elementId);
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [isOpen, focusField, editingSession]);
+
   const clients = useSelector((state) => state.clients?.items || []);
   const selectedProvider = staff.find((s) => s.id === form.provider);
 
@@ -397,10 +500,16 @@ export default function NewSessionFormModal({
       }
 
       const cid = editingSession.clientId || "";
-      const clientRow = clients.find((c) => c.client_id === cid);
+      const clientRow = clients.find(
+        (c) => String(c.client_id) === String(cid)
+      );
       const authList = Array.isArray(clientRow?.authorizations)
         ? clientRow.authorizations
         : [];
+      const resolvedLocation = resolveSessionLocationAddress(
+        editingSession.locationAddress || editingSession.location_address,
+        clientAddressOptions(clientRow)
+      );
       let resolvedAuthCode = editingSession.authCode || "";
       if (extractedAuthId) {
         const row = authList.find(
@@ -483,6 +592,12 @@ export default function NewSessionFormModal({
           ).toLowerCase() === "direct"
             ? "Direct"
             : "Indirect",
+        locationAddress: resolvedLocation.value,
+        placeOfService:
+          editingSession.placeOfService ||
+          editingSession.place_of_service ||
+          resolvedLocation.matched?.service_location ||
+          "",
       });
     } else if (selectedDate && userTimezone) {
       const y = selectedDate.getFullYear();
@@ -512,31 +627,33 @@ export default function NewSessionFormModal({
           .filter(Boolean)
           .join(" "),
         authorizations: Array.isArray(c.authorizations) ? c.authorizations : [],
-        address:
-          Array.isArray(c.addresses) && c.addresses.length > 0
-            ? c.addresses.map((addr) => ({
-                id: addr.id,
-                value: [
-                  addr.address_line_1,
-                  addr.address_line_2,
-                  addr.city,
-                  addr.state,
-                  addr.zipcode,
-                  addr.country,
-                ]
-                  .filter(Boolean)
-                  .join(", "),
-                service_location: addr.service_location,
-              }))
-            : [{ id: "no-address", value: "No address available" }],
+        address: clientAddressOptions(c),
       })),
     [clients, locationFilterId]
   );
 
   const selectedClient = useMemo(
-    () => clientOptions.find((c) => c.id === form.clientId) || null,
+    () =>
+      clientOptions.find((c) => String(c.id) === String(form.clientId)) ||
+      null,
     [clientOptions, form.clientId]
   );
+
+  const locationSelectOptions = useMemo(() => {
+    const fromClient = selectedClient?.address || [];
+    const current = String(form.locationAddress || "").trim();
+    if (current && !fromClient.some((addr) => addr.value === current)) {
+      return [
+        {
+          id: "session-location",
+          value: current,
+          service_location: form.placeOfService || "",
+        },
+        ...fromClient,
+      ];
+    }
+    return fromClient;
+  }, [selectedClient, form.locationAddress, form.placeOfService]);
 
   const isCompletedLimitedEdit = useMemo(
     () =>
@@ -545,11 +662,20 @@ export default function NewSessionFormModal({
     [editingSession]
   );
 
+  /** Completed sessions: claim fixes need supervisor + billing code; client/provider stay locked. */
+  const COMPLETED_EDITABLE_FIELDS = [
+    "startDateTime",
+    "endDateTime",
+    "startTZ",
+    "endTZ",
+    "locationAddress",
+    "placeOfService",
+    "supervisingProvider",
+    "authId",
+  ];
+
   const fieldLocked = (fieldId) =>
-    isCompletedLimitedEdit &&
-    !["startDateTime", "endDateTime", "startTZ", "endTZ", "locationAddress"].includes(
-      fieldId
-    );
+    isCompletedLimitedEdit && !COMPLETED_EDITABLE_FIELDS.includes(fieldId);
 
   useEffect(() => {
     if (!isOpen || !form.authId || !selectedClient?.authorizations?.length) {
@@ -599,8 +725,23 @@ export default function NewSessionFormModal({
       const startMinute = startDate.getMinutes();
       const startInMinutes = startHour * 60 + startMinute;
 
-      if (startInMinutes < 8 * 60 || startInMinutes >= 20 * 60) {
-        e.startDateTime = "Start time must be between 8:00 AM and 8:00 PM";
+      if (startInMinutes < 8 * 60 || startInMinutes >= 21 * 60 + 30) {
+        e.startDateTime = "Start time must be between 8:00 AM and 9:30 PM";
+      }
+
+      // New appointments only: roles without create_past cannot book before clinic today.
+      if (!editingSession && !canCreatePastDates) {
+        const sessionYmd = String(form.startDateTime).slice(0, 10);
+        const todayYmd = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "America/Chicago",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(new Date());
+        if (/^\d{4}-\d{2}-\d{2}$/.test(sessionYmd) && sessionYmd < todayYmd) {
+          e.startDateTime =
+            "You can only create appointments for today or future dates";
+        }
       }
     }
 
@@ -610,8 +751,8 @@ export default function NewSessionFormModal({
       const endMinute = endDate.getMinutes();
       const endInMinutes = endHour * 60 + endMinute;
 
-      if (endInMinutes < 8 * 60 || endInMinutes > 20 * 60) {
-        e.endDateTime = "End time must be between 8:00 AM and 8:00 PM";
+      if (endInMinutes < 8 * 60 || endInMinutes > 21 * 60 + 30) {
+        e.endDateTime = "End time must be between 8:00 AM and 9:30 PM";
       }
     }
 
@@ -722,16 +863,12 @@ export default function NewSessionFormModal({
     }
 
     if (isCompletedLimitedEdit) {
+      // Freeze identity / notes / status; allow form values for supervisor + billing code.
       payload.clientId = editingSession.clientId;
       payload.clientName = editingSession.clientName || payload.clientName;
       payload.provider = editingSession.providerId || editingSession.provider;
       payload.providerName =
         editingSession.providerName || editingSession.provider_name || "";
-      payload.authCode = editingSession.authCode || "";
-      payload.authId =
-        editingSession.authId != null && editingSession.authId !== ""
-          ? Number.parseInt(String(editingSession.authId), 10)
-          : null;
       payload.quickNote = editingSession.quickNote || "";
       payload.status =
         editingSession.status === "Cancelled"
@@ -754,18 +891,9 @@ export default function NewSessionFormModal({
           occurrences: null,
         },
       };
-      if (
-        editingSession.supervisingProviderId ||
-        editingSession.supervisingProvider
-      ) {
-        payload.supervisingProvider =
-          editingSession.supervisingProviderId ||
-          editingSession.supervisingProvider;
-        payload.supervisingProviderName =
-          editingSession.supervisingProviderName ||
-          editingSession.supervising_provider_name ||
-          "";
-      }
+      payload.supervisingProvider = form.supervisingProvider || "";
+      payload.supervisingProviderName = form.supervisingProviderName || "";
+      // authCode / authId already set from the form above
     } else if (form.supervisingProvider) {
       payload.supervisingProvider = form.supervisingProvider;
       payload.supervisingProviderName = form.supervisingProviderName || "";
@@ -815,9 +943,14 @@ export default function NewSessionFormModal({
     }
   };
 
-  const handleCancelSession = async () => {
+  const handleCancelSession = async (e) => {
+    e?.preventDefault?.();
     if (!cancelReason.trim()) {
       toast.error("Please provide a cancellation reason");
+      return;
+    }
+    if (!editingSession?.sessionId) {
+      toast.error("Session not found");
       return;
     }
 
@@ -825,19 +958,22 @@ export default function NewSessionFormModal({
       session_id: editingSession.sessionId,
       status: "Cancelled",
       cancelledBy: "Staff",
-      cancelledReason: cancelReason,
+      cancelledReason: cancelReason.trim(),
       editMode: cancelMode,
     };
 
+    setIsCancelling(true);
     try {
       const res = await mahaverseFetch('/add-session.php', {
         method: "PUT",
         headers: jsonAuthHeaders(),
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (res.ok && data.success) {
         toast.success("Session cancelled successfully!");
+        setShowCancelDialog(false);
+        setCancelReason("");
         onSave?.({ ...editingSession, status: "Cancelled" });
         handleClose();
       } else {
@@ -845,6 +981,8 @@ export default function NewSessionFormModal({
       }
     } catch (err) {
       toast.error("A server error occurred during cancellation.");
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -888,6 +1026,7 @@ export default function NewSessionFormModal({
           disabled={locked}
         >
           <SelectTrigger
+            id={id}
             className={`${errors[id] ? "border-red-500" : ""} ${
               locked ? "bg-muted cursor-not-allowed opacity-90" : ""
             }`}
@@ -925,7 +1064,7 @@ export default function NewSessionFormModal({
             </DialogTitle>
             <DialogDescription>
               {isCompletedLimitedEdit
-                ? "This session is completed. You can only change the time and location address."
+                ? "This session is completed. You can change time, location, supervising provider, and billing code."
                 : `Fill in the details for the therapy session. Times are shown in your local timezone (${userTimezone}).`}
             </DialogDescription>
           </DialogHeader>
@@ -1283,23 +1422,23 @@ export default function NewSessionFormModal({
                     {renderSelectWithError(
                       "locationAddress",
                       "Location Address *",
-                      form.locationAddress,
+                      form.locationAddress || undefined,
                       (v) => {
                         setField("locationAddress", v);
-                        // Find the selected address to get its service_location
-                        const selectedAddress = selectedClient?.address.find(
+                        const selectedAddress = locationSelectOptions.find(
                           (addr) => addr.value === v
                         );
-                        // Update placeOfService with the service_location, or set to empty string if not found
                         setField(
                           "placeOfService",
-                          selectedAddress?.service_location || ""
+                          selectedAddress?.service_location ||
+                            form.placeOfService ||
+                            ""
                         );
                       },
-                      selectedClient && selectedClient.address.length > 0
-                        ? selectedClient.address.map((addr) => (
+                      locationSelectOptions.length > 0
+                        ? locationSelectOptions.map((addr) => (
                             <SelectItem
-                              key={`${selectedClient.id}_${addr.id}`}
+                              key={`${selectedClient?.id ?? "session"}_${addr.id}`}
                               value={addr.value}
                             >
                               {addr.service_location
@@ -1473,7 +1612,7 @@ export default function NewSessionFormModal({
                 {isSaving
                   ? "Saving…"
                   : isCompletedLimitedEdit
-                    ? "Save Time & Location"
+                    ? "Save Changes"
                     : editingSession
                       ? "Update Session"
                       : "Add Session"}
@@ -1483,7 +1622,10 @@ export default function NewSessionFormModal({
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+      <AlertDialog open={showCancelDialog} onOpenChange={(open) => {
+        if (isCancelling) return;
+        setShowCancelDialog(open);
+      }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Cancel Session</AlertDialogTitle>
@@ -1537,17 +1679,19 @@ export default function NewSessionFormModal({
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
               rows={3}
+              disabled={isCancelling}
             />
           </div>
 
           <div className="flex justify-end gap-2">
-            <AlertDialogCancel>Keep Session</AlertDialogCancel>
-            <Button
+            <AlertDialogCancel disabled={isCancelling}>Keep Session</AlertDialogCancel>
+            <AlertDialogAction
               onClick={handleCancelSession}
+              disabled={isCancelling}
               className="bg-red-600 hover:bg-red-700"
             >
-              Cancel Session
-            </Button>
+              {isCancelling ? "Cancelling…" : "Cancel Session"}
+            </AlertDialogAction>
           </div>
         </AlertDialogContent>
       </AlertDialog>

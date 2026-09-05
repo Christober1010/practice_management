@@ -361,6 +361,38 @@ function session_rate_normalize_procedure_code($raw): string
 }
 
 /**
+ * Normalize a Billable flag to Yes/No, or null when unknown / blank.
+ *
+ * @param mixed $value
+ * @return 'Yes'|'No'|null
+ */
+function session_normalize_billable_flag($value): ?string
+{
+    if ($value === null || $value === '') {
+        return null;
+    }
+    if (is_bool($value)) {
+        return $value ? 'Yes' : 'No';
+    }
+    if (is_int($value) || is_float($value)) {
+        if ((float) $value === 0.0) {
+            return 'No';
+        }
+        if ((float) $value === 1.0) {
+            return 'Yes';
+        }
+    }
+    $v = strtolower(trim((string) $value));
+    if (in_array($v, ['no', 'n', '0', 'false'], true)) {
+        return 'No';
+    }
+    if (in_array($v, ['yes', 'y', '1', 'true'], true)) {
+        return 'Yes';
+    }
+    return null;
+}
+
+/**
  * Resolve Billable (Yes/No) for a session.
  * Prefer sessions.billable when present; else master_provider_service_code.billable
  * for the auth's **insurance** provider (same as rate lookup — not staff provider_id).
@@ -372,12 +404,9 @@ function session_rate_normalize_procedure_code($raw): string
 function session_resolve_billable(mysqli $conn, array $sessionRow): string
 {
     if (array_key_exists('billable', $sessionRow) && $sessionRow['billable'] !== null && $sessionRow['billable'] !== '') {
-        $v = strtolower(trim((string) $sessionRow['billable']));
-        if (in_array($v, ['no', 'n', '0', 'false'], true)) {
-            return 'No';
-        }
-        if (in_array($v, ['yes', 'y', '1', 'true'], true)) {
-            return 'Yes';
+        $normalized = session_normalize_billable_flag($sessionRow['billable']);
+        if ($normalized !== null) {
+            return $normalized;
         }
     }
 

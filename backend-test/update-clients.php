@@ -63,9 +63,9 @@ try {
         }
     }
 
-    // Normalize workflow status: empty / whitespace → "New". (If client_status is still an ENUM
-    // that omits labels like "Active Treatment", MySQL may coerce invalid values to '' — run
-    // 20260412_201107_alter-clients-client-status-varchar.sql on the database.)
+    // Normalize workflow status: empty / whitespace → "New".
+    // If client_status is still an ENUM that omits labels like "Service Terminated" /
+    // "Active Treatment", MySQL coerces invalid values to '' in non-strict mode.
     $clientStatusRaw = $input["client_status"] ?? null;
     $clientStatus = is_string($clientStatusRaw)
         ? trim($clientStatusRaw)
@@ -73,6 +73,9 @@ try {
     if ($clientStatus === '') {
         $clientStatus = 'New';
     }
+
+    // Widen ENUM → VARCHAR before the write (ALTER commits implicitly; must be outside txn).
+    mahaverse_ensure_clients_client_status_varchar($conn);
 
     $conn->beginTransaction();
 
@@ -182,6 +185,23 @@ try {
 
     error_log("Executing SQL with parameters: " . print_r($params, true));
     $stmt->execute($params);
+
+    // Guard: ENUM rejection stores '' without throwing — fail loudly if value did not stick.
+    $statusCheck = $conn->prepare("SELECT client_status FROM clients WHERE client_id = :client_id LIMIT 1");
+    $statusCheck->execute([":client_id" => $clientId]);
+    $storedStatus = (string) ($statusCheck->fetchColumn() ?? '');
+    if ($storedStatus !== $clientStatus) {
+        $conn->rollBack();
+        http_response_code(500);
+        echo json_encode([
+            "success" => false,
+            "message" => "client_status did not persist (DB column likely still ENUM). Run migrate-client-status-varchar.php or migration 20260824_133000_clients_client_status_varchar.sql, then retry.",
+            "requested" => $clientStatus,
+            "stored" => $storedStatus,
+        ]);
+        exit();
+    }
+
     // ------------------------
     // Handle addresses in new table
     // ------------------------

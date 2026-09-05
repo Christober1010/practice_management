@@ -36,18 +36,14 @@ $authUser = $isMutating
     ? requireAuthAny(['view.reports_mileage', 'reports.write', 'view.mileage_rate', 'manage_data.mileage_rate'], 'mahaverse')
     : requireAuthAny(['view.reports_mileage', 'reports.read', 'view.reports', 'view.mileage_rate', 'manage_data.mileage_rate'], 'mahaverse');
 
-$host = "db5018419668.hosting-data.io";
-$user = "dbu1183438";
-$password = "M@h@B3h@v1or@lH3@lth4@ut1sm";
-$database = "dbs14649042";
-
-$conn = new mysqli($host, $user, $password, $database);
-if ($conn->connect_error) {
+// Use env config (prod → dbs14484433 / test → dbs14649042). Do not hardcode DB here.
+try {
+    $conn = getDBConnection();
+} catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Database connection failed']);
     exit();
 }
-$conn->set_charset('utf8mb4');
 
 function mileage_fail(int $code, string $msg): void
 {

@@ -157,12 +157,12 @@ try {
                         </ul>
                     </div>
                     <div class='credentials'>
-                        <div class='label'>Username</div>
-                        <div class='value'>" . htmlspecialchars($username, ENT_QUOTES, 'UTF-8') . "</div>
+                        <div class='label'>Email</div>
+                        <div class='value'>" . htmlspecialchars($email, ENT_QUOTES, 'UTF-8') . "</div>
                         <div class='label' style='margin-top: 12px;'>Temporary Password</div>
                         <div class='value'>" . htmlspecialchars($password, ENT_QUOTES, 'UTF-8') . "</div>
                     </div>
-                    <p class='warning'>For security, please change your password after your first login.</p>
+                    <p class='warning'>Sign in with this email and temporary password. For security, please change your password after your first login.</p>
                     <a class='cta' href='" . $loginUrl . "'>Reset Password</a>
                 </div>
                 <div class='footer'>

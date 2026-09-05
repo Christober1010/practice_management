@@ -42,8 +42,22 @@ const COLUMN_LABELS = {
   deductible: "Deductible $",
   location: "Location",
   claim_id: "Claim ID",
-  claim_status: "Claim status",
+  claim_status: "Status",
+  session_id: "Session ID",
 };
+
+/** Workflow status for the Session Log tab the row belongs to (not billing claim_status). */
+function rowWorkflowStatus(row, activeStatus) {
+  const tab = String(row?.tab || "").trim();
+  if (SESSION_LOG_STATUSES.includes(tab)) return tab;
+  const log = String(row?.log_status || "").trim();
+  if (log === "Pending Payment" || log === "Received Payment") return log;
+  if (String(row?.session_status || "").toLowerCase() === "rendered") {
+    return "Rendered";
+  }
+  if (SESSION_LOG_STATUSES.includes(activeStatus)) return activeStatus;
+  return "Scheduled";
+}
 
 const PAYMENT_MIDDLE = [
   "payer_paid",
@@ -104,7 +118,7 @@ function columnsForStatus(activeStatus, { hideMiscAndDiff = false } = {}) {
     if (!hideMiscAndDiff) base.push("misc_hrs", "diff");
     base.push(...RECEIVED_PAYMENT_MIDDLE);
   }
-  base.push("location", "claim_id", "claim_status");
+  base.push("location", "claim_id", "claim_status", "session_id");
   return base;
 }
 
@@ -348,7 +362,11 @@ export default function SessionLogTable({
       case "claim_id":
         return row.claim_id || "—";
       case "claim_status":
-        return row.claim_status || "—";
+        return rowWorkflowStatus(row, activeStatus);
+      case "session_id":
+        return row.session_id != null && row.session_id !== ""
+          ? String(row.session_id)
+          : "—";
       default:
         return "—";
     }

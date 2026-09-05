@@ -1,10 +1,15 @@
--- If client_status is an ENUM that omits workflow values (e.g. "Active Treatment", "Reauthorization"),
--- MySQL may store an empty string for invalid ENUM values (typical in non-strict SQL mode).
+-- If client_status is an ENUM that omits workflow values (e.g. "Active Treatment", "Reauthorization",
+-- "Service Terminated"), MySQL may store an empty string for invalid ENUM values (typical in
+-- non-strict SQL mode).
 -- Symptom: update payload includes client_status but get-clients returns "".
+--
+-- Prefer the runnable shared migration (idempotent):
+--   migration/shared/20260824_133000_clients_client_status_varchar.sql
+-- Or hit (after deploy): migrate-client-status-varchar.php with clients.update auth.
 --
 -- Verify:
 --   SHOW FULL COLUMNS FROM clients LIKE 'client_status';
 --
--- Fix (run once on production after verifying Type is enum(...)):
+-- Manual fix:
 -- ALTER TABLE clients
 --   MODIFY COLUMN client_status VARCHAR(64) NOT NULL DEFAULT 'New';

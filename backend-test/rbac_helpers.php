@@ -11,8 +11,8 @@ if (!function_exists('rbac_mahaverse_perm_keys')) {
             'view.dashboard','view.scheduling','view.clients','view.staff','view.users','view.master_data','view.manage_data','view.reports','view.launchpad','view.billing',
             'view.domains','view.programs','view.targets','view.prompts','view.behavior_categories','view.behaviors','view.mileage_rate','view.provider','view.provider_service_code','view.service_code','view.diagnosis','view.locations','view.facility_types','view.treatment_types','view.document_types',
             'view.reports_session_log','view.reports_session_log_billing','view.reports_session_import','view.reports_insurance_utilization','view.reports_mileage',
-            'clients.read','clients.write','staff.read','staff.write','users.read','users.write','scheduling.read','scheduling.write','reports.read','reports.write','master_data.read','master_data.write','manage_data.read','manage_data.write','billing.read','billing.write',
-            'scheduling.session.create','scheduling.session.view','scheduling.session.notes','scheduling.session.update','scheduling.session.delete',
+            'clients.read','clients.write','staff.read','staff.write','users.read','users.write','scheduling.read','scheduling.write','reports.read','reports.write','master_data.read','master_data.write','manage_data.read','manage_data.write','billing.read','billing.write','billing.sftp',
+            'scheduling.session.create','scheduling.session.create_past','scheduling.session.view','scheduling.session.notes','scheduling.session.update','scheduling.session.delete',
             'clients.create','clients.view','clients.update','clients.archive',
             'staff.archive','users.delete','users.deactivate',
             'master_data.domains','master_data.programs','master_data.targets','master_data.prompts','master_data.behavior_categories','master_data.behaviors',
@@ -39,7 +39,7 @@ if (!function_exists('rbac_mahaverse_perm_keys')) {
             return [
                 'nav.scheduling','view.scheduling',
                 'scheduling.read','scheduling.write',
-                'scheduling.session.create','scheduling.session.view','scheduling.session.notes','scheduling.session.update','scheduling.session.delete',
+                'scheduling.session.create','scheduling.session.create_past','scheduling.session.view','scheduling.session.notes','scheduling.session.update','scheduling.session.delete',
             ];
         }
         if ($r === 'parent') {
@@ -52,7 +52,7 @@ if (!function_exists('rbac_mahaverse_perm_keys')) {
                 'view.provider','view.provider_service_code','view.service_code','view.diagnosis',
                 'clients.read','clients.write','clients.view','clients.update',
                 'manage_data.read','manage_data.write','manage_data.provider','manage_data.provider_service','manage_data.service_code','manage_data.diagnosis',
-                'billing.read','billing.write',
+                'billing.read','billing.write','billing.sftp',
             ];
         }
         if ($r === 'bcba') {
@@ -303,25 +303,45 @@ function rbac_resolve_staff_id_for_user($conn, $user) {
         return (string) $user['link_staff_id'];
     }
     $uid = (int) ($user['id'] ?? 0);
-    if ($uid <= 0) {
-        return null;
+    if ($uid > 0) {
+        $stmt = $conn->prepare("
+            SELECT s.id
+            FROM staff s
+            INNER JOIN users u ON LOWER(TRIM(s.email)) = LOWER(TRIM(u.email))
+            WHERE u.id = ?
+            LIMIT 1
+        ");
+        if ($stmt) {
+            $stmt->bind_param('i', $uid);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            $row = $res ? $res->fetch_assoc() : null;
+            $stmt->close();
+            if (!empty($row['id'])) {
+                return (string) $row['id'];
+            }
+        }
     }
-    $stmt = $conn->prepare("
-        SELECT s.id
-        FROM staff s
-        INNER JOIN users u ON LOWER(TRIM(s.email)) = LOWER(TRIM(u.email))
-        WHERE u.id = ?
-        LIMIT 1
-    ");
-    if (!$stmt) {
-        return null;
+    // Token auth exposes email as username — match staff directly if join missed.
+    $email = trim((string) ($user['email'] ?? $user['username'] ?? ''));
+    if ($email !== '') {
+        $stmt = $conn->prepare("
+            SELECT id FROM staff
+            WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
+            LIMIT 1
+        ");
+        if ($stmt) {
+            $stmt->bind_param('s', $email);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            $row = $res ? $res->fetch_assoc() : null;
+            $stmt->close();
+            if (!empty($row['id'])) {
+                return (string) $row['id'];
+            }
+        }
     }
-    $stmt->bind_param('i', $uid);
-    $stmt->execute();
-    $res = $stmt->get_result();
-    $row = $res ? $res->fetch_assoc() : null;
-    $stmt->close();
-    return $row['id'] ?? null;
+    return null;
 }
 
 function rbac_resolve_client_id_for_user($user) {
@@ -469,6 +489,36 @@ function rbac_visible_staff_ids_for_user($conn, $user) {
 }
 
 /**
+ * Supervisor staff IDs for this user (Assigned Supervisor on their staff profile).
+ *
+ * staff_assignments: staff_id = me, assigned_staff_id = supervisor.
+ *
+ * @param mysqli $conn
+ * @param array $user
+ * @return string[]
+ */
+function rbac_supervisor_staff_ids_for_user($conn, $user) {
+    $sid = rbac_resolve_staff_id_for_user($conn, $user);
+    if (!$sid) {
+        return [];
+    }
+    $ids = [];
+    $stmt = $conn->prepare("SELECT assigned_staff_id FROM staff_assignments WHERE staff_id = ?");
+    if ($stmt) {
+        $stmt->bind_param('s', $sid);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        while ($res && ($row = $res->fetch_assoc())) {
+            if (!empty($row['assigned_staff_id'])) {
+                $ids[] = (string) $row['assigned_staff_id'];
+            }
+        }
+        $stmt->close();
+    }
+    return array_values(array_unique($ids));
+}
+
+/**
  * Client IDs assigned to the authenticated user's staff (or linked client id).
  *
  * @param mysqli $conn
@@ -500,8 +550,14 @@ function rbac_assigned_client_ids_for_user($conn, $user) {
 }
 
 /**
- * Filter session rows for non-admin users (assigned clients and/or visible providers).
- * Sessions marked exclude_session=Yes are admin-only.
+ * Filter session rows for non-admin users.
+ *
+ * Visibility rules:
+ * - Own sessions (or direct reports) as provider / supervising provider
+ * - Sessions on assigned clients, except when the provider is the viewer's
+ *   supervisor (keeps Harini-style supervisor calendars hidden from reports)
+ * - Linked client portal users: all sessions for their linked client
+ * - exclude_session=Yes is admin-only
  *
  * @param mysqli $conn
  * @param array $user
@@ -530,22 +586,46 @@ function rbac_filter_sessions_for_user($conn, $user, $sessions) {
         }));
     }
 
+    // Patient/client portal: linked client_id only (not staff_client_assignments).
+    $linkedClientId = rbac_resolve_client_id_for_user($user);
+    $linkedClientId = $linkedClientId !== null && $linkedClientId !== ''
+        ? (string) $linkedClientId
+        : '';
+
     $allowedClients = array_flip(rbac_assigned_client_ids_for_user($conn, $user));
     $allowedStaff = array_flip(rbac_visible_staff_ids_for_user($conn, $user));
-    return array_values(array_filter($sessions, function ($s) use ($allowedClients, $allowedStaff, $isExcluded) {
+    $supervisorStaff = array_flip(rbac_supervisor_staff_ids_for_user($conn, $user));
+
+    return array_values(array_filter($sessions, function ($s) use (
+        $linkedClientId,
+        $allowedClients,
+        $allowedStaff,
+        $supervisorStaff,
+        $isExcluded
+    ) {
         if ($isExcluded($s)) {
             return false;
         }
         $cid = (string) ($s['client_id'] ?? '');
         $pid = (string) ($s['provider_id'] ?? '');
         $sid = (string) ($s['supervising_provider_id'] ?? '');
-        if ($cid !== '' && isset($allowedClients[$cid])) {
+        if ($linkedClientId !== '' && $cid === $linkedClientId) {
             return true;
         }
+        // Never show the viewer's supervisor as the treating provider — even when
+        // supervising_provider_id is a peer/report (that used to reopen Harini rows).
+        if ($pid !== '' && isset($supervisorStaff[$pid])) {
+            return false;
+        }
+        // Self / direct-report as provider or supervising provider.
         if ($pid !== '' && isset($allowedStaff[$pid])) {
             return true;
         }
         if ($sid !== '' && isset($allowedStaff[$sid])) {
+            return true;
+        }
+        // Assigned clients: peer schedules (supervisor-as-provider already excluded).
+        if ($cid !== '' && isset($allowedClients[$cid])) {
             return true;
         }
         return false;

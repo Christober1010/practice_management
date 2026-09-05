@@ -3,7 +3,7 @@
 Theralytics / CL_PA_RPT Excel files to exercise:
 
 1. **Create** new sessions  
-2. **Exclude Session** column  
+2. **Exclude Session** column (create + re-import No↔Yes update)  
 3. **Within-file duplicates** (client + DOS + start + service code)  
 4. **DB duplicates**  
 5. **Scheduled → Rendered** re-import update  
@@ -77,6 +77,8 @@ Import: **updated ≈ 1**, **imported ≈ 1**.
 ## Quick checks after import
 
 - CASE2 session: **Exclude session = Yes** (admin view).
+- Re-import same row with **Exclude Session=No** (or Yes→No): updates existing appointment; does not create a second session.
+- Re-import with the same Exclude value and same status: still **Reject** as DB duplicate (unless Scheduled→Rendered).
 - CASE5 / CASE7: same session id, status **Rendered**, rendered hours filled.
 - CASE4 / CASE8 / CASE9: never created as extra sessions.
 - Calendar for `2026-11-10` has sessions at 08:00, 09:00, 10:00, 14:00, 15:00, 16:00 (not two at 10:00).

@@ -40,28 +40,44 @@ import { SidebarProvider } from "@/components/ui/sidebar";
 import AppSidebar from "@/components/layout/app-sidebar";
 import ReportsView from "../reports/reports-view";
 import LocationsView from "../locations/locations-view";
+import {
+  parseClaimWarningFocusFromSearch,
+  storeClaimWarningFocus,
+} from "@/lib/claim-warning-nav";
 
 export default function DashboardLayout({ userRole, onLogout }) {
   const [currentView, setCurrentView] = useState("dashboard");
   const { can, canAny } = usePermissions(userRole);
 
-  // Listen for navigation events from other components
+  // Deep links (?view=…) open the right screen in a new tab from claim warnings.
+  // Also listen for navigateToView events / localStorage from in-app navigation.
   useEffect(() => {
+    const applyView = (view) => {
+      if (!view || typeof view !== "string") return;
+      setCurrentView(view);
+      localStorage.setItem("currentView", view);
+    };
+
+    const params = new URLSearchParams(window.location.search || "");
+    const focus = parseClaimWarningFocusFromSearch(params);
+    if (focus?.view) {
+      storeClaimWarningFocus(focus);
+      applyView(focus.view);
+    } else {
+      const savedView = localStorage.getItem("currentView");
+      if (savedView) {
+        setCurrentView(savedView);
+      }
+    }
+
     const handleNavigate = (event) => {
       const view = event.detail?.view || localStorage.getItem("currentView");
       if (view) {
-        setCurrentView(view);
+        applyView(view);
       }
     };
 
     window.addEventListener("navigateToView", handleNavigate);
-    
-    // Also check localStorage on mount for pending navigation
-    const savedView = localStorage.getItem("currentView");
-    if (savedView) {
-      setCurrentView(savedView);
-    }
-
     return () => {
       window.removeEventListener("navigateToView", handleNavigate);
     };
@@ -128,7 +144,7 @@ export default function DashboardLayout({ userRole, onLogout }) {
       case "billing":
         return <BillingView />;
       case "claims":
-        return <ClaimsView />;
+        return <ClaimsView userRole={userRole} />;
       case "portal":
         return <ParentPortal />;
       case "users":

@@ -43,13 +43,15 @@ function startOfWeek(date) {
   const d = new Date(date);
   const day = d.getDay();
   const diff = d.getDate() - day;
-  return new Date(d.setDate(diff));
+  // Midnight local — do not keep currentDate's clock time or Sunday
+  // morning appointments fall outside the week fetch range.
+  return new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
 }
 function endOfWeek(date) {
   const d = new Date(date);
   const day = d.getDay();
   const diff = d.getDate() + (6 - day);
-  return new Date(d.setDate(diff));
+  return new Date(d.getFullYear(), d.getMonth(), diff, 23, 59, 59, 999);
 }
 function addMonths(date, n) {
   return new Date(date.getFullYear(), date.getMonth() + n, 1);

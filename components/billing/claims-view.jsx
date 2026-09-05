@@ -18,7 +18,15 @@ import { Badge } from "@/components/ui/badge";
 import { FileDown, FileText, RefreshCw, Upload } from "lucide-react";
 import { getMahaverseAuthHeaders } from "@/lib/api-auth";
 import Cms1500Preview from "./cms1500-preview";
+import ClaimWarningList from "./claim-warning-list";
 import { createMergedCms1500PdfBlob, downloadMergedCms1500Pdf } from "@/lib/cms1500-pdf";
+import { usePermissions } from "@/hooks/usePermissions";
+import { PERM } from "@/lib/rbac-permission-keys";
+import {
+  OFFICE_ALLY_SFTP_MAX_DAYS,
+  dosBoundsFromSessions,
+  officeAllySftpDateRangeCheck,
+} from "@/lib/officeally-sftp-guards";
 
 function formatDateOnly(iso) {
   if (!iso) return "N/A";
@@ -104,14 +112,17 @@ const CLIENT_FILTER_ALL = "__all__";
 
 function defaultDosRange() {
   const end = new Date();
-  const start = new Date(end.getFullYear(), end.getMonth(), 1);
+  const start = new Date(end);
+  start.setUTCDate(end.getUTCDate() - (OFFICE_ALLY_SFTP_MAX_DAYS - 1));
   return {
     from: start.toISOString().slice(0, 10),
     to: end.toISOString().slice(0, 10),
   };
 }
 
-export default function ClaimsView() {
+export default function ClaimsView({ userRole }) {
+  const { can } = usePermissions(userRole ?? {});
+  const canSftp = can(PERM.BILLING_SFTP);
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
   const defaults = useMemo(() => defaultDosRange(), []);
   const [clients, setClients] = useState([]);
@@ -121,8 +132,10 @@ export default function ClaimsView() {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [submittingAvaility, setSubmittingAvaility] = useState(false);
-  const [availityStatus, setAvailityStatus] = useState(null);
+  const [submittingOfficeAlly, setSubmittingOfficeAlly] = useState(false);
+  const [officeAllyStatus, setOfficeAllyStatus] = useState(null);
+  const [officeAllyConfig, setOfficeAllyConfig] = useState(null);
+  const [testingOfficeAlly, setTestingOfficeAlly] = useState(false);
   const [error, setError] = useState("");
 
   const [selectedClientId, setSelectedClientId] = useState(CLIENT_FILTER_ALL);
@@ -225,8 +238,32 @@ export default function ClaimsView() {
       label: e.label,
       warnings: e.warnings,
       pdfPreviewUrl: url,
+      clientId: e.clientId,
+      locationId: e.locationId || selectedLocationId,
+      serviceCode: e.serviceCode,
+      payload: e.payload,
     }));
-  }, [previewEntries, previewPdfUrl]);
+  }, [previewEntries, previewPdfUrl, selectedLocationId]);
+
+  const resolveOfficeAllyWarningContext = (warning) => {
+    const sidMatch = String(warning || "").match(/Session\s+#?(\d+)/i);
+    const sid = sidMatch?.[1];
+    const row = sid
+      ? sessions.find((s) => String(s.session_id) === String(sid))
+      : selectedSessionIds.length === 1
+        ? sessions.find((s) => String(s.session_id) === String(selectedSessionIds[0]))
+        : null;
+    return {
+      sessionId: sid || row?.session_id || selectedSessionIds[0] || "",
+      clientId: row?.client_id || "",
+      locationId: selectedLocationId || "",
+      serviceCode:
+        row?.service_code ||
+        row?.service_code_with_modifiers ||
+        row?.auth_code ||
+        "",
+    };
+  };
 
   const fetchBootstrapData = async () => {
     setLoading(true);
@@ -265,6 +302,18 @@ export default function ClaimsView() {
 
       setClients(toSafeArray(clientsJson.clients));
       setLocations(toSafeArray(locationsJson.data));
+
+      try {
+        const oaResp = await mahaverseFetch("/officeally-connection-test.php", {
+          headers: getMahaverseAuthHeaders(),
+        });
+        const oaJson = await readJsonSafe(oaResp);
+        if (oaResp.ok && oaJson?.success) {
+          setOfficeAllyConfig(oaJson.config || null);
+        }
+      } catch {
+        setOfficeAllyConfig(null);
+      }
     } catch (err) {
       console.error("Claims bootstrap load failed", err);
       setError(err.message || "Failed to load claims setup data.");
@@ -421,6 +470,30 @@ export default function ClaimsView() {
     selectedSessionsRows.length > 0 &&
     selectedSessionsRows.every((row) => normalizeClaimStatus(row) === "ready_to_bill");
 
+  const filterSftpRange = useMemo(
+    () => officeAllySftpDateRangeCheck(fromDateFilter, toDateFilter),
+    [fromDateFilter, toDateFilter]
+  );
+
+  const selectedSftpRange = useMemo(() => {
+    const bounds = dosBoundsFromSessions(selectedSessionsRows);
+    if (!bounds) {
+      return { ok: true, days: 0, message: "" };
+    }
+    return officeAllySftpDateRangeCheck(bounds.from, bounds.to);
+  }, [selectedSessionsRows]);
+
+  const sftpBlockedReason = useMemo(() => {
+    if (!canSftp) {
+      return "You do not have permission to submit claims via Office Ally SFTP.";
+    }
+    if (!filterSftpRange.ok) return filterSftpRange.message;
+    if (!selectedSftpRange.ok) return selectedSftpRange.message;
+    return "";
+  }, [canSftp, filterSftpRange, selectedSftpRange]);
+
+  const canSubmitOfficeAlly = canGenerate && canSftp && !sftpBlockedReason;
+
   const handleGeneratePreview = async () => {
     if (!canGenerate) return;
     setGenerating(true);
@@ -478,6 +551,14 @@ export default function ClaimsView() {
           label: claimPreviewLabel(row, sessionId),
           payload: json.payload,
           warnings: toSafeArray(json.warnings),
+          clientId: row?.client_id || "",
+          locationId: selectedLocationId || "",
+          serviceCode:
+            row?.service_code ||
+            row?.service_code_with_modifiers ||
+            row?.auth_code ||
+            json?.payload?.lines?.[0]?.procedure_code ||
+            "",
         };
       });
 
@@ -509,13 +590,45 @@ export default function ClaimsView() {
     }
   };
 
-  const handleSubmitAvaility = async () => {
-    if (!canGenerate) return;
-    setSubmittingAvaility(true);
+  const handleTestOfficeAlly = async () => {
+    if (!canSftp) {
+      setError("You do not have permission to test Office Ally SFTP.");
+      return;
+    }
+    setTestingOfficeAlly(true);
     setError("");
-    setAvailityStatus(null);
+    setOfficeAllyStatus(null);
     try {
-      const resp = await mahaverseFetch("/availity-submit-claims.php", {
+      const resp = await mahaverseFetch("/officeally-connection-test.php?connect=1", {
+        headers: getMahaverseAuthHeaders(),
+      });
+      const json = await readJsonSafe(resp);
+      if (!resp.ok || !json?.success) {
+        throw new Error(json?.message || "Office Ally connection test failed");
+      }
+      setOfficeAllyConfig(json.config || officeAllyConfig);
+      setOfficeAllyStatus({
+        success: true,
+        message: `Connected to ${json.connection?.host || "Office Ally"}:${json.connection?.port || 22} (${json.connection?.remote_dir || "inbound"})`,
+      });
+    } catch (err) {
+      console.error("Office Ally connection test failed", err);
+      setError(err.message || "Failed to connect to Office Ally SFTP.");
+    } finally {
+      setTestingOfficeAlly(false);
+    }
+  };
+
+  const handleSubmitOfficeAlly = async () => {
+    if (!canSubmitOfficeAlly) {
+      if (sftpBlockedReason) setError(sftpBlockedReason);
+      return;
+    }
+    setSubmittingOfficeAlly(true);
+    setError("");
+    setOfficeAllyStatus(null);
+    try {
+      const resp = await mahaverseFetch("/officeally-submit-claims.php", {
         method: "POST",
         headers: getMahaverseAuthHeaders({
           "Content-Type": "application/json",
@@ -530,15 +643,15 @@ export default function ClaimsView() {
       });
       const json = await readJsonSafe(resp);
       if (!resp.ok || !json?.success) {
-        throw new Error(json?.message || "Availity submission failed");
+        throw new Error(json?.message || "Office Ally submission failed");
       }
-      setAvailityStatus(json);
+      setOfficeAllyStatus(json);
       await fetchBootstrapData();
     } catch (err) {
-      console.error("Availity submit failed", err);
-      setError(err.message || "Failed to submit claims to Availity.");
+      console.error("Office Ally submit failed", err);
+      setError(err.message || "Failed to submit claims to Office Ally.");
     } finally {
-      setSubmittingAvaility(false);
+      setSubmittingOfficeAlly(false);
     }
   };
 
@@ -617,6 +730,23 @@ export default function ClaimsView() {
               </div>
             </div>
           </div>
+
+          {!filterSftpRange.ok && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+              {filterSftpRange.message}
+              <span className="mt-1 block text-amber-800">
+                CMS-1500 preview still works; Office Ally SFTP submit is blocked until the
+                range is {OFFICE_ALLY_SFTP_MAX_DAYS} days or less.
+              </span>
+            </div>
+          )}
+          {filterSftpRange.ok &&
+            !selectedSftpRange.ok &&
+            selectedSessionIds.length > 0 && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                {selectedSftpRange.message}
+              </div>
+            )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -790,31 +920,76 @@ export default function ClaimsView() {
                   ? `Download combined PDF (${previewEntries.length} forms)`
                   : "Download PDF"}
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleSubmitAvaility}
-              disabled={!canGenerate || submittingAvaility}
-              className="border-teal-300 text-teal-800 hover:bg-teal-50"
-            >
-              <Upload className="h-4 w-4 mr-2" />
-              {submittingAvaility ? "Uploading to Availity..." : "Submit to Availity (SFTP)"}
-            </Button>
+            {canSftp ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSubmitOfficeAlly}
+                  disabled={!canSubmitOfficeAlly || submittingOfficeAlly}
+                  title={sftpBlockedReason || undefined}
+                  className="border-teal-300 text-teal-800 hover:bg-teal-50"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  {submittingOfficeAlly
+                    ? "Uploading to Office Ally..."
+                    : "Submit to Office Ally (SFTP)"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleTestOfficeAlly}
+                  disabled={testingOfficeAlly}
+                >
+                  {testingOfficeAlly
+                    ? "Testing Office Ally..."
+                    : "Test Office Ally connection"}
+                </Button>
+              </>
+            ) : null}
           </div>
 
-          {availityStatus?.success && (
-            <div className="rounded-lg border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900">
-              Uploaded <span className="font-medium">{availityStatus.filename}</span>
-              {availityStatus.remote_path ? ` to ${availityStatus.remote_path}` : ""}
-              {availityStatus.session_ids?.length
-                ? ` (${availityStatus.session_ids.length} session(s) marked Submitted)`
-                : ""}
-              {availityStatus.warnings?.length > 0 && (
-                <ul className="mt-2 list-disc pl-5 text-amber-900">
-                  {availityStatus.warnings.map((w) => (
-                    <li key={w}>{w}</li>
-                  ))}
-                </ul>
+          {canSftp && sftpBlockedReason && (
+            <p className="text-xs text-amber-800">{sftpBlockedReason}</p>
+          )}
+          {!canSftp && (
+            <p className="text-xs text-slate-500">
+              Office Ally SFTP submit requires the Billing: Office Ally SFTP permission
+              (Admin → Role permissions).
+            </p>
+          )}
+
+          {canSftp && officeAllyConfig && (
+            <p className="text-xs text-slate-500">
+              Office Ally: {officeAllyConfig.enabled ? "enabled" : "disabled"}
+              {officeAllyConfig.configured ? ", credentials present" : ", waiting on .env credentials"}
+              {officeAllyConfig.sftp_host ? ` · ${officeAllyConfig.sftp_host}` : ""}
+              {officeAllyConfig.environment ? ` (${officeAllyConfig.environment})` : ""}
+            </p>
+          )}
+
+          {officeAllyStatus?.success && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-900">
+              {officeAllyStatus.message || (
+                <>
+                  Uploaded <span className="font-medium">{officeAllyStatus.filename}</span>
+                  {officeAllyStatus.remote_path ? ` to ${officeAllyStatus.remote_path}` : ""}
+                  {officeAllyStatus.session_ids?.length
+                    ? ` (${officeAllyStatus.session_ids.length} session(s) marked Submitted)`
+                    : ""}
+                </>
+              )}
+              {officeAllyStatus.warnings?.length > 0 && (
+                <>
+                  <p className="mt-2 text-xs text-slate-600">
+                    Click a warning to open where you can fix it (new tab).
+                  </p>
+                  <ClaimWarningList
+                    warnings={officeAllyStatus.warnings}
+                    itemClassName="text-amber-900"
+                    resolveContext={resolveOfficeAllyWarningContext}
+                  />
+                </>
               )}
             </div>
           )}

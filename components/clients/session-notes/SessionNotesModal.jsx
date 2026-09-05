@@ -408,8 +408,14 @@ export default function SessionNotesModal({
       }
       const data = await handleSaveSessionNotes({ silent: true, completeSession: true });
       const claimId = data?.data?.billing?.claim_id;
+      const claimStatus = String(data?.data?.billing?.claim_status ?? "");
+      const claimNotApplicable = /not\s*applicable/i.test(claimStatus);
       toast.success(
-        claimId ? `Session completed — ${claimId} (ready to bill)` : "Session completed — ready to bill"
+        claimNotApplicable
+          ? "Session completed — claim not applicable (non-billable)"
+          : claimId
+            ? `Session completed — ${claimId} (ready to bill)`
+            : "Session completed — ready to bill"
       );
       onSessionBillingFinalized?.(data?.data?.billing ?? null);
       onClose();

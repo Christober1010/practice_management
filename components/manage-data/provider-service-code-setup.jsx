@@ -34,6 +34,7 @@ import {
 import toast, { Toaster } from "react-hot-toast";
 import AddProviderServiceCodeModal from "./add-provider-service-code-modal";
 import DeleteConfirmModal from "../master-data/DeleteConfirmModal";
+import { clearClaimWarningFocus, peekClaimWarningFocus } from "@/lib/claim-warning-nav";
 
 export default function ProviderServiceCodeSetup() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -46,6 +47,8 @@ export default function ProviderServiceCodeSetup() {
   const [editingMapping, setEditingMapping] = useState(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [mappingToDelete, setMappingToDelete] = useState(null);
+  const [deepLinkHandled, setDeepLinkHandled] = useState(false);
+  const [hasFetched, setHasFetched] = useState(false);
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
@@ -64,6 +67,7 @@ export default function ProviderServiceCodeSetup() {
       toast.error("Failed to load provider service codes");
     } finally {
       setLoading(false);
+      setHasFetched(true);
     }
   };
 
@@ -72,6 +76,36 @@ export default function ProviderServiceCodeSetup() {
     loadMappings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseUrl, showArchived]);
+
+  // Prefill search / open mapping from claim-warning deep link (line charge / rates).
+  useEffect(() => {
+    if (deepLinkHandled || !hasFetched || loading) return;
+    const focus = peekClaimWarningFocus("providerServiceCode");
+    if (!focus) return;
+
+    clearClaimWarningFocus();
+    setDeepLinkHandled(true);
+    const code = String(focus.serviceCode || "").trim();
+    if (code) {
+      setSearchTerm(code);
+      toast.success(`Filtered rates for service code ${code}`);
+    } else {
+      toast("Add or edit the provider service code rate for this claim");
+    }
+    const match = code
+      ? mappings.find((m) =>
+          String(m.service_code || m.code || "")
+            .toLowerCase()
+            .includes(code.toLowerCase())
+        )
+      : null;
+    if (match) {
+      setEditingMapping(match);
+      setIsAddModalOpen(true);
+    } else if (code) {
+      setIsAddModalOpen(true);
+    }
+  }, [loading, mappings, deepLinkHandled, hasFetched]);
 
   const displayedMappings = useMemo(() => {
     return mappings

@@ -19,6 +19,32 @@ function sessions_has_authorized_hours_column(mysqli $conn): bool
     return $cached;
 }
 
+/** True when sessions.cancelled_by and cancelled_reason both exist. */
+function sessions_has_cancelled_fields_column(mysqli $conn): bool
+{
+    static $cached = null;
+    if ($cached !== null) {
+        return $cached;
+    }
+    $hasBy = false;
+    $hasReason = false;
+    $r = @$conn->query("SHOW COLUMNS FROM `sessions`");
+    if ($r) {
+        while ($row = $r->fetch_assoc()) {
+            $field = (string)($row['Field'] ?? '');
+            if ($field === 'cancelled_by') {
+                $hasBy = true;
+            }
+            if ($field === 'cancelled_reason') {
+                $hasReason = true;
+            }
+        }
+        $r->free();
+    }
+    $cached = $hasBy && $hasReason;
+    return $cached;
+}
+
 /** True when sessions.exclude_session (Yes/No) exists. */
 function sessions_has_exclude_session_column(mysqli $conn): bool
 {
@@ -168,6 +194,65 @@ function sessions_resolve_exclude_session_for_write($authUser, $requestedValue, 
     return normalize_session_exclude_session($requestedValue);
 }
 
+/** Clinic calendar "today" (Y-m-d) for appointment date policy. */
+function sessions_clinic_today_ymd(string $tzName = 'America/Chicago'): string
+{
+    try {
+        $dt = new DateTime('now', new DateTimeZone($tzName));
+        return $dt->format('Y-m-d');
+    } catch (Exception $e) {
+        return gmdate('Y-m-d');
+    }
+}
+
+/**
+ * Local calendar date (Y-m-d) of a session start stored as UTC MySQL datetime.
+ */
+function sessions_start_local_ymd(string $startUtcMysql, ?string $startTz = null): string
+{
+    $tzName = trim((string)$startTz);
+    if ($tzName === '') {
+        $tzName = 'America/Chicago';
+    }
+    $raw = trim($startUtcMysql);
+    if ($raw === '') {
+        return '';
+    }
+    try {
+        $utc = new DateTime($raw, new DateTimeZone('UTC'));
+        $utc->setTimezone(new DateTimeZone($tzName));
+        return $utc->format('Y-m-d');
+    } catch (Exception $e) {
+        if (preg_match('/^(\d{4}-\d{2}-\d{2})/', $raw, $m)) {
+            return $m[1];
+        }
+        return '';
+    }
+}
+
+/**
+ * True when the user may create sessions on past clinic calendar days.
+ * Admin always may; others need scheduling.session.create_past.
+ */
+function sessions_user_may_create_past_dates($authUser, $conn = null): bool
+{
+    if (!is_array($authUser)) {
+        return true;
+    }
+    $role = strtolower(trim((string)($authUser['role'] ?? '')));
+    if ($role === 'admin') {
+        return true;
+    }
+    if (!function_exists('rbac_user_has_permission_key')) {
+        return false;
+    }
+    return rbac_user_has_permission_key(
+        $authUser['role'] ?? '',
+        'scheduling.session.create_past',
+        'mahaverse'
+    );
+}
+
 function sessions_has_claim_columns(mysqli $conn): array
 {
     static $cached = null;
@@ -197,7 +282,10 @@ function session_is_completed_status($status): bool
     return $v === 'rendered' || $v === 'completed';
 }
 
-/** Completed / billed session — only time and location may change on update. */
+/**
+ * Completed / billed session — client, rendering provider, notes, and status stay locked.
+ * Time, location, supervising provider, and billing code (auth) may still be updated (claim fixes).
+ */
 function session_row_is_completed(array $row): bool
 {
     if (session_is_completed_status(session_row_status_value($row, ''))) {
@@ -479,11 +567,13 @@ function claim_status_is_not_applicable($status): bool
 
 /**
  * Set claim_id / claim_status when a session is completed.
- * Billable=No (provider↔service mapping) → claim_status "Not Applicable", no claim number.
+ * Billable=No (Excel override or provider↔service mapping) → claim_status "Not Applicable", no claim number.
  * Billable=Yes → generate claim_id + "Ready to Bill" (or keep an existing non-NA status).
  * Exclude session does NOT control claim generation.
+ *
+ * @param mixed $billableOverride Optional Yes/No from import Excel "Billable" column (wins over PSC lookup).
  */
-function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = null): void
+function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = null, $billableOverride = null): void
 {
     $cols = sessions_has_claim_columns($conn);
     if (!$cols['claim_id'] || !$cols['claim_status']) {
@@ -491,7 +581,7 @@ function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = nu
     }
 
     // Ensure billable helper is available even if the caller forgot to include it.
-    if (!function_exists('session_resolve_billable')) {
+    if (!function_exists('session_resolve_billable') || !function_exists('session_normalize_billable_flag')) {
         $rateLib = __DIR__ . '/session_rate_lib.php';
         if (is_file($rateLib)) {
             require_once $rateLib;
@@ -520,7 +610,12 @@ function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = nu
     }
 
     $billable = 'Yes';
-    if (function_exists('session_resolve_billable')) {
+    $override = function_exists('session_normalize_billable_flag')
+        ? session_normalize_billable_flag($billableOverride)
+        : null;
+    if ($override !== null) {
+        $billable = $override;
+    } elseif (function_exists('session_resolve_billable')) {
         $billable = session_resolve_billable($conn, $row);
     } else {
         // Inline fallback: procedure from auth_code/service_code; No only if all active mappings are No.
@@ -668,11 +763,18 @@ function generateICS($clientName, $providerName, $startUtc, $endUtc, $locationAd
 
 function sendEmail($toEmail, $toName, $subject, $body, $icsContent = null)
 {
-    $boundary = uniqid('boundary_');
+    $toEmail = trim((string) $toEmail);
+    if ($toEmail === '' || !filter_var($toEmail, FILTER_VALIDATE_EMAIL)) {
+        file_put_contents('debug.log', "Email skipped — invalid address: {$toEmail}\n", FILE_APPEND);
+        return false;
+    }
 
-    $headers = "MIME-Version: 1.0\r\n";
-    $headers .= "From: Maha Behavioral Health <admin@mahabehavioralhealth.com>\r\n";
-    $headers .= "Content-Type: multipart/mixed; boundary=\"$boundary\"\r\n";
+    // Keep subjects ASCII-safe for picky MTAs (IONOS / PHP mail).
+    $subject = preg_replace('/[^\x20-\x7E]/', '-', (string) $subject);
+    $subject = trim(preg_replace('/\s+/', ' ', $subject) ?? $subject);
+    if ($subject === '') {
+        $subject = 'Mahaverse notification';
+    }
 
     $styledBody = '
     <!DOCTYPE html>
@@ -692,7 +794,9 @@ function sendEmail($toEmail, $toName, $subject, $body, $icsContent = null)
             <div style="padding: 20px; background-color: #f9f9f9;">
                 <h2 style="color: #4a90e2; font-size: 20px; margin-top: 0;">Session Update</h2>
                 ' . $body . '
-                <p style="margin-top: 20px; font-size: 14px;">Please find the calendar invite attached to add this session to your calendar.</p>
+                ' . ($icsContent
+                    ? '<p style="margin-top: 20px; font-size: 14px;">Please find the calendar invite attached to add this session to your calendar.</p>'
+                    : '') . '
                 <p style="font-size: 14px; color: #666;">Thank you for choosing Maha Behavioral Health.</p>
             </div>
             <div style="background-color: #4a90e2; padding: 10px; text-align: center; font-size: 12px; color: #ffffff;">
@@ -703,26 +807,174 @@ function sendEmail($toEmail, $toName, $subject, $body, $icsContent = null)
     </body>
     </html>';
 
-    $message = "--$boundary\r\n";
-    $message .= "Content-Type: text/html; charset=UTF-8\r\n";
-    $message .= "Content-Transfer-Encoding: 7bit\r\n\r\n";
-    $message .= $styledBody . "\r\n";
+    $from = 'Maha Behavioral Health <admin@mahabehavioralhealth.com>';
+    $envelope = '-fadmin@mahabehavioralhealth.com';
 
     if ($icsContent) {
-        $message .= "--$boundary\r\n";
+        $boundary = 'maha_' . bin2hex(random_bytes(8));
+        $headers = "MIME-Version: 1.0\r\n";
+        $headers .= "From: {$from}\r\n";
+        $headers .= "Reply-To: admin@mahabehavioralhealth.com\r\n";
+        $headers .= "Content-Type: multipart/mixed; boundary=\"{$boundary}\"\r\n";
+
+        $message = "--{$boundary}\r\n";
+        $message .= "Content-Type: text/html; charset=UTF-8\r\n";
+        $message .= "Content-Transfer-Encoding: 7bit\r\n\r\n";
+        $message .= $styledBody . "\r\n";
+        $message .= "--{$boundary}\r\n";
         $message .= "Content-Type: text/calendar; charset=UTF-8; method=REQUEST\r\n";
         $message .= "Content-Disposition: attachment; filename=\"session.ics\"\r\n";
         $message .= "Content-Transfer-Encoding: 7bit\r\n\r\n";
         $message .= $icsContent . "\r\n";
+        $message .= "--{$boundary}--\r\n";
+    } else {
+        // Plain HTML (no multipart) — more reliable on shared hosting when there is no attachment.
+        $headers = "MIME-Version: 1.0\r\n";
+        $headers .= "From: {$from}\r\n";
+        $headers .= "Reply-To: admin@mahabehavioralhealth.com\r\n";
+        $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+        $message = $styledBody;
     }
 
-    $message .= "--$boundary--\r\n";
-
-    $emailSent = mail($toEmail, $subject, $message, $headers);
-    file_put_contents('debug.log', "Email to $toEmail: " . ($emailSent ? 'Success' : 'Failed') . "\n", FILE_APPEND);
+    $emailSent = @mail($toEmail, $subject, $message, $headers, $envelope);
+    if (!$emailSent) {
+        $err = error_get_last();
+        $errMsg = is_array($err) ? (string)($err['message'] ?? '') : '';
+        file_put_contents(
+            'debug.log',
+            "Email to {$toEmail} FAILED" . ($errMsg !== '' ? ": {$errMsg}" : '') . "\n",
+            FILE_APPEND
+        );
+    } else {
+        file_put_contents('debug.log', "Email to {$toEmail}: Success\n", FILE_APPEND);
+    }
     return $emailSent;
 }
 
+/**
+ * Admin inboxes that receive scheduling notifications / import summaries.
+ * Add or remove addresses here — every listed address gets the same email.
+ *
+ * @return list<array{email:string,name:string}>
+ */
+function mahaverse_scheduling_admin_recipients(): array
+{
+    return [
+        ['email' => 'christoberedward@gmail.com', 'name' => 'Admin'],
+        ['email' => 'admin@mahabehavioralhealth.com', 'name' => 'Maha Admin'],
+    ];
+}
+
+/**
+ * Send an HTML email (no ICS) to every scheduling admin recipient.
+ */
+function mahaverse_send_admin_html_email(string $subject, string $innerHtmlBody): array
+{
+    $results = [];
+    foreach (mahaverse_scheduling_admin_recipients() as $admin) {
+        $email = trim((string)($admin['email'] ?? ''));
+        if ($email === '') {
+            continue;
+        }
+        $name = trim((string)($admin['name'] ?? 'Admin')) ?: 'Admin';
+        $ok = sendEmail($email, $name, $subject, $innerHtmlBody, null);
+        $entry = ['email' => $email, 'sent' => (bool)$ok];
+        if (!$ok) {
+            $err = error_get_last();
+            if (is_array($err) && !empty($err['message'])) {
+                $entry['error'] = (string)$err['message'];
+            } else {
+                $entry['error'] = 'PHP mail() returned false (host mail relay may be blocked or misconfigured)';
+            }
+        }
+        $results[] = $entry;
+    }
+    return $results;
+}
+
+/**
+ * Build + send one summary email after a bulk calendar import.
+ *
+ * @param list<array{line?:int,action?:string,session_id?:int|string|null,client?:string,staff?:string,dos?:string|null,service_code?:string,status?:string}> $importedRows
+ */
+function mahaverse_send_session_import_summary_email(
+    int $createdCount,
+    int $updatedCount,
+    array $importedRows,
+    string $actorLabel = ''
+): array {
+    $total = $createdCount + $updatedCount;
+    if ($total <= 0) {
+        return [];
+    }
+
+    $actor = trim($actorLabel) !== '' ? htmlspecialchars($actorLabel) : 'an administrator';
+    $subject = sprintf(
+        'Session import summary - %d session(s) in Mahaverse',
+        $total
+    );
+
+    $maxRowsInEmail = 80;
+    $shown = array_slice($importedRows, 0, $maxRowsInEmail);
+    $extra = max(0, count($importedRows) - count($shown));
+
+    $rowsHtml = '';
+    foreach ($shown as $row) {
+        $action = htmlspecialchars((string)($row['action'] ?? ''));
+        $sid = htmlspecialchars((string)($row['session_id'] ?? ''));
+        $client = htmlspecialchars((string)($row['client'] ?? ''));
+        $staff = htmlspecialchars((string)($row['staff'] ?? ''));
+        $dos = htmlspecialchars((string)($row['dos'] ?? ''));
+        $code = htmlspecialchars((string)($row['service_code'] ?? ''));
+        $status = htmlspecialchars((string)($row['status'] ?? ''));
+        $line = (int)($row['line'] ?? 0);
+        $rowsHtml .= '<tr>'
+            . '<td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;">' . ($line > 0 ? $line : '—') . '</td>'
+            . '<td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;">' . ($action !== '' ? $action : '—') . '</td>'
+            . '<td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;">' . ($sid !== '' ? $sid : '—') . '</td>'
+            . '<td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;">' . ($client !== '' ? $client : '—') . '</td>'
+            . '<td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;">' . ($staff !== '' ? $staff : '—') . '</td>'
+            . '<td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap;">' . ($dos !== '' ? $dos : '—') . '</td>'
+            . '<td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;">' . ($code !== '' ? $code : '—') . '</td>'
+            . '<td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;">' . ($status !== '' ? $status : '—') . '</td>'
+            . '</tr>';
+    }
+    if ($extra > 0) {
+        $rowsHtml .= '<tr><td colspan="8" style="padding:8px;color:#666;">… and '
+            . (int)$extra
+            . ' more session(s) not listed in this email.</td></tr>';
+    }
+
+    $body = '
+    <div style="background-color:#ffffff;padding:15px;border:1px solid #e0e0e0;border-radius:5px;">
+        <p style="margin:0 0 12px;">A bulk session import was completed by <strong>' . $actor . '</strong>.</p>
+        <ul style="margin:0 0 16px;padding-left:18px;">
+            <li><strong>' . (int)$createdCount . '</strong> session(s) created</li>
+            <li><strong>' . (int)$updatedCount . '</strong> session(s) updated (Scheduled → Rendered)</li>
+            <li><strong>' . (int)$total . '</strong> total</li>
+        </ul>
+        <p style="margin:0 0 8px;font-weight:600;">Imported sessions</p>
+        <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                <thead>
+                    <tr style="background:#e8f4fd;text-align:left;">
+                        <th style="padding:6px 8px;">#</th>
+                        <th style="padding:6px 8px;">Action</th>
+                        <th style="padding:6px 8px;">Session ID</th>
+                        <th style="padding:6px 8px;">Client</th>
+                        <th style="padding:6px 8px;">Staff</th>
+                        <th style="padding:6px 8px;">DOS</th>
+                        <th style="padding:6px 8px;">Code</th>
+                        <th style="padding:6px 8px;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>' . $rowsHtml . '</tbody>
+            </table>
+        </div>
+    </div>';
+
+    return mahaverse_send_admin_html_email($subject, $body);
+}
 
 function getEmailRecipients($conn, $clientId, $providerId = null, $supervisingProviderId = null)
 {
@@ -871,14 +1123,20 @@ function client_auth_identifier_where(mysqli $conn, string $tableAlias = ''): ar
 
 function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
 {
+    $hoursToAdd = (float)$hoursToAdd;
+    $returningHours = $hoursToAdd >= 0;
+
     if (!$authId) {
+        if ($returningHours) {
+            file_put_contents('debug.log', "updateClientAuthUnitsScheduled skip: missing auth_id while returning hours\n", FILE_APPEND);
+            return true;
+        }
         throw new Exception("auth_id is required");
     }
 
     $match = client_auth_identifier_where($conn, '');
 
-    // Step 1: Verify authorization row exists
-    $checkStmt = $conn->prepare("SELECT insurance_id, balance_units FROM client_auth WHERE {$match['clause']}");
+    $checkStmt = $conn->prepare("SELECT insurance_id, balance_units, status FROM client_auth WHERE {$match['clause']}");
     if ($match['dual']) {
         $checkStmt->bind_param("ii", $authId, $authId);
     } else {
@@ -889,40 +1147,37 @@ function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
     $authData = $result->fetch_assoc();
     $checkStmt->close();
 
-    if (!$authData || !$authData['insurance_id']) {
+    if (!$authData) {
+        if ($returningHours) {
+            file_put_contents('debug.log', "updateClientAuthUnitsScheduled skip: auth_id=$authId not found while returning hours\n", FILE_APPEND);
+            return true;
+        }
         throw new Exception("Authorization not found or missing insurance_id: auth_id=$authId");
     }
 
-    $insuranceId = $authData['insurance_id'];
-    $currentBalance = (float)($authData['balance_units'] ?? '0.00'); // Cast VARCHAR to float
+    $currentBalance = (float)($authData['balance_units'] ?? '0.00');
+    $insuranceId = $authData['insurance_id'] ?? null;
 
-    // Step 2: Verify insurance belongs to client
-    $verifyStmt = $conn->prepare("SELECT insurance_id FROM client_insurance WHERE insurance_id = ? AND client_id = ?");
-    $verifyStmt->bind_param("is", $insuranceId, $clientId);
-    $verifyStmt->execute();
-    $verifyResult = $verifyStmt->get_result();
-    $verifyData = $verifyResult->fetch_assoc();
-    $verifyStmt->close();
-
-    if (!$verifyData) {
-        throw new Exception("Authorization does not belong to this client: auth_id=$authId, client_id=$clientId");
-    }
-
-    // Step 3: Check active authorization
-    $stmt = $conn->prepare(
-        "SELECT balance_units, status FROM client_auth WHERE {$match['clause']} AND UPPER(TRIM(IFNULL(status,''))) = 'ACTIVE'"
-    );
-    if ($match['dual']) {
-        $stmt->bind_param("ii", $authId, $authId);
+    if (!$insuranceId) {
+        if (!$returningHours) {
+            throw new Exception("Authorization not found or missing insurance_id: auth_id=$authId");
+        }
+        file_put_contents('debug.log', "updateClientAuthUnitsScheduled: auth_id=$authId missing insurance_id; still returning hours\n", FILE_APPEND);
     } else {
-        $stmt->bind_param("i", $authId);
-    }
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $row = $result->fetch_assoc();
-    $stmt->close();
+        $verifyStmt = $conn->prepare("SELECT insurance_id FROM client_insurance WHERE insurance_id = ? AND client_id = ?");
+        $verifyStmt->bind_param("is", $insuranceId, $clientId);
+        $verifyStmt->execute();
+        $verifyResult = $verifyStmt->get_result();
+        $verifyData = $verifyResult->fetch_assoc();
+        $verifyStmt->close();
 
-    if (!$row) {
+        if (!$verifyData && !$returningHours) {
+            throw new Exception("Authorization does not belong to this client: auth_id=$authId, client_id=$clientId");
+        }
+    }
+
+    $authStatus = strtoupper(trim((string)($authData['status'] ?? '')));
+    if ($authStatus !== 'ACTIVE' && !$returningHours) {
         throw new Exception("No active authorization found for auth_id=$authId");
     }
 
@@ -932,9 +1187,8 @@ function updateClientAuthUnitsScheduled($conn, $clientId, $authId, $hoursToAdd)
         throw new Exception("Insufficient balance: current=$currentBalance, requested=$hoursToAdd");
     }
 
-    // Step 4: Update balance_units
     $stmt = $conn->prepare("UPDATE client_auth SET balance_units = ? WHERE {$match['clause']}");
-    $newBalanceStr = number_format($newBalance, 2, '.', ''); // Format as string for VARCHAR
+    $newBalanceStr = number_format($newBalance, 2, '.', '');
     if ($match['dual']) {
         $stmt->bind_param("sii", $newBalanceStr, $authId, $authId);
     } else {
@@ -981,6 +1235,16 @@ $providerName = (string)$input['providerName'];
 
 if ($enforceRbac && $authUserOpt !== null) {
     rbac_enforce_session_action($authUserOpt, $conn, 'create', $provider);
+    $role = strtolower((string) ($authUserOpt['role'] ?? ''));
+    if ($role !== 'admin' && function_exists('rbac_user_may_access_client_row')) {
+        if (!rbac_user_may_access_client_row($authUserOpt, $conn, $clientId)) {
+            return $fail(403, [
+                'success' => false,
+                'error' => 'Permission denied',
+                'message' => 'You can only schedule sessions for your assigned clients.',
+            ]);
+        }
+    }
 }
 $supervisingProvider = isset($input['supervisingProvider']) ? (string)$input['supervisingProvider'] : null;
 $supervisingProviderName = isset($input['supervisingProviderName']) ? (string)$input['supervisingProviderName'] : null;
@@ -1007,6 +1271,23 @@ $startMySQL = convertToMySQLDateTime($input['startDateTime']);
 $endMySQL = convertToMySQLDateTime($input['endDateTime']);
 $startTz = isset($input['startTZ']) ? (string)$input['startTZ'] : null;
 $endTz = isset($input['endTZ']) ? (string)$input['endTZ'] : null;
+
+// Restrict past-date creates unless role has scheduling.session.create_past (admins always allowed).
+if ($authUserOpt !== null && !sessions_user_may_create_past_dates($authUserOpt, $conn)) {
+    $sessionDay = sessions_start_local_ymd((string)$startMySQL, $startTz);
+    $today = sessions_clinic_today_ymd('America/Chicago');
+    if ($sessionDay !== '' && $today !== '' && $sessionDay < $today) {
+        return $fail(403, [
+            'success' => false,
+            'error' => 'Past-date scheduling is not allowed for your role',
+            'message' => 'You can only create appointments for today or future dates. Ask an admin to enable “Create past-date sessions” if you need historical entries.',
+            'code' => 'past_date_create_denied',
+            'session_date' => $sessionDay,
+            'clinic_today' => $today,
+        ]);
+    }
+}
+
 $authCode = isset($input['authCode']) ? (string)$input['authCode'] : null;
 $locationAddress = isset($input['locationAddress']) ? (string)$input['locationAddress'] : null;
 
@@ -1046,6 +1327,7 @@ $serviceTypeRaw = $input['serviceType']
     ?? $input['directOrIndirectService']
     ?? null;
 $serviceType = normalize_session_service_type($serviceTypeRaw);
+$billableOverride = $input['billable'] ?? $input['Billable'] ?? null;
 
 if (!in_array($status, ['Scheduled', 'Rendered', 'Cancelled'])) {
     return $fail(400, ['error' => "Invalid status. Must be 'Scheduled', 'Rendered', or 'Cancelled'"]);
@@ -1230,16 +1512,20 @@ if ($recurringFrequency !== 'No' && $recurringFrequency !== 'Never') {
 
 // Dry-run: validate provider schedule conflicts without inserting (import validate).
 if ($dryRun) {
-    foreach ($sessionsToCreate as $session) {
-        ensure_provider_schedule_clear(
-            $conn,
-            $provider,
-            $session['start'],
-            $session['end'],
-            [],
-            [],
-            $providerName
-        );
+    try {
+        foreach ($sessionsToCreate as $session) {
+            ensure_provider_schedule_clear(
+                $conn,
+                $provider,
+                $session['start'],
+                $session['end'],
+                [],
+                [],
+                $providerName
+            );
+        }
+    } catch (ProviderScheduleConflictException $e) {
+        return $fail(409, $e->getPayload());
     }
     return [
         'success' => true,
@@ -1377,7 +1663,7 @@ INSERT INTO sessions (
             session_persist_auth_service_fields($conn, (int)$stmt->insert_id, $authId);
             session_persist_taxonomy_code($conn, (int)$stmt->insert_id, $provider);
             if (session_is_completed_status($status)) {
-                ensure_session_claim_ready($conn, (int)$stmt->insert_id, $session['start']);
+                ensure_session_claim_ready($conn, (int)$stmt->insert_id, $session['start'], $billableOverride);
             }
         } else {
             throw new Exception("Failed to create session: " . $stmt->error);
@@ -1391,8 +1677,6 @@ INSERT INTO sessions (
         throw new Exception("Failed to update client_auth balance_units");
     }
 
-    $adminEmail = "christoberedward@gmail.com";
-    $adminName = "Admin";
     $emailData = $sendEmail ? getEmailRecipients($conn, $clientId, $provider, $supervisingProvider) : null;
 
     if (!$emailData) {
@@ -1453,8 +1737,15 @@ INSERT INTO sessions (
             file_put_contents('debug.log', ucfirst($recipient['type']) . " Email Sent to: {$recipient['email']} ({$recipient['name']}) - " . ($emailSent ? 'Success' : 'Failed') . "\n", FILE_APPEND);
         }
 
-        $adminEmailSent = sendEmail($adminEmail, $adminName, $subject, $body, $icsContent);
-        file_put_contents('debug.log', "Admin Email Sent: " . ($adminEmailSent ? 'Success' : 'Failed') . "\n", FILE_APPEND);
+        foreach (mahaverse_scheduling_admin_recipients() as $admin) {
+            $adminEmail = trim((string)($admin['email'] ?? ''));
+            if ($adminEmail === '') {
+                continue;
+            }
+            $adminName = trim((string)($admin['name'] ?? 'Admin')) ?: 'Admin';
+            $adminEmailSent = sendEmail($adminEmail, $adminName, $subject, $body, $icsContent);
+            file_put_contents('debug.log', "Admin Email Sent to {$adminEmail}: " . ($adminEmailSent ? 'Success' : 'Failed') . "\n", FILE_APPEND);
+        }
     }
 
         $conn->commit();

@@ -294,10 +294,13 @@ function import_find_matching_session(
     $statusExpr = sessions_status_sql_expr($conn, 's');
     $svcCols = session_auth_service_columns_exist($conn);
     $svcSelect = !empty($svcCols['service_code']) ? 's.service_code' : 'NULL AS service_code';
+    $excludeSelect = sessions_has_exclude_session_column($conn)
+        ? 's.exclude_session'
+        : "'No' AS exclude_session";
 
     $sql = "
         SELECT s.session_id, s.auth_id, s.auth_code, s.provider_id, s.start_utc, s.end_utc,
-               s.`{$statusCol}` AS status, {$svcSelect}
+               s.`{$statusCol}` AS status, {$svcSelect}, {$excludeSelect}
         FROM sessions s
         WHERE s.client_id = ?
           AND LEFT(s.start_utc, 16) = ?
@@ -504,10 +507,11 @@ function import_upgrade_scheduled_to_rendered(
     }
     $stmt->close();
 
+    $existingExclude = normalize_session_exclude_session($existing['exclude_session'] ?? 'No');
     $excludeSession = sessions_resolve_exclude_session_for_write(
         $authUser,
-        $parsed['excludeSession'] ?? 'No',
-        'No'
+        $parsed['excludeSession'] ?? null,
+        $existingExclude
     );
     try {
         sessions_set_exclude_session($conn, $sessionId, $excludeSession, $excludeSession === 'Yes');
@@ -517,7 +521,12 @@ function import_upgrade_scheduled_to_rendered(
             normalize_session_service_type($parsed['serviceType'] ?? null),
             normalize_session_service_type($parsed['serviceType'] ?? null) === 'Direct'
         );
-        ensure_session_claim_ready($conn, $sessionId, $startUtc !== '' ? $startUtc : null);
+        ensure_session_claim_ready(
+            $conn,
+            $sessionId,
+            $startUtc !== '' ? $startUtc : null,
+            $parsed['billable'] ?? null
+        );
     } catch (Exception $e) {
         return ['success' => false, 'error' => $e->getMessage(), 'session_id' => $sessionId];
     }
@@ -529,8 +538,68 @@ function import_upgrade_scheduled_to_rendered(
     ];
 }
 
-/** Read Exclude Session from Excel / JSON (optional; default No). */
-function import_parse_exclude_session(array $row): string
+/**
+ * Update exclude_session on an existing matched session (re-import with Exclude Session column).
+ *
+ * @return array{success:bool,session_id?:int,action?:string,error?:string,exclude_session?:string}
+ */
+function import_update_existing_exclude_session(
+    mysqli $conn,
+    array $existing,
+    array $parsed,
+    array $authUser,
+    bool $dryRun
+): array {
+    $sessionId = (int)($existing['session_id'] ?? 0);
+    if ($sessionId <= 0) {
+        return ['success' => false, 'error' => 'Invalid session id for exclude_session update'];
+    }
+
+    $existingExclude = normalize_session_exclude_session($existing['exclude_session'] ?? 'No');
+    $excludeSession = sessions_resolve_exclude_session_for_write(
+        $authUser,
+        $parsed['excludeSession'] ?? null,
+        $existingExclude
+    );
+
+    if ($dryRun) {
+        return [
+            'success' => true,
+            'session_id' => $sessionId,
+            'action' => 'update',
+            'exclude_session' => $excludeSession,
+        ];
+    }
+
+    try {
+        sessions_set_exclude_session($conn, $sessionId, $excludeSession, true);
+    } catch (Exception $e) {
+        return ['success' => false, 'error' => $e->getMessage(), 'session_id' => $sessionId];
+    }
+
+    return [
+        'success' => true,
+        'session_id' => $sessionId,
+        'action' => 'update',
+        'exclude_session' => $excludeSession,
+    ];
+}
+
+/**
+ * True when Excel/JSON includes an Exclude Session value so re-import may sync it
+ * onto an existing duplicate match (instead of hard-rejecting).
+ */
+function import_row_has_exclude_session(array $parsed): bool
+{
+    return array_key_exists('excludeSession', $parsed) && $parsed['excludeSession'] !== null;
+}
+
+/**
+ * Read Exclude Session from Excel / JSON.
+ * Returns null when the column is omitted (so re-import does not wipe an existing Yes).
+ * Returns Yes/No when present (including explicit No / false / 0).
+ */
+function import_parse_exclude_session(array $row): ?string
 {
     foreach (
         [
@@ -550,7 +619,7 @@ function import_parse_exclude_session(array $row): string
             return normalize_session_exclude_session($v);
         }
     }
-    return 'No';
+    return null;
 }
 
 function import_resolve_client_id(mysqli $conn, $firstName, $lastName)
@@ -691,8 +760,46 @@ function import_format_auth_date($value): string
     return $s;
 }
 
-function import_resolve_auth(mysqli $conn, string $clientId, string $authNumber, string $serviceCode): ?array
+/** Normalize client_auth start_date / end_date → Y-m-d (or null). */
+function import_auth_date_ymd($value): ?string
 {
+    if ($value === null || trim((string)$value) === '') {
+        return null;
+    }
+    $s = trim((string)$value);
+    if (preg_match('/^(\d{4}-\d{2}-\d{2})/', $s, $m)) {
+        return $m[1];
+    }
+    $ts = strtotime($s);
+    return $ts !== false ? date('Y-m-d', $ts) : null;
+}
+
+/** True when DOS falls within the auth's start_date–end_date (open ends allowed). */
+function import_auth_covers_dos(array $authRow, string $dosYmd): bool
+{
+    $start = import_auth_date_ymd($authRow['start_date'] ?? null);
+    $end = import_auth_date_ymd($authRow['end_date'] ?? null);
+    if ($start !== null && $dosYmd < $start) {
+        return false;
+    }
+    if ($end !== null && $dosYmd > $end) {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Resolve active client_auth by authorization number + service code.
+ * When the same auth number has multiple periods (different start dates),
+ * disambiguate with DOS falling inside start_date–end_date.
+ */
+function import_resolve_auth(
+    mysqli $conn,
+    string $clientId,
+    string $authNumber,
+    string $serviceCode,
+    ?string $dosYmd = null
+): ?array {
     $authNumber = trim($authNumber);
     $serviceCode = trim($serviceCode);
     if ($clientId === '' || $authNumber === '' || $serviceCode === '') {
@@ -722,10 +829,20 @@ function import_resolve_auth(mysqli $conn, string $clientId, string $authNumber,
         $matches[] = $row;
     }
     $stmt->close();
-    if (count($matches) !== 1) {
-        return null;
+    if (count($matches) === 1) {
+        return $matches[0];
     }
-    return $matches[0];
+    // Same auth number reused across periods — pick the period covering DOS.
+    if (count($matches) > 1 && $dosYmd !== null && $dosYmd !== '') {
+        $byDos = array_values(array_filter(
+            $matches,
+            static fn(array $row): bool => import_auth_covers_dos($row, $dosYmd)
+        ));
+        if (count($byDos) === 1) {
+            return $byDos[0];
+        }
+    }
+    return null;
 }
 
 function import_auth_pk(array $authRow): ?int
@@ -758,6 +875,22 @@ function import_place_of_service($locationCode)
         '02' => 'Virtual',
         default => 'Other',
     };
+}
+
+/** Read Billable Yes/No from Excel / JSON (optional; null = resolve from provider mapping). */
+function import_parse_billable(array $row): ?string
+{
+    foreach (['Billable', 'billable'] as $key) {
+        if (array_key_exists($key, $row) && $row[$key] !== '' && $row[$key] !== null) {
+            return session_normalize_billable_flag($row[$key]);
+        }
+    }
+    foreach ($row as $k => $v) {
+        if (import_normalize_token($k) === 'billable' && $v !== '' && $v !== null) {
+            return session_normalize_billable_flag($v);
+        }
+    }
+    return null;
 }
 
 function import_normalize_status($status)
@@ -825,6 +958,7 @@ function import_parse_row(array $row): array
         'clientLast' => $row['Client Last Name'] ?? '',
         'staffFirst' => $row['Staff First Name'] ?? '',
         'staffLast' => $row['Staff Last Name'] ?? '',
+        // Parsed for reference only — not written to supervising_provider_* (supervisee ≠ supervisor).
         'supervisedName' => $row['Name of RBT Supervised'] ?? '',
         'authNumber' => trim((string)($row['Authorization Number'] ?? '')),
         'serviceCode' => trim((string)($row['Service Code With Modifiers'] ?? '')),
@@ -838,6 +972,7 @@ function import_parse_row(array $row): array
         'locationAddress' => trim((string)($row['Address'] ?? '')) ?: null,
         'quickNote' => $quickNote,
         'status' => $status,
+        'billable' => import_parse_billable($row),
         'excludeSession' => import_parse_exclude_session($row),
         'serviceType' => normalize_session_service_type(
             $row['DIRECT or INDIRECT Service'] ?? $row['direct_or_indirect_service'] ?? null
@@ -859,25 +994,26 @@ function import_resolve_row(mysqli $conn, array $parsed): array
         $errors[] = 'Staff not found (unique match required by first + last name)';
     }
 
+    // Do NOT map Excel "Name of RBT Supervised" → supervising_provider_*.
+    // That column is the supervisee (BT/RBT), while Mahaverse Supervising Provider
+    // is the supervisor (BCBA). Leave empty; set manually in Appointments if needed.
     $supervisingProviderId = null;
     $supervisingProviderName = null;
-    if (trim((string)$parsed['supervisedName']) !== '') {
-        [$supFirst, $supLast] = import_split_full_name($parsed['supervisedName']);
-        $supervisingProviderId = import_resolve_staff_id($conn, $supFirst, $supLast);
-        if (!$supervisingProviderId) {
-            $errors[] = 'Supervised RBT not found: ' . trim((string)$parsed['supervisedName']);
-        } else {
-            $supervisingProviderName = import_staff_display_name($conn, $supervisingProviderId);
-        }
-    }
 
     $authRow = null;
     $authId = null;
     $authCode = null;
     if ($clientId) {
-        $authRow = import_resolve_auth($conn, $clientId, $parsed['authNumber'], $parsed['serviceCode']);
+        $authRow = import_resolve_auth(
+            $conn,
+            $clientId,
+            $parsed['authNumber'],
+            $parsed['serviceCode'],
+            $parsed['dosYmd'] ?? null
+        );
         if (!$authRow) {
-            $errors[] = 'Authorization not found for client + auth number + service code';
+            $errors[] = 'Authorization not found for client + auth number + service code'
+                . ' (if the auth number has multiple periods, DOS must fall in one start–end range)';
         } else {
             $authId = import_auth_pk($authRow);
             $authCode = import_auth_code_label($authRow);
@@ -923,12 +1059,19 @@ function import_build_session_payload(array $parsed, array $resolved): array
         'locationAddress' => $parsed['locationAddress'],
         'quickNote' => $parsed['quickNote'],
         'status' => $parsed['status'],
+        'billable' => $parsed['billable'] ?? null,
         'excludeSession' => $parsed['excludeSession'] ?? 'No',
         'serviceType' => $parsed['serviceType'] ?? 'Direct',
         'scheduled_hours' => $parsed['scheduledHours'],
         'rendered_hours' => $parsed['renderedHours'],
         'recurring' => ['frequency' => 'No'],
     ];
+}
+
+/** Display Yes/No for UI / email (null Excel column → No on create). */
+function import_exclude_session_label(array $parsed): string
+{
+    return normalize_session_exclude_session($parsed['excludeSession'] ?? 'No');
 }
 
 function import_result_errors(array $result): array
@@ -938,12 +1081,26 @@ function import_result_errors(array $result): array
         $errors[] = (string)$result['error'];
     }
     if (!empty($result['code']) && $result['code'] === 'provider_double_booked') {
-        $errors[] = (string)$result['error'];
+        $msg = (string)($result['error'] ?? '');
+        if ($msg !== '' && !in_array($msg, $errors, true)) {
+            $errors[] = $msg;
+        }
     }
     if (!empty($result['hint'])) {
         $errors[] = (string)$result['hint'];
     }
     return array_values(array_unique(array_filter($errors)));
+}
+
+function import_attach_result_meta(array &$entry, array $result): void
+{
+    $entry['errors'] = import_result_errors($result);
+    if (!empty($result['code'])) {
+        $entry['error_code'] = (string)$result['code'];
+    }
+    if (!empty($result['conflict']) && is_array($result['conflict'])) {
+        $entry['conflict'] = $result['conflict'];
+    }
 }
 
 $results = [];
@@ -952,6 +1109,8 @@ $imported = 0;
 $updated = 0;
 $sessionIds = [];
 $line = 0;
+/** @var list<array<string,mixed>> rows that were created/updated (for admin summary email) */
+$importedSummaryRows = [];
 /** @var array<string,int> fingerprint => first line number in this file */
 $seenDupFingerprints = [];
 
@@ -961,127 +1120,263 @@ foreach ($rows as $row) {
         continue;
     }
 
-    $parsed = import_parse_row($row);
-    $dupErrors = [];
-    $existingMatch = null;
-    $willUpgrade = false;
+    try {
+        $parsed = import_parse_row($row);
+        $dupErrors = [];
+        $existingMatch = null;
+        $willUpgrade = false;
+        $willExcludeUpdate = false;
 
-    $fp = import_schedule_dup_fingerprint(
-        $parsed['clientFirst'],
-        $parsed['clientLast'],
-        $parsed['dosYmd'] ?? null,
-        $parsed['aptStartHms'] ?? null,
-        $parsed['serviceCode']
-    );
-    if ($fp !== null) {
-        if (isset($seenDupFingerprints[$fp])) {
-            $dupErrors[] = 'Duplicate session in import file (same client + DOS + time + service code as row '
-                . $seenDupFingerprints[$fp] . ')';
-        } else {
-            $seenDupFingerprints[$fp] = $line;
-        }
-    }
-
-    $resolved = import_resolve_row($conn, $parsed);
-
-    if (
-        empty($dupErrors)
-        && !empty($resolved['clientId'])
-        && !empty($parsed['startUtc'])
-        && trim((string)$parsed['serviceCode']) !== ''
-    ) {
-        $existingMatch = import_find_matching_session(
-            $conn,
-            (string)$resolved['clientId'],
-            (string)$parsed['startUtc'],
-            (string)$parsed['serviceCode']
+        $fp = import_schedule_dup_fingerprint(
+            $parsed['clientFirst'],
+            $parsed['clientLast'],
+            $parsed['dosYmd'] ?? null,
+            $parsed['aptStartHms'] ?? null,
+            $parsed['serviceCode']
         );
-        if ($existingMatch !== null) {
-            if (import_is_scheduled_to_rendered_upgrade($existingMatch, (string)($parsed['status'] ?? ''))) {
-                $willUpgrade = true;
+        if ($fp !== null) {
+            if (isset($seenDupFingerprints[$fp])) {
+                $dupErrors[] = 'Duplicate session in import file (same client + DOS + time + service code as row '
+                    . $seenDupFingerprints[$fp] . ')';
             } else {
-                $dupErrors[] = 'Duplicate session already exists (session_id '
-                    . (int)$existingMatch['session_id']
-                    . ': same client + DOS + time + service code)';
+                $seenDupFingerprints[$fp] = $line;
             }
         }
-    }
 
-    $errors = $willUpgrade
-        ? array_values(array_unique($dupErrors))
-        : array_values(array_unique(array_merge($resolved['errors'], $dupErrors)));
+        $resolved = import_resolve_row($conn, $parsed);
 
-    // Upgrade still needs a resolvable client (used for the match) and end time.
-    if ($willUpgrade && empty($resolved['clientId'])) {
-        $errors[] = 'Client not found (unique match required by first + last name)';
-    }
-    if ($willUpgrade && empty($parsed['endUtc'])) {
-        $errors[] = 'Missing appointment end time';
-    }
-
-    $entry = [
-        'line' => $line,
-        'ready' => false,
-        'action' => null,
-        'errors' => $errors,
-        'client' => trim($parsed['clientFirst'] . ' ' . $parsed['clientLast']),
-        'staff' => trim($parsed['staffFirst'] . ' ' . $parsed['staffLast']),
-        'exclude_session' => $parsed['excludeSession'] ?? 'No',
-        'session_id' => null,
-    ];
-
-    if (empty($errors)) {
-        if ($willUpgrade && $existingMatch !== null) {
-            $updateResult = import_upgrade_scheduled_to_rendered(
+        if (
+            empty($dupErrors)
+            && !empty($resolved['clientId'])
+            && !empty($parsed['startUtc'])
+            && trim((string)$parsed['serviceCode']) !== ''
+        ) {
+            $existingMatch = import_find_matching_session(
                 $conn,
-                $existingMatch,
-                $parsed,
-                $authUser,
-                $validateOnly
+                (string)$resolved['clientId'],
+                (string)$parsed['startUtc'],
+                (string)$parsed['serviceCode']
             );
-
-            if ($updateResult['success'] ?? false) {
-                $entry['ready'] = true;
-                $entry['action'] = 'update';
-                $entry['session_id'] = $updateResult['session_id'] ?? $existingMatch['session_id'];
-                $readyCount++;
-                if (!$validateOnly) {
-                    $sid = (int)($updateResult['session_id'] ?? 0);
-                    if ($sid > 0) {
-                        $sessionIds[] = $sid;
+            if ($existingMatch !== null) {
+                if (import_is_scheduled_to_rendered_upgrade($existingMatch, (string)($parsed['status'] ?? ''))) {
+                    $willUpgrade = true;
+                } elseif (import_row_has_exclude_session($parsed)) {
+                    $existingExclude = normalize_session_exclude_session(
+                        $existingMatch['exclude_session'] ?? 'No'
+                    );
+                    $resolvedExclude = sessions_resolve_exclude_session_for_write(
+                        $authUser,
+                        $parsed['excludeSession'],
+                        $existingExclude
+                    );
+                    if ($resolvedExclude !== $existingExclude) {
+                        // Same slot already exists — sync Exclude Session No↔Yes from Excel.
+                        $willExcludeUpdate = true;
+                    } else {
+                        $dupErrors[] = 'Duplicate session already exists (session_id '
+                            . (int)$existingMatch['session_id']
+                            . ': same client + DOS + time + service code)';
                     }
-                    $updated++;
+                } else {
+                    $dupErrors[] = 'Duplicate session already exists (session_id '
+                        . (int)$existingMatch['session_id']
+                        . ': same client + DOS + time + service code)';
                 }
-            } else {
-                $entry['errors'] = import_result_errors($updateResult);
-            }
-        } else {
-            $payload = import_build_session_payload($parsed, $resolved);
-            $createResult = mahaverse_create_scheduling_session($conn, $payload, [
-                'authUser' => $authUser,
-                'enforceRbac' => !$validateOnly,
-                'sendEmail' => !$validateOnly,
-                'dryRun' => $validateOnly,
-            ]);
-
-            if ($createResult['success'] ?? false) {
-                $entry['ready'] = true;
-                $entry['action'] = 'create';
-                $readyCount++;
-                if (!$validateOnly) {
-                    $entry['session_id'] = $createResult['session_id'] ?? null;
-                    if (!empty($createResult['session_id'])) {
-                        $sessionIds[] = (int)$createResult['session_id'];
-                    }
-                    $imported++;
-                }
-            } else {
-                $entry['errors'] = import_result_errors($createResult);
             }
         }
-    }
 
-    $results[] = $entry;
+        $isExistingUpdate = $willUpgrade || $willExcludeUpdate;
+        $errors = $isExistingUpdate
+            ? array_values(array_unique($dupErrors))
+            : array_values(array_unique(array_merge($resolved['errors'], $dupErrors)));
+
+        // Upgrade still needs a resolvable client (used for the match) and end time.
+        if ($willUpgrade && empty($resolved['clientId'])) {
+            $errors[] = 'Client not found (unique match required by first + last name)';
+        }
+        if ($willUpgrade && empty($parsed['endUtc'])) {
+            $errors[] = 'Missing appointment end time';
+        }
+        if ($willExcludeUpdate && empty($resolved['clientId'])) {
+            $errors[] = 'Client not found (unique match required by first + last name)';
+        }
+
+        $entry = [
+            'line' => $line,
+            'ready' => false,
+            'action' => null,
+            'errors' => $errors,
+            'client' => trim($parsed['clientFirst'] . ' ' . $parsed['clientLast']),
+            'staff' => trim($parsed['staffFirst'] . ' ' . $parsed['staffLast']),
+            'staff_first' => $parsed['staffFirst'] ?? '',
+            'staff_last' => $parsed['staffLast'] ?? '',
+            'service_code' => $parsed['serviceCode'] ?? '',
+            'dos' => $parsed['dosYmd'] ?? null,
+            'exclude_session' => import_exclude_session_label($parsed),
+            'session_id' => null,
+        ];
+
+        if (empty($errors)) {
+            if ($willUpgrade && $existingMatch !== null) {
+                $updateResult = import_upgrade_scheduled_to_rendered(
+                    $conn,
+                    $existingMatch,
+                    $parsed,
+                    $authUser,
+                    $validateOnly
+                );
+
+                if ($updateResult['success'] ?? false) {
+                    $entry['ready'] = true;
+                    $entry['action'] = 'update';
+                    $entry['session_id'] = $updateResult['session_id'] ?? $existingMatch['session_id'];
+                    $readyCount++;
+                    if (!$validateOnly) {
+                        $sid = (int)($updateResult['session_id'] ?? 0);
+                        if ($sid > 0) {
+                            $sessionIds[] = $sid;
+                        }
+                        $updated++;
+                        $importedSummaryRows[] = [
+                            'line' => $line,
+                            'action' => 'update',
+                            'session_id' => $entry['session_id'],
+                            'client' => $entry['client'],
+                            'staff' => $entry['staff'],
+                            'dos' => $entry['dos'] ?? ($parsed['dosYmd'] ?? null),
+                            'service_code' => $entry['service_code'] ?? ($parsed['serviceCode'] ?? ''),
+                            'status' => 'Rendered',
+                        ];
+                    }
+                } else {
+                    import_attach_result_meta($entry, $updateResult);
+                }
+            } elseif ($willExcludeUpdate && $existingMatch !== null) {
+                $updateResult = import_update_existing_exclude_session(
+                    $conn,
+                    $existingMatch,
+                    $parsed,
+                    $authUser,
+                    $validateOnly
+                );
+
+                if ($updateResult['success'] ?? false) {
+                    $entry['ready'] = true;
+                    $entry['action'] = 'update';
+                    $entry['session_id'] = $updateResult['session_id'] ?? $existingMatch['session_id'];
+                    if (!empty($updateResult['exclude_session'])) {
+                        $entry['exclude_session'] = $updateResult['exclude_session'];
+                    }
+                    $readyCount++;
+                    if (!$validateOnly) {
+                        $sid = (int)($updateResult['session_id'] ?? 0);
+                        if ($sid > 0) {
+                            $sessionIds[] = $sid;
+                        }
+                        $updated++;
+                        $importedSummaryRows[] = [
+                            'line' => $line,
+                            'action' => 'update',
+                            'session_id' => $entry['session_id'],
+                            'client' => $entry['client'],
+                            'staff' => $entry['staff'],
+                            'dos' => $entry['dos'] ?? ($parsed['dosYmd'] ?? null),
+                            'service_code' => $entry['service_code'] ?? ($parsed['serviceCode'] ?? ''),
+                            'status' => (string)($existingMatch['status'] ?? $parsed['status'] ?? ''),
+                            'exclude_session' => $entry['exclude_session'],
+                        ];
+                    }
+                } else {
+                    import_attach_result_meta($entry, $updateResult);
+                }
+            } else {
+                $payload = import_build_session_payload($parsed, $resolved);
+                // Bulk import: no per-session emails (client/admin). One admin summary is sent after the batch.
+                $createResult = mahaverse_create_scheduling_session($conn, $payload, [
+                    'authUser' => $authUser,
+                    'enforceRbac' => !$validateOnly,
+                    'sendEmail' => false,
+                    'dryRun' => $validateOnly,
+                ]);
+
+                if ($createResult['success'] ?? false) {
+                    $entry['ready'] = true;
+                    $entry['action'] = 'create';
+                    $readyCount++;
+                    if (!$validateOnly) {
+                        $entry['session_id'] = $createResult['session_id'] ?? null;
+                        if (!empty($createResult['session_id'])) {
+                            $sessionIds[] = (int)$createResult['session_id'];
+                        }
+                        $imported++;
+                        $importedSummaryRows[] = [
+                            'line' => $line,
+                            'action' => 'create',
+                            'session_id' => $entry['session_id'],
+                            'client' => $entry['client'],
+                            'staff' => $entry['staff'],
+                            'dos' => $entry['dos'] ?? ($parsed['dosYmd'] ?? null),
+                            'service_code' => $entry['service_code'] ?? ($parsed['serviceCode'] ?? ''),
+                            'status' => $parsed['status'] ?? '',
+                        ];
+                    }
+                } else {
+                    import_attach_result_meta($entry, $createResult);
+                }
+            }
+        }
+
+        $results[] = $entry;
+    } catch (Throwable $e) {
+        // Never abort the whole batch — surface as a single-row error.
+        $results[] = [
+            'line' => $line,
+            'ready' => false,
+            'action' => null,
+            'errors' => [$e->getMessage()],
+            'error_code' => $e instanceof ProviderScheduleConflictException
+                ? 'provider_double_booked'
+                : 'exception',
+            'conflict' => $e instanceof ProviderScheduleConflictException
+                ? ($e->getPayload()['conflict'] ?? null)
+                : null,
+            'client' => is_array($row)
+                ? trim(($row['Client First Name'] ?? '') . ' ' . ($row['Client Last Name'] ?? ''))
+                : '',
+            'staff' => is_array($row)
+                ? trim(($row['Staff First Name'] ?? '') . ' ' . ($row['Staff Last Name'] ?? ''))
+                : '',
+            'session_id' => null,
+        ];
+    }
+}
+
+$adminEmailResults = [];
+if (!$validateOnly && ($imported > 0 || $updated > 0)) {
+    $actor = '';
+    if (is_array($authUser)) {
+        $actor = trim((string)(
+            $authUser['email']
+            ?? $authUser['name']
+            ?? $authUser['full_name']
+            ?? ''
+        ));
+    }
+    try {
+        $adminEmailResults = mahaverse_send_session_import_summary_email(
+            $imported,
+            $updated,
+            $importedSummaryRows,
+            $actor
+        );
+    } catch (Throwable $e) {
+        file_put_contents(
+            'debug.log',
+            'Import summary email failed: ' . $e->getMessage() . "\n",
+            FILE_APPEND
+        );
+        $adminEmailResults = [['error' => $e->getMessage()]];
+    }
 }
 
 echo json_encode([
@@ -1093,6 +1388,7 @@ echo json_encode([
     'updated' => $updated,
     'session_ids' => $sessionIds,
     'rows' => $results,
+    'admin_emails' => $adminEmailResults,
 ]);
 
 $conn->close();

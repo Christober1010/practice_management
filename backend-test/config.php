@@ -172,6 +172,10 @@ function getAuthenticatedUserFromToken($rawToken) {
             $upd->execute();
             $upd->close();
         }
+        // Keep email alias for RBAC staff/client resolution helpers.
+        if (empty($row['email']) && !empty($row['username'])) {
+            $row['email'] = $row['username'];
+        }
         return $row;
     }
     return null;
@@ -331,6 +335,47 @@ function mahaverse_require_helper(string $basename): void {
     $loaded[$basename] = true;
 }
 
+/**
+ * Ensure clients.client_status is VARCHAR so workflow labels persist.
+ * ENUM silently stores '' for unknown values (e.g. Service Terminated) in non-strict MySQL.
+ * Idempotent. ALTER commits implicitly — call outside an open transaction.
+ *
+ * @return array{changed:bool,before:?string,after:?string}
+ */
+function mahaverse_ensure_clients_client_status_varchar(PDO $conn): array {
+    $col = $conn->query("SHOW FULL COLUMNS FROM clients LIKE 'client_status'")->fetch(PDO::FETCH_ASSOC);
+    if (!$col) {
+        return ['changed' => false, 'before' => null, 'after' => null];
+    }
+    $before = (string) ($col['Type'] ?? '');
+    $typeLower = strtolower($before);
+    $needsWiden = true;
+    if (strpos($typeLower, 'varchar') === 0) {
+        if (preg_match('/varchar\((\d+)\)/', $typeLower, $m) && (int) $m[1] >= 64) {
+            $needsWiden = false;
+        }
+    } elseif (strpos($typeLower, 'char') === 0 || strpos($typeLower, 'text') !== false) {
+        // CHAR(n) or TEXT family — still widen short CHAR; leave TEXT alone.
+        if (strpos($typeLower, 'text') !== false) {
+            $needsWiden = false;
+        } elseif (preg_match('/char\((\d+)\)/', $typeLower, $m) && (int) $m[1] >= 64) {
+            $needsWiden = false;
+        }
+    }
+
+    if (!$needsWiden) {
+        return ['changed' => false, 'before' => $before, 'after' => $before];
+    }
+
+    $conn->exec("ALTER TABLE `clients` MODIFY COLUMN `client_status` VARCHAR(64) NOT NULL DEFAULT 'New'");
+    $conn->exec("UPDATE `clients` SET `client_status` = 'New' WHERE TRIM(COALESCE(`client_status`, '')) = ''");
+    $afterCol = $conn->query("SHOW FULL COLUMNS FROM clients LIKE 'client_status'")->fetch(PDO::FETCH_ASSOC);
+    return [
+        'changed' => true,
+        'before' => $before,
+        'after' => (string) ($afterCol['Type'] ?? ''),
+    ];
+}
 /** Return JSON instead of an empty body when a fatal error stops the script. */
 function mahaverse_register_fatal_json_handler(): void {
     static $registered = false;

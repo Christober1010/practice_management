@@ -493,14 +493,8 @@ if ($method === 'GET') {
         session_log_fail(400, 'dos_to must be YYYY-MM-DD');
     }
 
-    // Skip Indirect + Exclude session=Yes (same rules as session import flags).
+    // Return every non-cancelled session in the DOS range (no Direct/Exclude filters).
     $where = ["UPPER(TRIM(IFNULL(s.`{$statusCol}`, ''))) <> 'CANCELLED'"];
-    if (!empty($cols['service_type'])) {
-        $where[] = "UPPER(TRIM(IFNULL(s.service_type, ''))) = 'DIRECT'";
-    }
-    if (!empty($cols['exclude_session'])) {
-        $where[] = "UPPER(TRIM(IFNULL(s.exclude_session, 'No'))) <> 'YES'";
-    }
     $types = '';
     $params = [];
 

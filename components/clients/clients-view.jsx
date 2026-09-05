@@ -63,6 +63,7 @@ import AddClientModal from "./add-client-modal";
 import SessionNotesModal from "./session-notes-modal";
 import DocumentViewerModal from "./DocumentViewerModal";
 import toast, { Toaster } from "react-hot-toast";
+import { clearClaimWarningFocus, peekClaimWarningFocus } from "@/lib/claim-warning-nav";
 
 // Redux hooks and actions
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
@@ -525,6 +526,36 @@ export default function ClientsView({ userRole }) {
   useEffect(() => {
     dispatch(fetchClients());
   }, [dispatch]);
+
+  // Open specific client (+ insurance/auth tab) from claim-warning deep link.
+  useEffect(() => {
+    if (loading || !clients?.length) return;
+    const focus = peekClaimWarningFocus("clients");
+    if (!focus?.clientId) return;
+
+    const client = clients.find(
+      (c) =>
+        String(c.id) === String(focus.clientId) ||
+        String(c.client_id) === String(focus.clientId)
+    );
+    if (!client) {
+      toast.error(`Client ${focus.clientId} not found`);
+      clearClaimWarningFocus();
+      return;
+    }
+    if (!allowUpdate) {
+      toast.error("You do not have permission to edit clients.");
+      clearClaimWarningFocus();
+      return;
+    }
+    clearClaimWarningFocus();
+    setModalInitialTab(focus.tab || "insurance");
+    setEditingClient(client);
+    setIsAddModalOpen(true);
+    toast.success(
+      `Editing ${client.first_name || ""} ${client.last_name || ""}`.trim()
+    );
+  }, [loading, clients, allowUpdate]);
 
   useEffect(() => {
     const fetchStaff = async () => {

@@ -35,6 +35,7 @@ import { formatTime12hFromUTC, toMinutes12h } from "@/lib/time-utils";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getMahaverseAuthHeaders } from "@/lib/api-auth";
 import {
+  allowsSchedulingCreatePastSession,
   allowsSchedulingCreateSession,
   allowsSchedulingDeleteSession,
   allowsSchedulingReadSessions,
@@ -45,6 +46,11 @@ import {
   canDeleteScheduledSession,
   sessionIsRenderedOrReadyToBill,
 } from "@/lib/scheduling-session-status";
+import {
+  clearClaimWarningFocus,
+  peekClaimWarningFocus,
+  highlightClaimFocusElement,
+} from "@/lib/claim-warning-nav";
 
 const jsonAuthHeaders = () =>
   getMahaverseAuthHeaders({
@@ -66,13 +72,15 @@ function startOfWeek(date) {
   const d = new Date(date);
   const day = d.getDay();
   const diff = d.getDate() - day;
-  return new Date(d.setDate(diff));
+  // Midnight local — do not keep currentDate's clock time or Sunday
+  // morning appointments fall outside the week fetch range.
+  return new Date(d.getFullYear(), d.getMonth(), diff, 0, 0, 0, 0);
 }
 function endOfWeek(date) {
   const d = new Date(date);
   const day = d.getDay();
   const diff = d.getDate() + (6 - day);
-  return new Date(d.setDate(diff));
+  return new Date(d.getFullYear(), d.getMonth(), diff, 23, 59, 59, 999);
 }
 function addMonths(date, n) {
   return new Date(date.getFullYear(), date.getMonth() + n, 1);
@@ -298,6 +306,7 @@ export default function SchedulingView({ userRole }) {
   const { canAny } = usePermissions(userRole ?? {});
   const allowRead = allowsSchedulingReadSessions(canAny);
   const allowCreate = allowsSchedulingCreateSession(canAny);
+  const allowCreatePast = allowsSchedulingCreatePastSession(canAny);
   const allowUpdate = allowsSchedulingUpdateSession(canAny);
   const allowDelete = allowsSchedulingDeleteSession(canAny);
   const allowNotes = allowsSchedulingSessionNotes(canAny);
@@ -335,11 +344,122 @@ export default function SchedulingView({ userRole }) {
     date: null,
     sessionId: null,
   });
+  const [claimFocusField, setClaimFocusField] = useState(null);
 
   useEffect(() => {
     const detectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     setUserTimezone(detectedTimezone);
   }, []);
+
+  // Open specific session from claim-warning deep link (?view=scheduling&session_id=…).
+  useEffect(() => {
+    if (!allowRead) return;
+    const focus = peekClaimWarningFocus("scheduling");
+    if (!focus?.sessionId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await mahaverseFetch(
+          `/add-session.php?id=${encodeURIComponent(focus.sessionId)}`,
+          { headers: getMahaverseAuthHeaders() }
+        );
+        const row = await resp.json();
+        if (cancelled) return;
+        if (!resp.ok || !row || row.error || !row.session_id) {
+          toast.error(row?.error || `Session #${focus.sessionId} not found`);
+          clearClaimWarningFocus();
+          return;
+        }
+
+        clearClaimWarningFocus();
+
+        const startUtc = row.start_utc;
+        if (startUtc) {
+          try {
+            let iso = String(startUtc);
+            if (!iso.includes("T")) iso = iso.replace(" ", "T");
+            if (!iso.endsWith("Z")) iso += "Z";
+            const d = new Date(iso);
+            if (!Number.isNaN(d.getTime())) {
+              setCurrentDate(d);
+              setSelectedDate(d);
+              setViewMode("today");
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+
+        const mapped = {
+          sessionId: row.session_id,
+          clientId: row.client_id,
+          clientName: row.clientName || "",
+          providerId: row.provider_id,
+          providerName: row.provider_name,
+          supervisingProviderId: row.supervising_provider_id,
+          supervisingProviderName: row.supervising_provider_name,
+          startDateTime: row.start_utc,
+          endDateTime: row.end_utc,
+          startTZ: row.start_tz || row.startTZ || userTimezone || "UTC",
+          endTZ: row.end_tz || row.endTZ || userTimezone || "UTC",
+          authId:
+            row.auth_id !== null && row.auth_id !== undefined
+              ? String(row.auth_id)
+              : "",
+          authCode: row.auth_code || "",
+          recurring: row.recurring,
+          placeOfService: row.place_of_service,
+          locationAddress: row.location_address || "",
+          quickNote: row.quick_note || "",
+          excludeSession:
+            row.exclude_session === "Yes" || row.excludeSession === "Yes"
+              ? "Yes"
+              : "No",
+          serviceType:
+            String(
+              row.service_type ||
+                row.serviceType ||
+                row.direct_or_indirect_service ||
+                ""
+            ).toLowerCase() === "direct"
+              ? "Direct"
+              : "Indirect",
+          status: normalizeSessionStatus(row),
+          renderedHours:
+            row.rendered_hours != null ? Number(row.rendered_hours) : 0,
+          scheduledHours:
+            row.scheduled_hours != null ? Number(row.scheduled_hours) : null,
+          claimId:
+            row.claim_id != null && row.claim_id !== ""
+              ? String(row.claim_id)
+              : "",
+          claimStatus:
+            row.claim_status != null ? String(row.claim_status) : "",
+        };
+
+        if (!allowUpdate) {
+          toast.info(`Opened session #${focus.sessionId} (view only)`);
+          setViewedSession(mapped);
+          setIsViewModalOpen(true);
+          return;
+        }
+
+        setClaimFocusField(focus.focus || "supervising");
+        setEditingSession(mapped);
+        setIsNewSessionModalOpen(true);
+        toast.success(`Editing session #${focus.sessionId}`);
+      } catch (e) {
+        console.error(e);
+        clearClaimWarningFocus();
+        toast.error("Failed to open session from claim warning");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [allowRead, allowUpdate, userTimezone]);
 
   useEffect(() => {
     let cancelled = false;
@@ -428,20 +548,6 @@ export default function SchedulingView({ userRole }) {
   const isAdminUser =
     String(userRole?.role || "").toLowerCase() === "admin";
 
-  const allowedClientIds = useMemo(() => {
-    const set = new Set(
-      clientsForFilter.map((c) => String(c.client_id || "")).filter(Boolean)
-    );
-    return set;
-  }, [clientsForFilter]);
-
-  const allowedStaffIds = useMemo(() => {
-    const set = new Set(
-      staffForFilter.map((s) => String(s.id || "")).filter(Boolean)
-    );
-    return set;
-  }, [staffForFilter]);
-
   const clientLocationById = useMemo(() => {
     const map = {};
     for (const c of clientsForFilter) {
@@ -510,7 +616,9 @@ export default function SchedulingView({ userRole }) {
 
   const scopedSessions = useMemo(() => {
     if (isAdminUser) return sessions;
-    // Non-admins: assigned scope only; Exclude session=Yes is admin-only.
+    // Backend rbac_filter_sessions_for_user already scopes non-admins
+    // (assigned clients minus supervisor schedules, plus self/reports).
+    // Do not re-OR on client assignment here — that re-opened supervisor calendars.
     return sessions.filter((session) => {
       if (
         session.excludeSession === "Yes" ||
@@ -518,17 +626,9 @@ export default function SchedulingView({ userRole }) {
       ) {
         return false;
       }
-      const cid = String(session.clientId || "");
-      const pid = String(session.providerId || session.provider || "");
-      const sid = String(
-        session.supervisingProviderId || session.supervisingProvider || ""
-      );
-      if (cid && allowedClientIds.has(cid)) return true;
-      if (pid && allowedStaffIds.has(pid)) return true;
-      if (sid && allowedStaffIds.has(sid)) return true;
-      return false;
+      return true;
     });
-  }, [sessions, isAdminUser, allowedClientIds, allowedStaffIds]);
+  }, [sessions, isAdminUser]);
 
   const filteredSessions = useMemo(() => {
     return scopedSessions.filter((session) => {
@@ -2217,6 +2317,7 @@ export default function SchedulingView({ userRole }) {
         onClose={() => {
           setIsNewSessionModalOpen(false);
           setEditingSession(null);
+          setClaimFocusField(null);
         }}
         onSave={handleAddNewSession}
         selectedDate={selectedDate}
@@ -2226,6 +2327,8 @@ export default function SchedulingView({ userRole }) {
           locationFilter && locationFilter !== "All" ? locationFilter : ""
         }
         canEditExcludeSession={isAdminUser}
+        canCreatePastDates={allowCreatePast || isAdminUser}
+        focusField={claimFocusField}
       />
       <DeleteConfirmationModal
         isOpen={deleteModalOpen}
@@ -2294,13 +2397,14 @@ export default function SchedulingView({ userRole }) {
                       ? Number(billing.rendered_hours)
                       : s.renderedHours,
                   claimId:
-                    billing.claim_id != null && billing.claim_id !== ""
-                      ? String(billing.claim_id)
+                    billing.claim_id != null || billing.claim_status != null
+                      ? String(billing.claim_id ?? "")
                       : s.claimId,
                   claimStatus:
                     billing.claim_status != null
                       ? String(billing.claim_status)
-                      : s.claimStatus || "Ready to Bill",
+                      : s.claimStatus ||
+                        (billing.claim_id ? "Ready to Bill" : s.claimStatus),
                 };
               })
             );

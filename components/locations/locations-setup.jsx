@@ -34,6 +34,10 @@ import {
 import toast, { Toaster } from "react-hot-toast";
 import AddLocationModal from "./add-location-modal";
 import DeleteConfirmModal from "../master-data/DeleteConfirmModal";
+import {
+  clearClaimWarningFocus,
+  peekClaimWarningFocus,
+} from "@/lib/claim-warning-nav";
 
 export default function LocationsSetup() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -44,6 +48,8 @@ export default function LocationsSetup() {
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingLocation, setEditingLocation] = useState(null);
+  const [locationInitialTab, setLocationInitialTab] = useState(null);
+  const [locationFocusField, setLocationFocusField] = useState(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [locationToDelete, setLocationToDelete] = useState(null);
 
@@ -72,6 +78,50 @@ export default function LocationsSetup() {
     loadLocations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseUrl, showArchived]);
+
+  // Open specific location (+ NPI/tax tab) from claim-warning deep link.
+  useEffect(() => {
+    if (loading || !locations.length) return;
+    const focus = peekClaimWarningFocus("locations");
+    if (!focus?.locationId && !focus?.focus) return;
+
+    let loc = null;
+    if (focus.locationId) {
+      loc = locations.find((l) => String(l.id) === String(focus.locationId));
+    }
+    if (!loc && focus.locationId) {
+      toast.error("Location not found");
+      clearClaimWarningFocus();
+      return;
+    }
+    if (!loc && focus.focus) {
+      loc =
+        locations.find((l) => {
+          const fac = String(l.facility_npi_number || "").replace(/\D/g, "");
+          const bill = String(l.billing_npi_number || "").replace(/\D/g, "");
+          const tax = String(l.tax_id_professional || "").replace(/\D/g, "");
+          if (focus.focus === "facility_npi") return fac.length !== 10;
+          if (focus.focus === "billing_npi") return bill.length !== 10;
+          if (focus.focus === "tax_id") return tax.length !== 9;
+          return false;
+        }) || null;
+    }
+    if (!loc) return;
+
+    clearClaimWarningFocus();
+    setEditingLocation(loc);
+    setLocationInitialTab(focus.tab || "facility");
+    setLocationFocusField(focus.focus || null);
+    setIsAddModalOpen(true);
+    toast.success(`Editing ${loc.location_name || loc.facility_name || "location"}`);
+  }, [loading, locations]);
+
+  const openEditModal = (location) => {
+    setEditingLocation(location);
+    setLocationInitialTab(null);
+    setLocationFocusField(null);
+    setIsAddModalOpen(true);
+  };
 
   const displayedLocations = useMemo(() => {
     return locations
@@ -121,6 +171,8 @@ export default function LocationsSetup() {
         await loadLocations();
         setIsAddModalOpen(false);
         setEditingLocation(null);
+        setLocationInitialTab(null);
+        setLocationFocusField(null);
       } else {
         toast.error(result.message || "Save failed");
       }
@@ -128,11 +180,6 @@ export default function LocationsSetup() {
       console.error(err);
       toast.error(err?.message || "Network error");
     }
-  };
-
-  const openEditModal = (location) => {
-    setEditingLocation(location);
-    setIsAddModalOpen(true);
   };
 
   const handleDelete = async () => {
@@ -299,9 +346,13 @@ export default function LocationsSetup() {
         onClose={() => {
           setIsAddModalOpen(false);
           setEditingLocation(null);
+          setLocationInitialTab(null);
+          setLocationFocusField(null);
         }}
         onAdd={handleAddLocation}
         editingLocation={editingLocation}
+        initialTab={locationInitialTab}
+        focusField={locationFocusField}
       />
 
       <DeleteConfirmModal

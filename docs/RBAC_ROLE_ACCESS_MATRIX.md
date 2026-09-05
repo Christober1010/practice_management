@@ -1,6 +1,6 @@
 # Mahaverse RBAC: role access and scopes
 
-This document describes **default** grants after running [`20260729_222552_migrate_rbac_matrix_v1.sql`](../migration/shared/20260729_222552_migrate_rbac_matrix_v1.sql). Admins can change any cell in **Admin → Role permissions**; production values live in `rbac_role_grants` (and may differ from this table).
+This document describes **default** grants after running [`20260729_222552_migrate_rbac_matrix_v1.sql`](../migration/shared/20260729_222552_migrate_rbac_matrix_v1.sql) and later additive migrations (e.g. [`20260831_220000_rbac_scheduling_create_past.sql`](../migration/shared/20260831_220000_rbac_scheduling_create_past.sql)). Admins can change any cell in **Admin → Role permissions**; production values live in `rbac_role_grants` (and may differ from this table).
 
 **App scope:** all rows below are `app_scope = mahaverse` unless noted.
 
@@ -21,7 +21,7 @@ This document describes **default** grants after running [`20260729_222552_migra
 |------|------------|---------|-------|-------|-----------------|-------------|-------------------|
 | **admin** | Full (`all`) | Full (`all`) | Full (`all`) | Full (`all`) | Full (`all`) | Full (`all`) | Full (`all`) |
 | **planner** | Full session CRUD (`all`) | — | — | — | — | — | — |
-| **bcba** | Create/view/notes/update **self**; no session delete | Read `all`; view **self**; no create/archive | Read + write `all` | — | Read/write + domains/programs/targets manage `all`; no `master_data.prompts` | Read `all` | — |
+| **bcba** | Create/view/notes/update **self**; no session delete; **no** past-date create | Read `all`; view **self**; no create/archive | Read + write `all` | — | Read/write + domains/programs/targets manage `all`; no `master_data.prompts` | Read `all` | — |
 | **rbt** | View session + notes **self** only; no create/update/delete | Read + view **self** (assigned) | Read `all` | — | — | — | — |
 | **biller** | — | Read/view/update `all`; **no** `clients.create` | — | — | — | Read/write + fine provider/service/diagnosis keys `all` | Read/write `all` |
 | **parent** | — | — | — | — | — | — | — (dashboard only) |
@@ -46,6 +46,7 @@ That includes all navigation and view keys, legacy coarse keys (`clients.write`,
 | `scheduling.read` | all |
 | `scheduling.write` | all |
 | `scheduling.session.create` | all |
+| `scheduling.session.create_past` | all |
 | `scheduling.session.view` | all |
 | `scheduling.session.notes` | all |
 | `scheduling.session.update` | all |
@@ -86,7 +87,7 @@ That includes all navigation and view keys, legacy coarse keys (`clients.write`,
 | `master_data.targets` | all |
 | `manage_data.read` | all |
 
-**Not granted by default:** `scheduling.session.delete`, `clients.create`, `clients.update`, `clients.archive`, `master_data.prompts`, `nav.users`, `users.*`, `reports.*`, `billing.*`, etc. (add via Admin if needed.)
+**Not granted by default:** `scheduling.session.create_past` (today/future creates only), `scheduling.session.delete`, `clients.create`, `clients.update`, `clients.archive`, `master_data.prompts`, `nav.users`, `users.*`, `reports.*`, `billing.*`, etc. (add via Admin if needed.)
 
 ---
 
@@ -142,6 +143,7 @@ That includes all navigation and view keys, legacy coarse keys (`clients.write`,
 | `manage_data.diagnosis` | all |
 | `billing.read` | all |
 | `billing.write` | all |
+| `billing.sftp` | all (Office Ally SFTP submit; also default for **admin**) |
 
 **Not granted by default:** `clients.create`, scheduling, staff, users, reports, data collection editor keys, etc.
 

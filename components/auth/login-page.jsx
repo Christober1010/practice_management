@@ -207,7 +207,7 @@ export default function LoginPage() {
     setLoginError("");
 
     if (!email || !password) {
-      setLoginError("Please enter both email and password");
+      setLoginError("Please enter both email (or username) and password");
       setIsLoading(false);
       return;
     }
@@ -576,12 +576,13 @@ export default function LoginPage() {
             <CardContent className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-slate-700 font-medium">
-                  Email Address
+                  Email
                 </Label>
                 <Input
                   id="email"
-                  type="email"
-                  placeholder="therapist@example.com"
+                  type="text"
+                  autoComplete="username"
+                  placeholder="you@example.com"
                   className="h-12 border-slate-200 focus:border-teal-500 focus:ring-teal-500"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}

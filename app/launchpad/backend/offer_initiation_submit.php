@@ -50,7 +50,10 @@ function sendOfferInitiatedEmail(string $toEmail, array $offer): void {
     $firstName = $firstNameRaw !== '' ? htmlspecialchars($firstNameRaw, ENT_QUOTES, 'UTF-8') : htmlspecialchars(strtok((string)$offer['employee_name'], ' ') ?: 'there', ENT_QUOTES, 'UTF-8');
     $jobTitle = htmlspecialchars((string)($offer['job_title'] ?? ''), ENT_QUOTES, 'UTF-8');
     $payRate = htmlspecialchars((string)($offer['pay_rate'] ?? ''), ENT_QUOTES, 'UTF-8');
-    $username = isset($offer['username']) ? htmlspecialchars((string)$offer['username'], ENT_QUOTES, 'UTF-8') : '';
+    // Login uses email (unified Mahaverse login asks for email; password reset OTP is email-only).
+    $loginEmail = isset($offer['email']) && trim((string)$offer['email']) !== ''
+        ? htmlspecialchars(trim((string)$offer['email']), ENT_QUOTES, 'UTF-8')
+        : htmlspecialchars($toEmail, ENT_QUOTES, 'UTF-8');
     $tempPassword = isset($offer['temp_password']) ? htmlspecialchars((string)$offer['temp_password'], ENT_QUOTES, 'UTF-8') : '';
     $baseUrl = "https://mahaverse.mahabehavioralhealth.com";
     $loginUrl = $baseUrl . "/launchpad/login";
@@ -58,7 +61,7 @@ function sendOfferInitiatedEmail(string $toEmail, array $offer): void {
     $offerUrl = $baseUrl . "/launchpad/login?redirect=" . urlencode("/launchpad/form/?view=offer-letter");
 
     $subject = "Job offer for {$employeeName}-Maha Behavioral Health Services";
-    $hasCreds = ($username !== '' && $tempPassword !== '');
+    $hasCreds = ($loginEmail !== '' && $tempPassword !== '');
     // Follow the same email template used in create_user.php (keep styling consistent).
     // IMPORTANT: avoid warning/danger symbols/emojis to reduce spam risk.
     $resetUrl = $loginUrl . "?view=forgotPassword";
@@ -107,12 +110,12 @@ function sendOfferInitiatedEmail(string $toEmail, array $offer): void {
                     <p>Should you have any questions or require further clarification, please contact me at <a href='mailto:info@mahabehavioralhealth.com'>info@mahabehavioralhealth.com</a>.</p>
                     " . ($hasCreds ? ("
                     <div class='credentials'>
-                        <div class='label'>Username</div>
-                        <div class='value'>{$username}</div>
+                        <div class='label'>Email</div>
+                        <div class='value'>{$loginEmail}</div>
                         <div class='label' style='margin-top: 12px;'>Temporary Password</div>
                         <div class='value'>{$tempPassword}</div>
                     </div>
-                    <p class='note'>Please reset your password after your first login.</p>
+                    <p class='note'>Sign in with this email and temporary password, then reset your password after your first login.</p>
                     ") : "") . "
                     <a class='cta' href='{$offerUrl}'>To View and Accept your Offer</a>
                     <div style='margin-top: 14px;'>
@@ -459,7 +462,7 @@ try {
                 'first_name' => $firstNamePayload,
                 'job_title' => $jobTitle,
                 'pay_rate' => $payRate,
-                'username' => $userCreated ? $username : '',
+                'email' => $userCreated ? $staffEmail : '',
                 'temp_password' => $userCreated ? $tempPassword : '',
             ]);
         }
