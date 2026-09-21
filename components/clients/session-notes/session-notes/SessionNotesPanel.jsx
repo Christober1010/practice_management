@@ -11,6 +11,7 @@ export default function SessionNotesPanel({
   client,
   sessionDate,
   sessionData,
+  serviceCodeDescriptions = {},
   sessionNotes,
   setSessionNotes,
   onSave,
@@ -18,13 +19,18 @@ export default function SessionNotesPanel({
   onClose,
   isFutureSessionDate = false,
   futureCompleteMessage = "",
+  notesTab = "overview",
+  onNotesTabChange,
+  soapErrors = {},
+  onClearSoapError,
+  soapLocked = false,
 }) {
   const [showEmployeeSignatureDialog, setShowEmployeeSignatureDialog] = useState(false);
   const [showGuardianSignatureDialog, setShowGuardianSignatureDialog] = useState(false);
 
   return (
     <>
-      <Tabs defaultValue="overview" className="w-full">
+      <Tabs value={notesTab} onValueChange={onNotesTabChange} className="w-full">
         <TabsList className="sticky top-0 z-10 -mx-6 mb-5 flex flex-wrap justify-start gap-2 border-b border-slate-200 bg-background/95 px-6 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           {[
             { value: "overview", label: "Overview" },
@@ -46,13 +52,18 @@ export default function SessionNotesPanel({
             client={client}
             sessionDate={sessionDate}
             sessionData={sessionData}
-            sessionNotes={sessionNotes}
-            setSessionNotes={setSessionNotes}
+            serviceCodeDescriptions={serviceCodeDescriptions}
           />
         </TabsContent>
 
         <TabsContent value="clinical" className="mt-0">
-          <ClinicalNotesTab sessionNotes={sessionNotes} setSessionNotes={setSessionNotes} />
+          <ClinicalNotesTab
+            sessionNotes={sessionNotes}
+            setSessionNotes={setSessionNotes}
+            soapErrors={soapErrors}
+            onClearSoapError={onClearSoapError}
+            soapLocked={soapLocked}
+          />
         </TabsContent>
 
         <TabsContent value="signatures" className="mt-0 space-y-6">
@@ -69,14 +80,16 @@ export default function SessionNotesPanel({
         </TabsContent>
       </Tabs>
 
-      <SessionNotesFooterActions
-        className="sticky bottom-0 z-10 -mx-6 mt-8 border-t border-slate-200 bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80"
-        onClose={onClose}
-        onSave={onSave}
-        onComplete={onComplete}
-        isFutureSessionDate={isFutureSessionDate}
-        futureCompleteMessage={futureCompleteMessage}
-      />
+      {notesTab !== "overview" ? (
+        <SessionNotesFooterActions
+          className="sticky bottom-0 z-10 -mx-6 mt-8 border-t border-slate-200 bg-background/95 px-6 py-4 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+          onClose={onClose}
+          onSave={onSave}
+          onComplete={onComplete}
+          isFutureSessionDate={isFutureSessionDate}
+          futureCompleteMessage={futureCompleteMessage}
+        />
+      ) : null}
     </>
   );
 }

@@ -1,7 +1,7 @@
 // add-module-modal.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useAppSelector } from "@/app/store/hooks";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import toast from "react-hot-toast";
 import { mahaverseFetch } from "@/lib/mahaverse-api";
+import { clientDisplayName, isClientActive } from "@/lib/sort-clients";
+import { resolveClientRecordId } from "@/lib/master-data-client-scope";
 
 interface Module {
   id: string;
@@ -68,6 +70,19 @@ export default function AddModuleModal({
     if (selectedClientValue === "generic") return null;
     return clients.find((c) => String(c.id) === String(selectedClientValue) || c.name === selectedClientValue) || null;
   })();
+
+  const assignableClients = useMemo(() => {
+    const selectedId = String(selectedClientValue || "");
+    return clients.filter((c) => {
+      const id = resolveClientRecordId(c);
+      const name = String(c.name || "");
+      return (
+        isClientActive(c) ||
+        (id && id === selectedId) ||
+        (name && name === selectedId)
+      );
+    });
+  }, [clients, selectedClientValue]);
 
   useEffect(() => {
     if (editingModule) {
@@ -279,12 +294,11 @@ export default function AddModuleModal({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="generic">Generic (no client)</SelectItem>
-                  {clients.map((c) => {
+                  {assignableClients.map((c) => {
                     const clientId = c.id ?? c.name;
-                    console.log(c,"clients")
                     return (
                       <SelectItem key={String(clientId)} value={String(clientId)}>
-                        {c.first_name}{c.last_name}
+                        {clientDisplayName(c) || "Unnamed Client"}
                       </SelectItem>
                     );
                   })}

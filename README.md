@@ -47,6 +47,19 @@ pnpm run dev:prod
 - Loads `.env.prod` → `NEXT_PUBLIC_BASE_URL=.../mahaverse-backend-logics`
 - Open **http://localhost:3001**
 
+### Java backend (local Spring Boot)
+
+```bash
+# Terminal 1: MySQL + Java API (see java-backend/README.md)
+# Terminal 2:
+pnpm run dev:java
+```
+
+- Loads `.env.java` → `NEXT_PUBLIC_BASE_URL=http://localhost:8080`
+- Open **http://localhost:3000**
+- Login: `admin@mahaverse.local` / `Admin123!` (local seed user)
+- Auth endpoints work today; other screens need matching Java controllers
+
 ### Generic dev (optional)
 
 ```bash

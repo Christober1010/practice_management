@@ -30,7 +30,7 @@ export default function TreatmentTypesSetup() {
     try {
       setLoading(true);
       const params = new URLSearchParams({ showArchived: showArchived.toString() });
-      const res = await mahaverseFetch(`/treatment-types.php?${params}`);
+      const res = await mahaverseFetch(`/api/v1/lookups/treatment-types?${params}`);
       const data = await res.json();
       if (data?.success) setItems(data.data || []);
       else toast.error(data?.message || "Failed to load treatment types");
@@ -51,7 +51,7 @@ export default function TreatmentTypesSetup() {
   const handleSave = async (payload) => {
     try {
       const method = editingItem ? "PUT" : "POST";
-      const res = await mahaverseFetch('/treatment-types.php', {
+      const res = await mahaverseFetch('/api/v1/lookups/treatment-types', {
         method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
       });
       const result = await res.json();
@@ -67,7 +67,7 @@ export default function TreatmentTypesSetup() {
   const handleDelete = async () => {
     if (!itemToDelete) return;
     try {
-      const res = await mahaverseFetch('/treatment-types.php', {
+      const res = await mahaverseFetch('/api/v1/lookups/treatment-types', {
         method: "DELETE", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: itemToDelete.id }),
       });

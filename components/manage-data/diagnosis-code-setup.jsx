@@ -44,7 +44,7 @@ export default function DiagnosisCodeSetup() {
   const loadDiagnosisCodes = async () => {
     try {
       setLoading(true);
-      const res = await mahaverseFetch(`/diagnosis-codes.php?showArchived=${showArchived}`);
+      const res = await mahaverseFetch(`/api/v1/lookups/diagnosis-codes?showArchived=${showArchived}`);
       const data = await res.json();
       if (data?.success) {
         setDiagnosisCodes(data.data || []);
@@ -85,7 +85,7 @@ export default function DiagnosisCodeSetup() {
     try {
       const method = editingCode ? "PUT" : "POST";
 
-      const res = await mahaverseFetch("/diagnosis-codes.php", {
+      const res = await mahaverseFetch("/api/v1/lookups/diagnosis-codes", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(code),
@@ -113,7 +113,7 @@ export default function DiagnosisCodeSetup() {
   const handleDelete = async () => {
     if (!codeToDelete) return;
     try {
-      const res = await mahaverseFetch('/diagnosis-codes.php', {
+      const res = await mahaverseFetch('/api/v1/lookups/diagnosis-codes', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: codeToDelete.id }),

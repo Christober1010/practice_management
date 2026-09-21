@@ -116,6 +116,29 @@ function normalize_session_service_type($value): string
 }
 
 /**
+ * Completed sessions: only admins may change service type.
+ * Scheduled sessions: any writer may set Direct/Indirect.
+ *
+ * @param array|null $authUser
+ * @param mixed $requestedValue from payload (null = keep existing)
+ * @param mixed $existingValue current DB value or Direct
+ */
+function sessions_resolve_service_type_for_write($authUser, $requestedValue, $existingValue = 'Direct', $sessionIsCompleted = false): string
+{
+    $existing = normalize_session_service_type($existingValue);
+    if ($sessionIsCompleted) {
+        $role = strtolower(trim((string) (($authUser['role'] ?? '') ?: '')));
+        if ($role !== 'admin') {
+            return $existing;
+        }
+    }
+    if ($requestedValue === null || $requestedValue === '') {
+        return $existing;
+    }
+    return normalize_session_service_type($requestedValue);
+}
+
+/**
  * Persist service_type. Throws on prepare/execute failure when the column exists.
  * Throws if a non-default value is requested but the DB column is missing.
  */
@@ -302,6 +325,81 @@ function session_row_is_completed(array $row): bool
         return true;
     }
     return false;
+}
+
+/** True when sessions.exclude_session is Yes. */
+function session_row_is_excluded(array $row): bool
+{
+    $ex = strtolower(trim((string)($row['exclude_session'] ?? $row['excludeSession'] ?? 'No')));
+    return $ex === 'yes' || $ex === 'y' || $ex === '1' || $ex === 'true';
+}
+
+/**
+ * When exclude_session=Yes and the session is Rendered, mirror rendered_hours into session_log.misc_hrs.
+ */
+function sessions_sync_misc_hrs_for_excluded_rendered(
+    mysqli $conn,
+    int $sessionId,
+    ?string $excludeSession = null,
+    ?string $status = null,
+    ?float $renderedHours = null
+): void {
+    if ($sessionId <= 0) {
+        return;
+    }
+
+    $r = @$conn->query("SHOW TABLES LIKE 'session_log'");
+    $hasTable = ($r && $r->num_rows > 0);
+    if ($r) {
+        $r->free();
+    }
+    if (!$hasTable) {
+        return;
+    }
+
+    if ($excludeSession === null || $status === null || $renderedHours === null) {
+        $excludeSelect = sessions_has_exclude_session_column($conn) ? ', exclude_session' : '';
+        $statusCol = sessions_status_column($conn);
+        $stmt = $conn->prepare(
+            "SELECT `{$statusCol}` AS status, rendered_hours{$excludeSelect} FROM sessions WHERE session_id = ? LIMIT 1"
+        );
+        if (!$stmt) {
+            return;
+        }
+        $stmt->bind_param('i', $sessionId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row) {
+            return;
+        }
+        $excludeSession = $excludeSession ?? ($row['exclude_session'] ?? 'No');
+        $status = $status ?? session_row_status_value($row, '');
+        $renderedHours = $renderedHours ?? (float)($row['rendered_hours'] ?? 0);
+    }
+
+    if (!session_row_is_excluded(['exclude_session' => $excludeSession])) {
+        return;
+    }
+    if (!session_is_completed_status($status)) {
+        return;
+    }
+    $hrs = round((float)$renderedHours, 2);
+    if ($hrs <= 0) {
+        return;
+    }
+
+    $miscStr = (string)$hrs;
+    $stmt = $conn->prepare(
+        'INSERT INTO session_log (session_id, misc_hrs) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE misc_hrs = VALUES(misc_hrs)'
+    );
+    if (!$stmt) {
+        return;
+    }
+    $stmt->bind_param('is', $sessionId, $miscStr);
+    $stmt->execute();
+    $stmt->close();
 }
 
 function session_status_is_cancelled($status): bool
@@ -554,6 +652,89 @@ function build_claim_id($sessionId, $startUtc = null): string
     return 'CLM' . (int)$sessionId;
 }
 
+function session_authorization_group_key(mysqli $conn, array $row): string
+{
+    $raw = trim((string)($row['auth_code'] ?? ''));
+    if ($raw !== '') {
+        if (preg_match('/\s-\s([^-]+)-\d{2}\/\d{2}\/\d{4}/', $raw, $m)) {
+            $n = trim($m[1]);
+            if ($n !== '' && $n !== '—') {
+                return strtoupper($n);
+            }
+        }
+        if (preg_match('/^([^-]+)-\d{2}\/\d{2}\/\d{4}/', $raw, $m)) {
+            $n = trim($m[1]);
+            if ($n !== '' && $n !== '—') {
+                return strtoupper($n);
+            }
+        }
+    }
+    $authId = trim((string)($row['auth_id'] ?? ''));
+    if ($authId !== '') {
+        $match = client_auth_identifier_where($conn, '');
+        $sql = "SELECT authorization_number FROM client_auth WHERE {$match['clause']} LIMIT 1";
+        $stmt = $conn->prepare($sql);
+        if ($stmt) {
+            $aid = (int)$authId;
+            if (!empty($match['dual'])) {
+                $stmt->bind_param('ii', $aid, $aid);
+            } else {
+                $stmt->bind_param('i', $aid);
+            }
+            $stmt->execute();
+            $authRow = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            $n = trim((string)($authRow['authorization_number'] ?? ''));
+            if ($n !== '') {
+                return strtoupper($n);
+            }
+        }
+        return 'AUTHID:' . $authId;
+    }
+    return $raw !== '' ? strtoupper($raw) : '';
+}
+
+function find_unsubmitted_group_claim_id(mysqli $conn, array $row, int $excludeSessionId): string
+{
+    $clientId = trim((string)($row['client_id'] ?? ''));
+    $dos = substr(trim((string)($row['start_utc'] ?? '')), 0, 10);
+    $authKey = session_authorization_group_key($conn, $row);
+    if ($clientId === '' || $dos === '' || $authKey === '') {
+        return '';
+    }
+    $stmt = $conn->prepare(
+        "SELECT session_id, claim_id, claim_status, auth_id, auth_code
+         FROM sessions
+         WHERE client_id = ?
+           AND LEFT(TRIM(IFNULL(start_utc,'')), 10) = ?
+           AND TRIM(IFNULL(claim_id,'')) <> ''
+           AND session_id <> ?
+         ORDER BY session_id ASC"
+    );
+    if (!$stmt) {
+        return '';
+    }
+    $stmt->bind_param('ssi', $clientId, $dos, $excludeSessionId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $found = '';
+    while ($res && ($sibling = $res->fetch_assoc())) {
+        if (claim_status_is_submitted($sibling['claim_status'] ?? '')) {
+            continue;
+        }
+        if (session_authorization_group_key($conn, $sibling) !== $authKey) {
+            continue;
+        }
+        $cid = trim((string)($sibling['claim_id'] ?? ''));
+        if ($cid !== '') {
+            $found = $cid;
+            break;
+        }
+    }
+    $stmt->close();
+    return $found;
+}
+
 function claim_status_is_submitted($status): bool
 {
     return stripos(trim((string) $status), 'submitted') !== false;
@@ -589,7 +770,7 @@ function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = nu
     }
 
     $stmt = $conn->prepare(
-        "SELECT claim_id, claim_status, provider_id, service_code, auth_code, auth_id, client_id
+        "SELECT claim_id, claim_status, provider_id, service_code, auth_code, auth_id, client_id, start_utc
          FROM sessions WHERE session_id = ? LIMIT 1"
     );
     if (!$stmt) {
@@ -664,7 +845,13 @@ function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = nu
     } else {
         $nextClaimId = $existingClaimId;
         $nextClaimStatus = $existingClaimStatus;
-        if ($nextClaimId === '') {
+        if ($startUtc && trim((string)($row['start_utc'] ?? '')) === '') {
+            $row['start_utc'] = $startUtc;
+        }
+        $groupClaimId = find_unsubmitted_group_claim_id($conn, $row, $sessionId);
+        if ($groupClaimId !== '') {
+            $nextClaimId = $groupClaimId;
+        } elseif ($nextClaimId === '') {
             $nextClaimId = build_claim_id($sessionId, $startUtc);
         }
         if ($nextClaimStatus === '' || claim_status_is_not_applicable($nextClaimStatus)) {
@@ -1425,10 +1612,7 @@ if (!$authData) {
 }
 
 $currentBalance = (float)($authData['balance_units'] ?? '0.00'); // Cast VARCHAR to float
-$totalScheduledHours = floatval($scheduledHours); // For single session
-if ($currentBalance < $totalScheduledHours) {
-    return $fail(400, ['error' => "Insufficient balance_units: available=$currentBalance, required=$totalScheduledHours"]);
-}
+$totalScheduledHours = floatval($scheduledHours); // For single session (updated after occurrences are built)
 
 $sessionsHasAuthorizedHours = sessions_has_authorized_hours_column($conn);
 
@@ -1508,6 +1692,35 @@ if ($recurringFrequency !== 'No' && $recurringFrequency !== 'Never') {
         'start' => $startMySQL,
         'end' => $endMySQL
     ];
+}
+
+// Remaining auth units must include already-scheduled appointments, not only billed ones.
+if (strtolower((string)$excludeSession) !== 'yes') {
+    if (!function_exists('client_auth_hours_to_units')) {
+        require_once __DIR__ . '/client_auth_units_helpers.php';
+    }
+    $hoursNeeded = 0.0;
+    foreach ($sessionsToCreate as $session) {
+        $hoursNeeded += $scheduledHours !== null && $scheduledHours !== ''
+            ? (float)$scheduledHours
+            : (float)computeScheduledHours($session['start'], $session['end']);
+    }
+    $requiredUnits = client_auth_hours_to_units($hoursNeeded);
+    $approvedUnits = client_auth_approved_units_mysqli($conn, (int)$authId);
+    if ($approvedUnits > 0 && $requiredUnits > 0) {
+        $committedUnits = client_auth_aggregate_committed_units($conn, (int)$authId)['total_units'];
+        $remainingUnits = round($approvedUnits - $committedUnits, 2);
+        if ($requiredUnits - $remainingUnits > 0.009) {
+            return $fail(400, [
+                'code' => 'auth_units_exceeded',
+                'error' => 'No units available to schedule appointments',
+                'approved_units' => $approvedUnits,
+                'committed_units' => $committedUnits,
+                'remaining_units' => $remainingUnits,
+                'required_units' => $requiredUnits,
+            ]);
+        }
+    }
 }
 
 // Dry-run: validate provider schedule conflicts without inserting (import validate).
@@ -1665,6 +1878,13 @@ INSERT INTO sessions (
             if (session_is_completed_status($status)) {
                 ensure_session_claim_ready($conn, (int)$stmt->insert_id, $session['start'], $billableOverride);
             }
+            sessions_sync_misc_hrs_for_excluded_rendered(
+                $conn,
+                (int)$stmt->insert_id,
+                $excludeSession,
+                $status,
+                (float)$renderedHours
+            );
         } else {
             throw new Exception("Failed to create session: " . $stmt->error);
         }

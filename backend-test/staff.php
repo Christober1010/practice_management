@@ -194,6 +194,49 @@ function getStaffCertifications($conn, $staff_id)
     return $certifications;
 }
 
+/**
+ * CMS-1500 Box 24J reads staff.npiNumber. The Staff UI edits NPI on the
+ * Certification tab (certifications[].npi_number), so resolve from either.
+ */
+function staff_resolve_npi_number(array $data): ?string
+{
+    $npi = trim((string)($data['npiNumber'] ?? $data['npi_number'] ?? ''));
+    if ($npi !== '') {
+        return $npi;
+    }
+    $certs = $data['certifications'] ?? [];
+    if (!is_array($certs)) {
+        return null;
+    }
+    foreach ($certs as $cert) {
+        if (!is_array($cert)) {
+            continue;
+        }
+        $c = trim((string)($cert['npi_number'] ?? $cert['npiNumber'] ?? ''));
+        if ($c !== '') {
+            return $c;
+        }
+    }
+    return null;
+}
+
+/** Expose staff.npiNumber on certification rows so the UI Certification tab shows it. */
+function staff_hydrate_certification_npi(array $certifications, $staffNpi): array
+{
+    $staffNpi = trim((string)($staffNpi ?? ''));
+    if ($staffNpi === '' || empty($certifications)) {
+        return $certifications;
+    }
+    foreach ($certifications as &$cert) {
+        $existing = trim((string)($cert['npi_number'] ?? $cert['npiNumber'] ?? ''));
+        if ($existing === '') {
+            $cert['npi_number'] = $staffNpi;
+        }
+    }
+    unset($cert);
+    return $certifications;
+}
+
 // ============ STAFF ASSIGNMENT HELPERS ============
 function getAssignedStaff($conn, $staff_id)
 {
@@ -385,6 +428,10 @@ function handleGetStaff($conn, $authUser = null)
         $row['assignedStaffNames'] = getAssignedStaffNames($conn, $row['id']);
         $row['assignedClientNames'] = getAssignedClientNames($conn, $row['id']);
         $row['certifications'] = getStaffCertifications($conn, $row['id']);
+        $row['certifications'] = staff_hydrate_certification_npi(
+            $row['certifications'],
+            $row['npiNumber'] ?? null
+        );
 
         // Get certificationNumber from certifications table (first cert or null)
         if (!empty($row['certifications'])) {
@@ -453,7 +500,7 @@ function handleAddStaff($conn)
 
     $id = $data['id'] ?? 'ST' . uniqid();
     $fullName = trim($data['firstName']) . ' ' . trim($data['lastName']);
-    $npiNumber = $data['npiNumber'] ?? null;
+    $npiNumber = staff_resolve_npi_number($data);
     $address = $data['address'] ?? null;
     $phone = $data['phone'] ?? null;
     $jobTitle = $data['job_title'] ?? $data['jobTitle'] ?? null;
@@ -702,7 +749,7 @@ function handleUpdateStaff($conn)
 
     // Prepare new values
     $fullName = trim($data['firstName']) . ' ' . trim($data['lastName']);
-    $npiNumber = $data['npiNumber'] ?? null;
+    $npiNumber = staff_resolve_npi_number($data);
     $address = $data['address'] ?? null;
     $phone = $data['phone'] ?? null;
     $jobTitle = $data['job_title'] ?? $data['jobTitle'] ?? null;

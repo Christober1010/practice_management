@@ -79,7 +79,7 @@ function normalizeStaffRecord(row) {
   };
 }
 
-const STAFF_API_PATH = "/staff.php";
+const STAFF_API_PATH = "/api/v1/staff";
 
 const formatUSPhone = (value) => {
   if (!value) return "";

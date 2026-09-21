@@ -52,7 +52,7 @@ export default function ProviderSetup() {
   const loadProviders = async () => {
     try {
       setLoading(true);
-      const res = await mahaverseFetch(`/providers.php?showArchived=${showArchived}`);
+      const res = await mahaverseFetch(`/api/v1/lookups/providers?showArchived=${showArchived}`);
       const data = await res.json();
       if (data?.success) {
         setProviders(data.data || []);
@@ -99,7 +99,7 @@ export default function ProviderSetup() {
     try {
       const method = editingProvider ? "PUT" : "POST";
 
-      const res = await mahaverseFetch("/providers.php", {
+      const res = await mahaverseFetch("/api/v1/lookups/providers", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(provider),
@@ -127,7 +127,7 @@ export default function ProviderSetup() {
   const handleDelete = async () => {
     if (!providerToDelete) return;
     try {
-      const res = await mahaverseFetch('/providers.php', {
+      const res = await mahaverseFetch('/api/v1/lookups/providers', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: providerToDelete.id }),

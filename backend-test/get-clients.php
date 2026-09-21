@@ -55,7 +55,7 @@ try {
     $clientsData = [];
 
     // 1. Fetch all clients
-    $stmtClients = $conn->query("SELECT * FROM clients ORDER BY created_at DESC");
+    $stmtClients = $conn->query("SELECT * FROM clients ORDER BY first_name ASC, last_name ASC, created_at DESC");
     while ($client = $stmtClients->fetch(PDO::FETCH_ASSOC)) {
         $client['insurances'] = [];
         $client['authorizations'] = [];
@@ -309,9 +309,20 @@ try {
         }
     }
 
+    $clientsList = array_values($clientsData);
+    usort($clientsList, function ($a, $b) {
+        $an = trim(($a['first_name'] ?? '') . ' ' . ($a['last_name'] ?? ''));
+        $bn = trim(($b['first_name'] ?? '') . ' ' . ($b['last_name'] ?? ''));
+        $cmp = strcasecmp($an, $bn);
+        if ($cmp !== 0) {
+            return $cmp;
+        }
+        return strcmp((string)($a['client_id'] ?? ''), (string)($b['client_id'] ?? ''));
+    });
+
     echo json_encode([
         "success" => true,
-        "clients" => array_values($clientsData),
+        "clients" => $clientsList,
         "debug" => $debugData
     ]);
 } catch (PDOException $e) {

@@ -27,6 +27,7 @@ import PromptsList from "@/components/master-data/prompts-list";
 import BehaviorCategoriesList from "@/components/master-data/behavior-categories-list";
 import BehaviorsList from "@/components/master-data/behaviors-list";
 import MileageRateView from "@/components/manage-data/mileage-rate-view";
+import ClearingHouseView from "@/components/manage-data/clearing-house-view";
 import ManageDataView from "@/components/manage-data/manage-data-view";
 import ProviderView from "@/components/manage-data/provider-view";
 import ProviderServiceCodeView from "@/components/manage-data/provider-service-code-view";
@@ -38,6 +39,7 @@ import DocumentTypesSetup from "@/components/manage-data/document-types-setup";
 import PayerPaymentsView from "@/components/manage-data/payer-payments-view";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import AppSidebar from "@/components/layout/app-sidebar";
+import { Toaster } from "@/components/ui/sonner";
 import ReportsView from "../reports/reports-view";
 import LocationsView from "../locations/locations-view";
 import {
@@ -196,6 +198,8 @@ export default function DashboardLayout({ userRole, onLogout }) {
         return <DocumentTypesSetup />;
       case "mileageRate":
         return <MileageRateView />;
+      case "clearingHouse":
+        return <ClearingHouseView userRole={userRole} />;
       case "payerPayments":
         return <PayerPaymentsView />;
       default:
@@ -210,6 +214,7 @@ export default function DashboardLayout({ userRole, onLogout }) {
         setCurrentView={setCurrentView}
         onLogout={onLogout}
       />
+      <Toaster />
       <div className="w-full bg-gray-50 overflow-x-hidden">
         <Header userRole={userRole} onLogout={onLogout} />
         <main className="p-6 bg-white ">{renderContent()}</main>

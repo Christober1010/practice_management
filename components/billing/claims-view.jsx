@@ -15,8 +15,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
-import { FileDown, FileText, RefreshCw, Upload } from "lucide-react";
+import { FileDown, FileText, RefreshCw, Upload, ChevronDown, ChevronRight } from "lucide-react";
 import { getMahaverseAuthHeaders } from "@/lib/api-auth";
+import { sortClientsByName } from "@/lib/sort-clients";
 import Cms1500Preview from "./cms1500-preview";
 import ClaimWarningList from "./claim-warning-list";
 import { createMergedCms1500PdfBlob, downloadMergedCms1500Pdf } from "@/lib/cms1500-pdf";
@@ -27,6 +28,7 @@ import {
   dosBoundsFromSessions,
   officeAllySftpDateRangeCheck,
 } from "@/lib/officeally-sftp-guards";
+import { authorizationBillingCodeMatches } from "@/lib/authorization-billing-code";
 
 function formatDateOnly(iso) {
   if (!iso) return "N/A";
@@ -62,11 +64,38 @@ function normalizeClaimStatus(session) {
   return "other";
 }
 
-function resolveInsuranceIdForSession(session, clients, overrideInsuranceId) {
-  if (overrideInsuranceId) {
-    return String(overrideInsuranceId);
+function positiveInsuranceId(raw) {
+  const n = Number.parseInt(String(raw ?? ""), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function mapAuthInsuranceToClientPk(authInsuranceId, client) {
+  if (authInsuranceId == null || authInsuranceId === "") return "";
+  const raw = authInsuranceId;
+  const byPk = toSafeArray(client.insurances).find(
+    (ins) => String(ins.insurance_id) === String(raw)
+  );
+  if (byPk) {
+    const pk = positiveInsuranceId(byPk.insurance_id);
+    return pk != null ? String(pk) : "";
   }
-  const client = clients.find((c) => String(c.client_id) === String(session?.client_id));
+  const idx = Number.parseInt(String(raw), 10);
+  if (Number.isFinite(idx) && idx >= 0 && client.insurances?.[idx]) {
+    const pk = positiveInsuranceId(client.insurances[idx].insurance_id);
+    return pk != null ? String(pk) : "";
+  }
+  const asPk = positiveInsuranceId(raw);
+  return asPk != null ? String(asPk) : "";
+}
+
+function resolveInsuranceIdForSession(session, clients, overrideInsuranceId) {
+  const override = positiveInsuranceId(overrideInsuranceId);
+  if (override != null) {
+    return String(override);
+  }
+  const client = clients.find(
+    (c) => String(c.client_id) === String(session?.client_id)
+  );
   if (!client) return "";
 
   const authId = session?.auth_id;
@@ -76,36 +105,104 @@ function resolveInsuranceIdForSession(session, clients, overrideInsuranceId) {
         String(a.auth_id ?? a.id ?? "") === String(authId) ||
         String(a.id ?? "") === String(authId)
     );
-    if (auth?.insurance_id != null && auth.insurance_id !== "") {
-      const raw = auth.insurance_id;
-      const byPk = toSafeArray(client.insurances).find(
-        (ins) => String(ins.insurance_id) === String(raw)
-      );
-      if (byPk) return String(byPk.insurance_id);
-      const idx = Number.parseInt(String(raw), 10);
-      if (Number.isFinite(idx) && client.insurances?.[idx]) {
-        return String(client.insurances[idx].insurance_id);
-      }
-      return String(raw);
-    }
+    const fromAuth = mapAuthInsuranceToClientPk(auth?.insurance_id, client);
+    if (fromAuth) return fromAuth;
+  }
+
+  const authCode = String(session?.auth_code || "").trim();
+  if (authCode) {
+    const auth = toSafeArray(client.authorizations).find((a) =>
+      authorizationBillingCodeMatches(a, authCode)
+    );
+    const fromCode = mapAuthInsuranceToClientPk(auth?.insurance_id, client);
+    if (fromCode) return fromCode;
   }
 
   const first = toSafeArray(client.insurances)[0];
-  return first?.insurance_id != null ? String(first.insurance_id) : "";
+  const firstPk = positiveInsuranceId(first?.insurance_id);
+  return firstPk != null ? String(firstPk) : "";
 }
 
 function claimStatusLabel(statusKey) {
   if (statusKey === "ready_to_bill") return "Ready to Bill";
-  if (statusKey === "claims_submitted") return "Claims Submitted";
+  if (statusKey === "claims_submitted") return "Claim Submitted";
   return "N/A";
 }
 
-function claimPreviewLabel(session, sessionId) {
-  const sid = String(sessionId);
-  if (session?.claim_id) return String(session.claim_id).trim() || sid;
-  const dos = session ? formatDateOnly(session.start_utc) : "N/A";
-  if (dos && dos !== "N/A") return `${dos} · ${sid}`;
-  return `Session ${sid}`;
+function authorizationNumberFromSession(session) {
+  const explicit = String(session?.authorization_number || "").trim();
+  if (explicit) return explicit;
+  const raw = String(session?.auth_code || "").trim();
+  const labeled = raw.match(/\s-\s([^-]+)-\d{2}\/\d{2}\/\d{4}/);
+  if (labeled?.[1] && labeled[1] !== "—") return labeled[1].trim();
+  const suffix = raw.match(/^([^-]+)-\d{2}\/\d{2}\/\d{4}/);
+  if (suffix?.[1] && suffix[1] !== "—") return suffix[1].trim();
+  return raw || "N/A";
+}
+
+function claimGroupKey(session) {
+  const client = String(session?.client_id ?? "").trim();
+  const dos = formatDateOnly(session?.start_utc);
+  const auth = authorizationNumberFromSession(session).toUpperCase();
+  return `${client}|${dos}|${auth}`;
+}
+
+function sessionProcedureCode(session) {
+  const service = String(session?.service_code || session?.service_code_with_modifiers || "");
+  const fromService = service.match(/\d{5}/);
+  if (fromService) return fromService[0];
+  const fromAuth = String(session?.auth_code || "").match(/\d{5}/);
+  return fromAuth ? fromAuth[0] : service || session?.auth_code || "N/A";
+}
+
+function sessionBillableUnits(session) {
+  const hours = session?.scheduled_hours ?? session?.rendered_hours;
+  if (hours == null || hours === "") return "";
+  const n = Number(hours);
+  if (!Number.isFinite(n)) return "";
+  return String(Math.round(n * 4 * 100) / 100);
+}
+
+function groupSessionsByClaim(sessions) {
+  const map = new Map();
+  for (const session of sessions) {
+    const key = claimGroupKey(session);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(session);
+  }
+  return [...map.entries()].map(([key, rows]) => {
+    const sorted = [...rows].sort(
+      (a, b) => Number(a.session_id) - Number(b.session_id)
+    );
+    const claimIds = [
+      ...new Set(
+        sorted.map((s) => String(s.claim_id || "").trim()).filter(Boolean)
+      ),
+    ];
+    return {
+      key,
+      sessions: sorted,
+      sessionIds: sorted.map((s) => String(s.session_id)),
+      claimId: claimIds[0] || "N/A",
+      dos: formatDateOnly(sorted[0]?.start_utc),
+      clientId: sorted[0]?.client_id,
+      clientName:
+        sorted[0]?.clientName ||
+        (sorted[0]?.client_id ? `Client ${sorted[0].client_id}` : "N/A"),
+      authNumber: authorizationNumberFromSession(sorted[0]),
+    };
+  });
+}
+
+function sessionsForSelectedClaimGroups(sessions, selectedIds) {
+  const selected = new Set((selectedIds || []).map(String));
+  const keys = new Set();
+  for (const session of sessions) {
+    if (selected.has(String(session.session_id))) {
+      keys.add(claimGroupKey(session));
+    }
+  }
+  return sessions.filter((session) => keys.has(claimGroupKey(session)));
 }
 
 const CLIENT_FILTER_ALL = "__all__";
@@ -148,6 +245,7 @@ export default function ClaimsView({ userRole }) {
   const [serviceCodeFilter, setServiceCodeFilter] = useState("");
   const [fromDateFilter, setFromDateFilter] = useState(defaults.from);
   const [toDateFilter, setToDateFilter] = useState(defaults.to);
+  const [expandedClaimKeys, setExpandedClaimKeys] = useState(() => new Set());
 
   const selectedSessionsRows = useMemo(
     () =>
@@ -214,6 +312,11 @@ export default function ClaimsView({ userRole }) {
 
   const filteredSessionIds = useMemo(
     () => filteredSessions.map((s) => String(s.session_id)),
+    [filteredSessions]
+  );
+
+  const filteredClaimGroups = useMemo(
+    () => groupSessionsByClaim(filteredSessions),
     [filteredSessions]
   );
 
@@ -300,7 +403,7 @@ export default function ClaimsView({ userRole }) {
         throw new Error(locationsJson?.message || "Failed to load locations");
       }
 
-      setClients(toSafeArray(clientsJson.clients));
+      setClients(sortClientsByName(toSafeArray(clientsJson.clients)));
       setLocations(toSafeArray(locationsJson.data));
 
       try {
@@ -453,14 +556,26 @@ export default function ClaimsView({ userRole }) {
     });
   };
 
-  const toggleSession = (sessionId, checked) => {
+  const toggleClaimGroup = (group, checked) => {
     setPreviewEntries(null);
+    const groupIds = group.sessionIds.map(String);
     setSelectedSessionIds((prev) => {
-      const asString = String(sessionId);
-      const has = prev.includes(asString);
-      if (checked && !has) return [...prev, asString];
-      if (!checked && has) return prev.filter((id) => id !== asString);
-      return prev;
+      const next = new Set(prev);
+      if (checked) {
+        for (const id of groupIds) next.add(id);
+      } else {
+        for (const id of groupIds) next.delete(id);
+      }
+      return [...next];
+    });
+  };
+
+  const toggleClaimExpanded = (key) => {
+    setExpandedClaimKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
     });
   };
 
@@ -500,68 +615,99 @@ export default function ClaimsView({ userRole }) {
     setError("");
     setPreviewEntries(null);
     try {
-      const sessionRows = new Map(sessions.map((s) => [String(s.session_id), s]));
-      const orderedIds = [...selectedSessionIds];
+      const groupedRows = sessionsForSelectedClaimGroups(
+        filteredSessions,
+        selectedSessionIds
+      );
+      const groups = groupSessionsByClaim(groupedRows);
+      if (groups.length === 0) {
+        throw new Error("No Ready to Bill claims in the current selection.");
+      }
+      const selectedSet = new Set(groupedRows.map((s) => String(s.session_id)));
+      setSelectedSessionIds((prev) => {
+        const next = new Set(prev);
+        for (const id of selectedSet) next.add(id);
+        return [...next];
+      });
+
       const results = await Promise.all(
-        orderedIds.map(async (sessionId) => {
-          const row = sessionRows.get(String(sessionId));
+        groups.map(async (group) => {
+          const row = group.sessions[0];
           if (!row) {
-            throw new Error(`Session ${sessionId} not found`);
+            throw new Error(`Claim ${group.claimId} has no sessions`);
           }
           const clientId = String(row.client_id ?? "").trim();
           if (!clientId) {
-            throw new Error(`Session ${sessionId} has no client`);
+            throw new Error(`Claim ${group.claimId} has no client`);
           }
           const insuranceId = resolveInsuranceIdForSession(
             row,
             clients,
             selectedInsuranceId
           );
-          if (!insuranceId) {
+          const insurancePk = positiveInsuranceId(insuranceId);
+          if (!insurancePk) {
             throw new Error(
-              `Session ${sessionId}: no insurance found (link authorization or pick override)`
+              `Claim ${group.claimId}: no insurance found (link authorization on the client or pick an insurance override)`
             );
           }
-          const resp = await mahaverseFetch('/claims-cms1500-preview.php', {
+          const sessionIds = group.sessions.map((s) => s.session_id);
+          const resp = await mahaverseFetch("/claims-cms1500-preview.php", {
             method: "POST",
             headers: getMahaverseAuthHeaders({
               "Content-Type": "application/json",
             }),
             body: JSON.stringify({
               client_id: clientId,
-              insurance_id: Number.parseInt(insuranceId, 10) || insuranceId,
+              insurance_id: insurancePk,
               location_id: selectedLocationId,
-              session_ids: [sessionId],
+              session_ids: sessionIds,
             }),
           });
           const json = await readJsonSafe(resp);
           if (!resp.ok || !json?.success) {
             throw new Error(
-              json?.message || `Failed to generate CMS-1500 for session ${sessionId}`
+              json?.message || `Failed to generate CMS-1500 for claim ${group.claimId}`
             );
           }
-          return { sessionId: String(sessionId), json };
+          return { group, json };
         })
       );
 
-      const entries = results.map(({ sessionId, json }) => {
-        const row = sessionRows.get(String(sessionId));
+      const entries = results.map(({ group, json }) => {
+        const row = group.sessions[0];
+        const account =
+          String(json?.payload?.patient_account_number || "").trim() ||
+          group.claimId;
+        const lineCodes = toSafeArray(json?.payload?.lines)
+          .map((line) => line?.procedure_code)
+          .filter(Boolean)
+          .join(", ");
         return {
-          sessionId,
-          label: claimPreviewLabel(row, sessionId),
+          sessionId: String(row?.session_id || group.sessionIds[0]),
+          label: `${account} · ${group.dos} · ${group.sessions.length} line(s)`,
           payload: json.payload,
           warnings: toSafeArray(json.warnings),
           clientId: row?.client_id || "",
           locationId: selectedLocationId || "",
           serviceCode:
+            lineCodes ||
             row?.service_code ||
             row?.service_code_with_modifiers ||
             row?.auth_code ||
-            json?.payload?.lines?.[0]?.procedure_code ||
             "",
+          unifiedSessionIds: group.sessionIds,
+          unifiedClaimId: account,
         };
       });
 
+      setSessions((prev) =>
+        prev.map((session) => {
+          const sid = String(session.session_id);
+          const match = entries.find((e) => e.unifiedSessionIds.includes(sid));
+          return match ? { ...session, claim_id: match.unifiedClaimId } : session;
+        })
+      );
       setPreviewEntries(entries);
     } catch (err) {
       console.error("CMS-1500 preview failed", err);
@@ -628,6 +774,16 @@ export default function ClaimsView({ userRole }) {
     setError("");
     setOfficeAllyStatus(null);
     try {
+      const sessionRows = new Map(sessions.map((s) => [String(s.session_id), s]));
+      // Prefer explicit override; otherwise resolve from the first selected session
+      // so Auto mode still sends a valid insurance_id to the submit endpoint.
+      let insurancePayload = positiveInsuranceId(selectedInsuranceId);
+      if (insurancePayload == null && selectedSessionIds.length > 0) {
+        const firstRow = sessionRows.get(String(selectedSessionIds[0]));
+        insurancePayload = positiveInsuranceId(
+          resolveInsuranceIdForSession(firstRow, clients, "")
+        );
+      }
       const resp = await mahaverseFetch("/officeally-submit-claims.php", {
         method: "POST",
         headers: getMahaverseAuthHeaders({
@@ -635,10 +791,11 @@ export default function ClaimsView({ userRole }) {
         }),
         body: JSON.stringify({
           location_id: selectedLocationId,
-          insurance_id: selectedInsuranceId
-            ? Number.parseInt(selectedInsuranceId, 10) || selectedInsuranceId
-            : undefined,
-          session_ids: selectedSessionIds.map((id) => Number.parseInt(String(id), 10) || id),
+          ...(insurancePayload != null ? { insurance_id: insurancePayload } : {}),
+          session_ids: sessionsForSelectedClaimGroups(
+            filteredSessions,
+            selectedSessionIds
+          ).map((row) => Number.parseInt(String(row.session_id), 10) || row.session_id),
         }),
       });
       const json = await readJsonSafe(resp);
@@ -661,8 +818,8 @@ export default function ClaimsView({ userRole }) {
         <div>
           <h2 className="text-3xl font-bold text-slate-800">Claims</h2>
           <p className="text-slate-600 mt-1">
-            Date-range sessions with Ready to Bill status — one CMS-1500 per session, any
-            clients, combined PDF download
+            Ready to Bill claims grouped by date of service, client, and authorization
+            number — one CMS-1500 per claim, with sessions as service lines
           </p>
         </div>
         <Button
@@ -809,9 +966,10 @@ export default function ClaimsView({ userRole }) {
 
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-slate-600">Sessions for claim</p>
+              <p className="text-sm text-slate-600">Claims for billing</p>
               <div className="flex gap-2">
-                <Badge variant="outline">{filteredSessions.length} shown</Badge>
+                <Badge variant="outline">{filteredClaimGroups.length} claims</Badge>
+                <Badge variant="outline">{filteredSessions.length} lines</Badge>
                 <Badge variant="outline">{selectedSessionIds.length} selected</Badge>
               </div>
             </div>
@@ -832,7 +990,7 @@ export default function ClaimsView({ userRole }) {
                   <div className="grid grid-cols-10 gap-2 p-2 text-[11px] font-semibold text-slate-600 bg-slate-100">
                     <div className="flex flex-col items-center justify-center gap-0.5 min-w-0">
                       <Checkbox
-                        aria-label="Select all sessions shown in the table"
+                        aria-label="Select all claims shown in the table"
                         title="Select all shown"
                         disabled={filteredSessionIds.length === 0}
                         checked={
@@ -853,42 +1011,108 @@ export default function ClaimsView({ userRole }) {
                     <div>DOS</div>
                     <div>Insurance Name</div>
                     <div>Auth Number</div>
-                    <div>Service Code</div>
+                    <div>Lines</div>
                     <div>Supervising Provider</div>
                     <div>Rendering Provider</div>
                     <div>Claim Status</div>
                   </div>
-                  {filteredSessions.map((session) => {
-                    const sid = String(session.session_id);
-                    const checked = selectedSessionIds.includes(sid);
-                    const claimStatus = normalizeClaimStatus(session);
-                    const serviceCode =
-                      session.service_code ||
-                      session.service_code_with_modifiers ||
-                      session.auth_code ||
-                      "N/A";
-                    const authNumber =
-                      session.authorization_number || session.auth_code || "N/A";
+                  {filteredClaimGroups.map((group) => {
+                    const selectedCount = group.sessionIds.filter((id) =>
+                      selectedSessionIds.includes(id)
+                    ).length;
+                    const checked =
+                      selectedCount === group.sessionIds.length
+                        ? true
+                        : selectedCount > 0
+                          ? "indeterminate"
+                          : false;
+                    const expanded = expandedClaimKeys.has(group.key);
+                    const first = group.sessions[0];
+                    const claimStatus = normalizeClaimStatus(first);
+                    const uniqueRendering = [
+                      ...new Set(
+                        group.sessions
+                          .map((s) => String(s.provider_name || "").trim())
+                          .filter(Boolean)
+                      ),
+                    ];
+                    const uniqueSupervising = [
+                      ...new Set(
+                        group.sessions
+                          .map((s) => String(s.supervising_provider_name || "").trim())
+                          .filter(Boolean)
+                      ),
+                    ];
                     return (
-                      <div key={sid} className="grid grid-cols-10 gap-2 p-2 text-xs hover:bg-slate-50">
-                        <div className="flex items-center justify-center">
-                          <Checkbox
-                            checked={checked}
-                            onCheckedChange={(value) => toggleSession(sid, Boolean(value))}
-                          />
+                      <div key={group.key}>
+                        <div className="grid grid-cols-10 gap-2 p-2 text-xs hover:bg-slate-50">
+                          <div className="flex items-center justify-center gap-1">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(value) =>
+                                toggleClaimGroup(group, Boolean(value))
+                              }
+                              aria-label={`Select claim ${group.claimId}`}
+                            />
+                            <button
+                              type="button"
+                              className="rounded p-0.5 text-slate-500 hover:bg-slate-200"
+                              aria-label={expanded ? "Collapse service lines" : "Expand service lines"}
+                              onClick={() => toggleClaimExpanded(group.key)}
+                            >
+                              {expanded ? (
+                                <ChevronDown className="h-3.5 w-3.5" />
+                              ) : (
+                                <ChevronRight className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                          </div>
+                          <div className="font-medium text-slate-800">{group.claimId}</div>
+                          <div className="font-medium text-slate-800">{group.clientName}</div>
+                          <div>{group.dos}</div>
+                          <div>{sessionInsuranceLabel(first)}</div>
+                          <div>{group.authNumber}</div>
+                          <div>{group.sessions.length}</div>
+                          <div>
+                            {uniqueSupervising.length === 0
+                              ? "N/A"
+                              : uniqueSupervising.length === 1
+                                ? uniqueSupervising[0]
+                                : `${uniqueSupervising.length} providers`}
+                          </div>
+                          <div>
+                            {uniqueRendering.length === 0
+                              ? "N/A"
+                              : uniqueRendering.length === 1
+                                ? uniqueRendering[0]
+                                : `${uniqueRendering.length} providers`}
+                          </div>
+                          <div>{claimStatusLabel(claimStatus)}</div>
                         </div>
-                        <div className="font-medium text-slate-800">{session.claim_id || "N/A"}</div>
-                        <div className="font-medium text-slate-800">
-                          {session.clientName ||
-                            (session.client_id ? `Client ${session.client_id}` : "N/A")}
-                        </div>
-                        <div>{formatDateOnly(session.start_utc)}</div>
-                        <div>{sessionInsuranceLabel(session)}</div>
-                        <div>{authNumber}</div>
-                        <div>{serviceCode}</div>
-                        <div>{session.supervising_provider_name || "N/A"}</div>
-                        <div>{session.provider_name || "N/A"}</div>
-                        <div>{claimStatusLabel(claimStatus)}</div>
+                        {expanded
+                          ? group.sessions.map((session) => (
+                              <div
+                                key={session.session_id}
+                                className="grid grid-cols-10 gap-2 border-t border-slate-100 bg-slate-50/80 p-2 text-[11px] text-slate-700"
+                              >
+                                <div />
+                                <div className="text-slate-500">Line</div>
+                                <div className="col-span-2">
+                                  {sessionProcedureCode(session)}
+                                  {sessionBillableUnits(session)
+                                    ? ` · ${sessionBillableUnits(session)} units`
+                                    : ""}
+                                </div>
+                                <div className="col-span-2">
+                                  {session.auth_code || session.service_code || "N/A"}
+                                </div>
+                                <div />
+                                <div>{session.supervising_provider_name || "N/A"}</div>
+                                <div>{session.provider_name || "N/A"}</div>
+                                <div>{claimStatusLabel(normalizeClaimStatus(session))}</div>
+                              </div>
+                            ))
+                          : null}
                       </div>
                     );
                   })}
@@ -975,7 +1199,7 @@ export default function ClaimsView({ userRole }) {
                   Uploaded <span className="font-medium">{officeAllyStatus.filename}</span>
                   {officeAllyStatus.remote_path ? ` to ${officeAllyStatus.remote_path}` : ""}
                   {officeAllyStatus.session_ids?.length
-                    ? ` (${officeAllyStatus.session_ids.length} session(s) marked Submitted)`
+                    ? ` (${officeAllyStatus.session_ids.length} session(s) marked Claim Submitted)`
                     : ""}
                 </>
               )}

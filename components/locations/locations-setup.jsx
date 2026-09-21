@@ -58,7 +58,7 @@ export default function LocationsSetup() {
   const loadLocations = async () => {
     try {
       setLoading(true);
-      const res = await mahaverseFetch(`/locations.php?showArchived=${showArchived}`);
+      const res = await mahaverseFetch(`/api/v1/lookups/locations?showArchived=${showArchived}`);
       const data = await res.json();
       if (data?.success) {
         setLocations(data.data || []);
@@ -147,7 +147,7 @@ export default function LocationsSetup() {
   const handleAddLocation = async (location) => {
     try {
       const method = editingLocation ? "PUT" : "POST";
-      const res = await mahaverseFetch("/locations.php", {
+      const res = await mahaverseFetch("/api/v1/lookups/locations", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(location),
@@ -185,7 +185,7 @@ export default function LocationsSetup() {
   const handleDelete = async () => {
     if (!locationToDelete) return;
     try {
-      const res = await mahaverseFetch('/locations.php', {
+      const res = await mahaverseFetch('/api/v1/lookups/locations', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: locationToDelete.id }),

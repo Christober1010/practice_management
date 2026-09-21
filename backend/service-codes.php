@@ -15,6 +15,30 @@ $authUser = requireAuthReadWrite('manage_data.read', 'manage_data.write', 'mahav
 
 $conn->set_charset('utf8mb4');
 
+function service_codes_has_supervising_rule_column(mysqli $conn): bool
+{
+    static $cachedTrue = false;
+    if ($cachedTrue) {
+        return true;
+    }
+    $r = @$conn->query("SHOW COLUMNS FROM `master_service_code` LIKE 'supervising_provider_rule'");
+    $ok = ($r && $r->num_rows > 0);
+    if ($r) {
+        $r->free();
+    }
+    if ($ok) {
+        $cachedTrue = true;
+    }
+    return $ok;
+}
+
+function normalize_service_code_supervising_rule($value): string
+{
+    $v = strtolower(trim((string)($value ?? '')));
+    $allowed = ['', 'provider_as_supervising', 'staff_assigned_supervisor'];
+    return in_array($v, $allowed, true) ? $v : '';
+}
+
 function handleGetServiceCodes($conn)
 {
     $id = $_GET['id'] ?? null;
@@ -59,6 +83,7 @@ function handlePostServiceCode($conn, $input)
 
     $code = trim($input['code']);
     $code_description = trim($input['code_description']);
+    $supervisingRule = normalize_service_code_supervising_rule($input['supervising_provider_rule'] ?? '');
 
     // Check for duplicate code
     $checkStmt = $conn->prepare("SELECT code_id FROM master_service_code WHERE code = ?");
@@ -72,7 +97,10 @@ function handlePostServiceCode($conn, $input)
     }
     $checkStmt->close();
 
-    $stmt = $conn->prepare("INSERT INTO master_service_code (code, code_description) VALUES (?, ?)");
+    $hasRuleCol = service_codes_has_supervising_rule_column($conn);
+    $stmt = $hasRuleCol
+        ? $conn->prepare("INSERT INTO master_service_code (code, code_description, supervising_provider_rule) VALUES (?, ?, ?)")
+        : $conn->prepare("INSERT INTO master_service_code (code, code_description) VALUES (?, ?)");
 
     if (!$stmt) {
         http_response_code(500);
@@ -80,7 +108,11 @@ function handlePostServiceCode($conn, $input)
         return;
     }
 
-    $stmt->bind_param("ss", $code, $code_description);
+    if ($hasRuleCol) {
+        $stmt->bind_param("sss", $code, $code_description, $supervisingRule);
+    } else {
+        $stmt->bind_param("ss", $code, $code_description);
+    }
 
     if (!$stmt->execute()) {
         http_response_code(500);
@@ -106,8 +138,11 @@ function handlePutServiceCode($conn, $input)
     $code_id = $input['code_id'];
     $code = $input['code'] ?? null;
     $code_description = $input['code_description'] ?? null;
+    $supervisingRule = array_key_exists('supervising_provider_rule', $input)
+        ? normalize_service_code_supervising_rule($input['supervising_provider_rule'])
+        : null;
 
-    if (!$code && !$code_description) {
+    if (!$code && !$code_description && $supervisingRule === null) {
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'At least one field must be provided for update']);
         return;
@@ -126,6 +161,12 @@ function handlePutServiceCode($conn, $input)
     if ($code_description !== null) {
         $updates[] = "code_description = ?";
         $params[] = $code_description;
+        $types .= "s";
+    }
+
+    if ($supervisingRule !== null && service_codes_has_supervising_rule_column($conn)) {
+        $updates[] = "supervising_provider_rule = ?";
+        $params[] = $supervisingRule;
         $types .= "s";
     }
 

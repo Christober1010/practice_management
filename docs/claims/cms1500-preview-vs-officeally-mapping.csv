@@ -1,0 +1,39 @@
+box_field,difference,preview_source,preview_notes,oa_edi_source,edi_segment,details
+ARCHITECTURE (payload build),SAME,claims-cms1500-preview.php → cms1500_build_claim_payload(claims_billing_lib.php),Thin API wrapper; JSON payload → lib/cms1500-pdf.js,officeally-submit-claims.php → same cms1500_build_claim_payload() → edi837_helpers.php,n/a,Unified as of refactor: one payload builder for preview and OA. EDI segments remain submit-only.
+Header / Payer name & address,SAME,master_providers via insurance_provider_id; payer.id = carrier_payer_id,"insurance_name, insurance_address*",Same payload.payer,NM1*PR (ID required; address not emitted),PDF shows address; EDI needs payer ID only.
+Box 1 — Insurance type,SAME,Hardcoded Other (widget 6),insurance_type[6],SBR09 hardcoded CI,SBR*P*18********CI,Not driven by policy.insurance_type.
+Box 1a — Insured ID,SAME,client_insurance.insurance_id_number → insured.member_id,insurance_id,Same,NM1*IL*…*MI*{member_id},
+Box 2 — Patient name,DRIFT RISK,clients.first_name / last_name,"pt_name = LAST, FIRST",EDI uses insured name (NM1*IL); no NM1*QC patient loop,NM1*IL,"When insured ≠ patient, PDF Box 2 is patient but 837 only emits IL + hardcoded SBR02=18 (self)."
+Box 3 — Patient DOB / Sex,KNOWN BUG-FIXED,cms1500_normalize_dob(clients.date_of_birth); clients.gender,birth_mm/dd/yy; sex checkbox,Same patient.*; DMG via edi837_resolve_subscriber_dob(insured→patient),DMG*D8*{YYYYMMDD}*{M|F},Empty insured_dob no longer becomes today (OA FE95). Sex always from patient.
+Box 4 — Insured name,SAME,insurance insured names (fallback client),ins_name; blank when Self,Same insured.*; always in EDI,NM1*IL,PDF blanks when self; EDI always includes IL (normal).
+Box 5 — Patient address / phone,PREVIEW-ONLY,clients.* + client_addresses enrich,pt_street/city/state/zip/phone,Patient address in payload; phone not in payload; EDI uses subscriber N3/N4,N3/N4 under IL (not patient loop),Phone AcroForm fields exist but payload has no patient.phone.
+Box 6 — Relationship to insured,DRIFT RISK,insured_same_as_client / relationship fields,rel_to_ins Self/Spouse/Child/Other,Payload has relationship; EDI ignores,SBR*P*18… (hardcoded self),Preview can mark Spouse/Child/Other; OA always self.
+Box 7 — Insured address,SAME,Same-as-patient → client addr; else insurance insured_*,ins_*; blank when Self,Same insured.* always used,N3/N4 under IL,"When same-as-patient, payload copies patient address into insured.*"
+Box 10a–c — Accident related,PREVIEW-ONLY,Hardcoded NO,employment / auto / other → NO,Not in EDI,,
+Box 11 — Group number,DRIFT RISK,client_insurance.group_number,ins_policy,In payload; SBR03 empty,SBR03 blank,Preview shows group #; 837 does not emit it.
+Box 11a — Insured DOB,KNOWN BUG-FIXED,cms1500_resolve_insured_dob (insured_dob → patient DOB),ins_dob_*; PDF also fallbacks insured||patient,Same insured.dob; DMG resolve,DMG*D8,Blank insured_dob falls back to client DOB on both paths.
+Box 11c — Plan name,DRIFT RISK,insurance_plan_name,ins_plan_name,EDI uses payer.name (master_providers),NM1*PR name,Plan name vs carrier name can differ.
+Box 11d — Other benefit plan,PREVIEW-ONLY,Hardcoded NO,ins_benefit_plan,n/a,,
+Box 12 — Patient signature / date,DRIFT RISK,authorized_release_box12; date_of_signature else today,pt_signature / pt_date,Payload flags ignored,CLM09 hardcoded Y,"If Box12=NO on insurance, PDF blanks but EDI still Y."
+Box 13 — Insured signature,DRIFT RISK,authorized_release_box13,ins_signature,Not separately mapped,CLM08 hardcoded Y,
+Box 21 — Diagnosis codes,SAME,primary_diagnosis then diagnosis_1..5,diagnosis1..12,Same diagnosis.codes,HI*ABK/ABF,
+Box 23 — Prior auth,SAME,client_auth → insurance → parse auth_code,prior_auth,Same prior_authorization_number,REF*G1 (if non-empty),
+Box 24A — Dates of service,DRIFT RISK,sessions.start_utc / end_utc,sv{n}_*_from/_end,Same lines; EDI uses dos_from only,DTP*472*D8,Multi-day span on PDF; EDI single-day.
+Box 24B — Place of service,SAME,sessions.place_of_service → cms1500_pos_code,place{n},Same; also CLM05,CLM05; SV105,Empty POS → EDI CLM defaults to 12.
+Box 24D — CPT + modifiers,SAME,cms1500_procedure_and_modifiers(auth_code),"cpt{n}, mod{n}*",Same,SV1*HC:cpt:mods,
+Box 24E — Diagnosis pointers,KNOWN BUG-FIXED,sessions.diagnosis_pointer → A–L (default A),diag{n} letters,Same; converted to 1–12,SV107 (required; OA RC66),"Letters on paper, numbers in EDI — by design."
+Box 24F — Charges,DRIFT RISK,line_charge or rate mapping,ch{n},Same; EDI floors 0 → 0.01,SV102; CLM02,Preview can warn blank; submit may emit $0.01 placeholder.
+Box 24G — Units,SAME,hours×4 → units UN,day{n},Same,SV103=UN; SV104,
+Box 24I — ID qualifier,SAME,rendering_id_qualifier or ZZ,emg{n} (template quirk),Paper ZZ; EDI uses NPI+PRV,NM1*82 XX; PRV*PE,ZZ is paper-only; electronic uses NPI + taxonomy.
+Box 24J — Taxonomy + NPI,DRIFT RISK,taxonomy: staff→session→location; NPI: staff.npiNumber (raw in preview),local{n}a taxonomy; local{n} NPI,Same taxonomy; lib normalizes NPI + check-digit,NM1*82; PRV*PE*PXC,Preview line NPI not normalized; lib/OA normalize. Claim-level NPI fallback to sessions.provider_npi is lib/OA only.
+Box 25 — Tax ID,SAME,locations.tax_id_professional,tax_id + EIN mark,Same; must be 9 digits or throw,REF*EI,Preview warns; submit hard-fails.
+Box 26 — Patient account #,SAME,claim_id or CLM{session_id},pt_account,Same,CLM01,
+Box 27 — Accept assignment,DRIFT RISK,NOT do_not_accept_assignment_box27,assignment YES checkbox,Payload ignored; hardcoded A,CLM07=A,"If do-not-accept set, PDF unchecks but EDI still A."
+Box 28 — Total charge,SAME,sum line charges,t_charge,CLM02 from lines,CLM02,
+Box 31 — Signature / supervising,PREVIEW-ONLY,supervising staff / supervising_provider_name,physician_signature; date=today; id_physician=rendering NPI,signing_provider in payload unused,,Supervising BCBA only on PDF.
+Box 32 — Facility name/address,KNOWN BUG-FIXED,"facility_name; address HARDCODED 7199 Kingery Hwy, Willowbrook IL 60527",fac_name/street/location,Same service_facility,NM1*77; N3; N4,POS 12 no longer puts patient home in Box 32. location.facility_address not used for street.
+Box 32a — Facility NPI,SAME,locations.facility_npi_number (normalized),pin1,Same; fallback billing NPI if blank,NM1*77*XX,Submit-only fallback to billing NPI.
+Box 33 — Billing name/address,SAME,locations.billing_* (fill from facility_* if blank),doc_name/street/location,Same billing_provider,NM1*85; N3; N4,
+Box 33a — Billing NPI,KNOWN BUG-FIXED,billing_npi (or facility fill),pin,edi837_require_npi,NM1*85*XX,Blank billing NPI backfilled from facility on both paths.
+Box 33b — Billing taxonomy,SAME,location taxonomy → staff → line taxonomy,grp = ZZ{taxonomy},Same; EDI strips ZZ,PRV*BI*PXC,ZZ on paper only.
+Ready-to-bill / batch / status,SUBMIT-ONLY,Exactly 1 session; claim_status must contain ready,One PDF per session,Per-session payload; batch 837; ≤14-day DOS; sets Claim Submitted,Multiple CLM in one ST/SE,SFTP range guard + status update only on OA path.

@@ -12,6 +12,12 @@ import {
 import { cn } from "@/lib/utils";
 import { formatReportDos } from "@/lib/report-dos-format";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   formatMoneyDisplay,
   formatMoneyOnBlur,
   parseMoney,
@@ -128,6 +134,37 @@ function parseHours(value) {
   return Number.isFinite(n) ? n : null;
 }
 
+function isExcludedSession(row) {
+  const ex = String(row?.exclude_session ?? "No").trim().toLowerCase();
+  return ex === "yes" || ex === "y" || ex === "1" || ex === "true";
+}
+
+function excludedMiscFallback(row) {
+  if (!isExcludedSession(row)) return null;
+  const rendered = parseHours(row.rendered_hours);
+  return rendered != null && rendered > 0 ? rendered : null;
+}
+
+function TruncateWithTooltip({ text, maxWidthClass = "max-w-[12rem]" }) {
+  const value = text != null && text !== "" && text !== "—" ? String(text) : "";
+  if (!value) return "—";
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className={cn("block truncate cursor-default", maxWidthClass)}
+          tabIndex={0}
+        >
+          {value}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-sm whitespace-normal break-words">
+        {value}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 function formatHours(value) {
   if (value == null || value === "") return "—";
   const n = Number(value);
@@ -141,7 +178,10 @@ function miscNumeric(row, drafts) {
       : row.misc_hrs != null && row.misc_hrs !== ""
         ? String(row.misc_hrs)
         : "";
-  if (raw === "" || raw == null) return 0;
+  if (raw === "" || raw == null) {
+    const fallback = excludedMiscFallback(row);
+    return fallback ?? 0;
+  }
   const n = Number(String(raw).trim());
   return Number.isFinite(n) ? n : 0;
 }
@@ -149,7 +189,8 @@ function miscNumeric(row, drafts) {
 function miscDisplay(row, drafts) {
   if (drafts[row.session_id] !== undefined) return drafts[row.session_id];
   if (row.misc_hrs != null && row.misc_hrs !== "") return String(row.misc_hrs);
-  return "";
+  const fallback = excludedMiscFallback(row);
+  return fallback != null ? String(fallback) : "";
 }
 
 function rowDiff(row, drafts) {
@@ -265,6 +306,14 @@ export default function SessionLogTable({
       case "staff":
         return staff || "—";
       case "auth_code":
+        if (activeStatus === "Received Payment") {
+          return (
+            <TruncateWithTooltip
+              text={row.auth_code || "—"}
+              maxWidthClass="max-w-[10rem]"
+            />
+          );
+        }
         return row.auth_code || "—";
       case "scheduled_hours":
         return formatHours(row.scheduled_hours);
@@ -358,6 +407,14 @@ export default function SessionLogTable({
         }
         return pay.ap_date || "—";
       case "location":
+        if (activeStatus === "Received Payment") {
+          return (
+            <TruncateWithTooltip
+              text={row.location_address || "—"}
+              maxWidthClass="max-w-[14rem]"
+            />
+          );
+        }
         return row.location_address || "—";
       case "claim_id":
         return row.claim_id || "—";
@@ -373,6 +430,7 @@ export default function SessionLogTable({
   };
 
   return (
+    <TooltipProvider delayDuration={200}>
     <div className="overflow-x-auto rounded-md border border-slate-200">
       <table
         className={cn(
@@ -480,5 +538,6 @@ export default function SessionLogTable({
         </TableBody>
       </table>
     </div>
+    </TooltipProvider>
   );
 }

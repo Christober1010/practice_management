@@ -44,6 +44,10 @@ import {
   getDomainModuleLabel,
   mergeCanonicalDomainModules,
 } from "@/lib/domain-module-options";
+import {
+  assignedClientSaveTargets,
+  uniqueMasterDataId,
+} from "@/lib/master-data-client-scope";
 
 export default function ProgramsList() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -251,85 +255,122 @@ export default function ProgramsList() {
     selectedClient,
   ]);
 
-
-  const handleAddProgram = async (newProgram) => {
-    const isClientProgram = newProgram.client_id != null;
-
-    const payload = isClientProgram
-      ? {
-          client_id: newProgram.client_id,
-          programs: [
-            {
-              id: newProgram.id,
-              domainId: newProgram.domainId,
-              name: newProgram.name,
-              description: newProgram.description || "",
-              status: newProgram.status || "Active",
-              archived: 0,
-            },
-          ],
-        }
-      : {
-          programs: [
-            {
-              id: newProgram.id,
-              domainId: newProgram.domainId,
-              name: newProgram.name,
-              description: newProgram.description || "",
-              status: newProgram.status || "Active",
-              archived: 0,
-            },
-          ],
-        };
-
-    try {
-      const url = isClientProgram ? "/client-modules.php" : "/programs.php";
-      const res = await mahaverseFetch(`${url}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const result = await res.json();
-
-      if (result.success) {
-        toast.success("Program saved!");
-        dispatch(fetchPrograms());
-        if (viewMode === "client" || viewMode === "all") {
-          fetchClientSpecificData();
-        }
-        setIsAddModalOpen(false);
-      } else {
-        toast.error(result.message || "Save failed");
-      }
-    } catch (err) {
-      toast.error("Network error");
+  const clientProgramKeyIndex = useMemo(() => {
+    const byClient = new Map();
+    const rows = Array.isArray(clientProgramsData?.programs)
+      ? clientProgramsData.programs
+      : [];
+    for (const p of rows) {
+      const clientId = String(p?.client_id ?? "").trim();
+      if (!clientId) continue;
+      const domainId = String(p?.domain_id ?? p?.domainId ?? "").trim();
+      const name = String(p?.NAME ?? p?.name ?? "").trim().toLowerCase();
+      const id = String(p?.id ?? "").trim();
+      if (!domainId || !name || !id) continue;
+      const key = `${domainId}||${name}`;
+      if (!byClient.has(clientId)) byClient.set(clientId, new Map());
+      const byKey = byClient.get(clientId);
+      if (!byKey.has(key)) byKey.set(key, new Set());
+      byKey.get(key).add(id);
     }
+    return byClient;
+  }, [clientProgramsData?.programs]);
+
+  const programDupKey = (programLike) => {
+    const domainId = String(programLike?.domainId ?? programLike?.domain_id ?? "").trim();
+    const name = String(programLike?.name ?? programLike?.NAME ?? "").trim().toLowerCase();
+    if (!domainId || !name) return "";
+    return `${domainId}||${name}`;
   };
 
-  const handleEditProgram = async (updatedProgram) => {
-    const isClientProgram = updatedProgram.client_id != null;
+  const firstExistingClientProgramId = (clientId, key) => {
+    const byKey = clientProgramKeyIndex.get(String(clientId));
+    const set = byKey?.get(key);
+    if (!set || set.size === 0) return null;
+    return [...set][0] || null;
+  };
 
-    try {
-      let res;
+  const handleAddProgram = async (newProgram) => {
+    const clientTargets = assignedClientSaveTargets(newProgram);
+    let saved = 0;
+    let skipped = 0;
+
+    for (let i = 0; i < clientTargets.length; i++) {
+      const clientId = clientTargets[i];
+      const isClientProgram = clientId != null;
       if (isClientProgram) {
-        const payload = {
-          client_id: updatedProgram.client_id,
-          programs: [
-            {
-              id: updatedProgram.rawId || updatedProgram.id,
-              domainId: updatedProgram.domainId,
-              name: updatedProgram.name,
-              description: updatedProgram.description || "",
-              status: updatedProgram.status || "Active",
-            },
-          ],
-        };
-        res = await mahaverseFetch('/client-modules.php', {
+        const dupKey = programDupKey(newProgram);
+        if (dupKey && firstExistingClientProgramId(clientId, dupKey)) {
+          skipped += 1;
+          continue;
+        }
+      }
+      const programRow = {
+        id: i === 0 ? newProgram.id : uniqueMasterDataId("program", i),
+        domainId: newProgram.domainId,
+        name: newProgram.name,
+        description: newProgram.description || "",
+        status: newProgram.status || "Active",
+        archived: 0,
+      };
+      const payload = isClientProgram
+        ? {
+            client_id: clientId,
+            programs: [programRow],
+          }
+        : {
+            programs: [programRow],
+          };
+
+      try {
+        const url = isClientProgram ? "/client-modules.php" : "/programs.php";
+        const res = await mahaverseFetch(`${url}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-      } else {
+        const result = await res.json();
+        if (!result.success) {
+          toast.error(result.message || "Save failed");
+          return;
+        }
+        saved += 1;
+      } catch (err) {
+        toast.error("Network error");
+        return;
+      }
+    }
+
+    if (saved === 0 && skipped > 0) {
+      toast.error("Program already exists for the selected client(s).");
+      return;
+    }
+    toast.success(() => {
+      if (saved > 1) {
+        return skipped > 0
+          ? `Program saved for ${saved} clients (skipped ${skipped} duplicates)`
+          : `Program saved for ${saved} clients`;
+      }
+      return skipped > 0 ? "Program saved (skipped duplicates)" : "Program saved!";
+    });
+    dispatch(fetchPrograms());
+    if (viewMode === "client" || viewMode === "all") {
+      fetchClientSpecificData();
+    }
+    setIsAddModalOpen(false);
+  };
+
+  const handleEditProgram = async (updatedProgram) => {
+    const clientIds = assignedClientSaveTargets(updatedProgram);
+    const primaryClientId = clientIds[0];
+    const isClientProgram = primaryClientId != null;
+
+    try {
+      if (!isClientProgram && editingProgram?.type === "client") {
+        toast.error("Client-specific programs must be assigned to a client.");
+        return;
+      }
+      if (!isClientProgram) {
         const payload = {
           programId: updatedProgram.rawId || updatedProgram.id,
           name: updatedProgram.name,
@@ -337,18 +378,19 @@ export default function ProgramsList() {
           status: updatedProgram.status,
           domainId: updatedProgram.domainId,
         };
-        res = await mahaverseFetch('/programs.php', {
+        const res = await mahaverseFetch('/programs.php', {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(payload),
         });
-      }
+        const result = await res.json();
+        if (!result.success) {
+          toast.error(result.message || "Update failed");
+          return;
+        }
 
-      const result = await res.json();
-
-      if (result.success) {
         toast.success("Program updated!");
         dispatch(fetchPrograms());
         if (viewMode === "client" || viewMode === "all") {
@@ -356,9 +398,78 @@ export default function ProgramsList() {
         }
         setIsAddModalOpen(false);
         setEditingProgram(null);
-      } else {
-        toast.error(result.message || "Update failed");
+        return;
       }
+
+      // Client-scoped save: upsert into each selected client, preventing duplicates.
+      const dedupedClientIds = Array.from(new Set(clientIds.map(String).filter(Boolean)));
+      const dupKey = programDupKey(updatedProgram);
+      let saved = 0;
+      let updated = 0;
+
+      for (let i = 0; i < dedupedClientIds.length; i++) {
+        const clientId = dedupedClientIds[i];
+        const existingId = dupKey ? firstExistingClientProgramId(clientId, dupKey) : null;
+        const editingIsSameClient =
+          editingProgram?.type === "client" &&
+          String(editingProgram?.client_id ?? "") === String(clientId);
+
+        // If we're editing an existing client program for this same client, keep its id.
+        // Otherwise, if a same-name+domain program already exists, update that row instead of creating a duplicate.
+        const idToUse = editingIsSameClient
+          ? String(editingProgram.rawId || editingProgram.id)
+          : existingId || uniqueMasterDataId("program", i);
+
+        if (!editingIsSameClient && existingId) {
+          updated += 1;
+        }
+
+        // If there are multiple duplicates already, we update one and warn once below.
+        const payload = {
+          client_id: clientId,
+          programs: [
+            {
+              id: idToUse,
+              domainId: updatedProgram.domainId,
+              name: updatedProgram.name,
+              description: updatedProgram.description || "",
+              status: updatedProgram.status || "Active",
+            },
+          ],
+        };
+
+        try {
+          const res = await mahaverseFetch('/client-modules.php', {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const result = await res.json();
+          if (!result.success) {
+            toast.error(result.message || "Update failed");
+            return;
+          }
+          saved += 1;
+        } catch (err) {
+          toast.error("Network error");
+          return;
+        }
+      }
+
+      toast.success(() => {
+        if (saved > 1) {
+          return updated > 0
+            ? `Program updated for ${saved} clients (${updated} already existed)`
+            : `Program updated for ${saved} clients`;
+        }
+        return updated > 0 ? "Program updated (existing program refreshed)" : "Program updated!";
+      });
+      dispatch(fetchPrograms());
+      if (viewMode === "client" || viewMode === "all") {
+        fetchClientSpecificData();
+      }
+      setIsAddModalOpen(false);
+      setEditingProgram(null);
     } catch (err) {
       toast.error("Network error");
     }

@@ -32,9 +32,10 @@ import {
 } from "@/lib/domain-module-options";
 import {
   filterMasterDataForClientScope,
-  findClientByValue,
-  resolveClientRecordId,
+  normalizeAssignedClientIds,
+  pendingMasterDataClientIds,
 } from "@/lib/master-data-client-scope";
+import ClientAssignMultiSelect from "@/components/master-data/client-assign-multi-select";
 import {
   formatTargetInstructions,
   normalizeTaskStepsForApi,
@@ -86,7 +87,7 @@ export default function AddTargetModal({
   const [programId, setProgramId] = useState("");
   const [activityType, setActivityType] = useState("");
   const [status, setStatus] = useState("Active");
-  const [selectedClientValue, setSelectedClientValue] = useState("generic");
+  const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
 
   const [goalDescription, setGoalDescription] = useState("");
   const [sd, setSd] = useState("");
@@ -101,24 +102,21 @@ export default function AddTargetModal({
   const [newTaskSequence, setNewTaskSequence] = useState("1");
   const [programSearch, setProgramSearch] = useState("");
 
-  const selectedClientObj = findClientByValue(clients, selectedClientValue);
-
   const selectedClientId =
-    selectedClientValue === "generic"
-      ? ""
-      : resolveClientRecordId(selectedClientObj) || String(selectedClientValue).trim();
+    selectedClientIds.length === 1 ? selectedClientIds[0] : "";
+  const isGenericScope = selectedClientIds.length !== 1;
 
   const modulesForLookup = mergeCanonicalDomainModules(modules);
 
   const domainsForClient = filterMasterDataForClientScope(domains, {
     clientId: selectedClientId,
-    isGeneric: selectedClientValue === "generic",
+    isGeneric: isGenericScope,
     keepId: "",
   });
 
   const programsForClient = filterMasterDataForClientScope(programs, {
     clientId: selectedClientId,
-    isGeneric: selectedClientValue === "generic",
+    isGeneric: isGenericScope,
     keepId: programId,
   });
 
@@ -153,35 +151,10 @@ export default function AddTargetModal({
         })) || [];
       setTasks(taskList);
 
-      setSelectedClientValue(editingTarget.client_id ? String(editingTarget.client_id) : "generic");
+      setSelectedClientIds(normalizeAssignedClientIds(editingTarget));
     } else {
       resetForm();
-      
-      // Check for pending client from client view navigation
-      const pendingClient = localStorage.getItem("pendingClientForMasterData");
-      if (pendingClient && isOpen) {
-        try {
-          const clientInfo = JSON.parse(pendingClient);
-          // Try to find client by ID first, then by name
-          const foundClient = clients.find(
-            (c) => String(c.id) === String(clientInfo.id) || c.name === clientInfo.name
-          );
-          if (foundClient) {
-            setSelectedClientValue(
-              resolveClientRecordId(foundClient) || String(foundClient.id ?? foundClient.name)
-            );
-          } else if (clientInfo.id) {
-            setSelectedClientValue(String(clientInfo.id));
-          } else if (clientInfo.name) {
-            setSelectedClientValue(clientInfo.name);
-          } else {
-            setSelectedClientValue("generic");
-          }
-        } catch (err) {
-          console.error("Error parsing pending client info:", err);
-          setSelectedClientValue("generic");
-        }
-      }
+      setSelectedClientIds(isOpen ? pendingMasterDataClientIds(clients) : []);
     }
   }, [editingTarget, isEditing, isOpen, clients]);
 
@@ -189,7 +162,7 @@ export default function AddTargetModal({
     if (!programId) return;
     const stillValid = programsForClient.some((p) => String(p.id) === String(programId));
     if (!stillValid) setProgramId("");
-  }, [selectedClientValue, selectedClientId, programs, programId]);
+  }, [selectedClientIds, selectedClientId, programs, programId]);
 
   const handleAddTask = () => {
     if (!newTaskName.trim()) {
@@ -298,11 +271,9 @@ export default function AddTargetModal({
           trials: Number.parseInt(trials) || 1,
           prompts: promptObjects,
           tasks: taskPayload,
-          ...(selectedClientValue !== "generic"
-            ? {
-                client_id:
-                  resolveClientRecordId(selectedClientObj) || selectedClientValue,
-              }
+          client_ids: selectedClientIds,
+          ...(selectedClientIds.length === 1
+            ? { client_id: selectedClientIds[0] }
             : {}),
         };
         await onEdit(updatedTarget);
@@ -320,11 +291,9 @@ export default function AddTargetModal({
           trials: Number.parseInt(trials) || 1,
           prompts: promptObjects,
           tasks: taskPayload,
-          ...(selectedClientValue !== "generic"
-            ? {
-                client_id:
-                  resolveClientRecordId(selectedClientObj) || selectedClientValue,
-              }
+          client_ids: selectedClientIds,
+          ...(selectedClientIds.length === 1
+            ? { client_id: selectedClientIds[0] }
             : {}),
         };
         await onAdd(newTarget);
@@ -351,7 +320,7 @@ export default function AddTargetModal({
     setNewTaskName("");
     setNewTaskSequence("1");
     setSelectedPrompts([]);
-    setSelectedClientValue("generic");
+    setSelectedClientIds([]);
     setProgramSearch("");
   };
 
@@ -430,48 +399,15 @@ export default function AddTargetModal({
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Client Selector */}
-          <div className="space-y-2">
-            <Label>Assign to Client</Label>
-            <Select
-              value={selectedClientValue === "generic" ? "generic" : selectedClientValue}
-              onValueChange={(val) => {
-                setSelectedClientValue(val === "generic" ? "generic" : val);
-                setProgramSearch("");
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Generic (no client)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="generic">Generic (no client)</SelectItem>
-                {clients
-                  .map((client) => {
-                    const cid = resolveClientRecordId(client);
-                    if (!cid) return null;
-                    const displayName =
-                      `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
-                      client.name ||
-                      client.NAME ||
-                      "Unnamed Client";
-                    return (
-                      <SelectItem key={cid} value={cid}>
-                        {displayName}
-                      </SelectItem>
-                    );
-                  })
-                  .filter(Boolean)}
-              </SelectContent>
-            </Select>
-
-            {selectedClientObj && (
-              <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded-md text-sm">
-                <div className="font-medium text-purple-900">
-                  {selectedClientObj.first_name || ""} {selectedClientObj.last_name || ""}
-                </div>
-              </div>
-            )}
-          </div>
+          <ClientAssignMultiSelect
+            clients={clients}
+            selectedIds={selectedClientIds}
+            onChange={(ids) => {
+              setSelectedClientIds(ids);
+              setProgramSearch("");
+            }}
+            disabled={loading}
+          />
 
           {/* Select Program */}
           <div className="space-y-2">
@@ -479,6 +415,10 @@ export default function AddTargetModal({
             {selectedClientId ? (
               <p className="text-xs text-slate-500">
                 Showing programs for this client only.
+              </p>
+            ) : selectedClientIds.length > 1 ? (
+              <p className="text-xs text-slate-500">
+                Showing generic programs. A copy is created for each selected client.
               </p>
             ) : (
               <p className="text-xs text-slate-500">

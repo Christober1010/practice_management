@@ -41,7 +41,7 @@ export default function ServiceCodeSetup() {
   const loadServiceCodes = async () => {
     try {
       setLoading(true);
-      const res = await mahaverseFetch('/service-codes.php');
+      const res = await mahaverseFetch('/api/v1/lookups/service-codes');
       const data = await res.json();
       if (data?.success) {
         setServiceCodes(data.data || []);
@@ -82,7 +82,7 @@ export default function ServiceCodeSetup() {
     try {
       const method = editingCode ? "PUT" : "POST";
 
-      const res = await mahaverseFetch("/service-codes.php", {
+      const res = await mahaverseFetch("/api/v1/lookups/service-codes", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(code),
@@ -110,7 +110,7 @@ export default function ServiceCodeSetup() {
   const handleDelete = async () => {
     if (!codeToDelete) return;
     try {
-      const res = await mahaverseFetch('/service-codes.php', {
+      const res = await mahaverseFetch('/api/v1/lookups/service-codes', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code_id: codeToDelete.code_id }),
@@ -222,6 +222,7 @@ export default function ServiceCodeSetup() {
                   <TableRow className="bg-slate-50">
                     <TableHead className="px-2">Service Code</TableHead>
                     <TableHead className="px-2">Description</TableHead>
+                    <TableHead className="px-2">Supervising Rule</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -233,6 +234,13 @@ export default function ServiceCodeSetup() {
                         {code.code}
                       </TableCell>
                       <TableCell className="p-2">{code.code_description}</TableCell>
+                      <TableCell className="p-2 text-sm text-slate-600">
+                        {String(code.supervising_provider_rule || "") === "provider_as_supervising"
+                          ? "Supervising = Provider"
+                          : String(code.supervising_provider_rule || "") === "staff_assigned_supervisor"
+                            ? "Supervising = Staff Assigned Supervisor"
+                            : "Default"}
+                      </TableCell>
                       <TableCell className="text-right p-2">
                         <div className="flex justify-end gap-2 p-2">
                           <Button

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +28,8 @@ import {
   isDbActive,
   isDbTruthy,
 } from "@/lib/behavior-recording-types";
+import { clientDisplayName, isClientActive } from "@/lib/sort-clients";
+import { resolveClientRecordId } from "@/lib/master-data-client-scope";
 
 function generateId() {
   return `beh_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
@@ -65,6 +67,14 @@ export default function AddBehaviorModal({
       : clients.find(
           (c) => String(c.id || c.client_id) === String(selectedClientValue)
         ) || null;
+
+  const assignableClients = useMemo(() => {
+    const selectedId = String(selectedClientValue || "");
+    return clients.filter((c) => {
+      const id = resolveClientRecordId(c);
+      return isClientActive(c) || (id && id === selectedId);
+    });
+  }, [clients, selectedClientValue]);
 
   const selectedCategory = categories.find((c) => c.id === categoryId);
 
@@ -214,13 +224,9 @@ export default function AddBehaviorModal({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="generic">Generic (master library)</SelectItem>
-                      {clients.map((c) => {
+                      {assignableClients.map((c) => {
                         const displayName =
-                          `${c.first_name || ""} ${c.last_name || ""}`.trim() ||
-                          c.NAME ||
-                          c.name ||
-                          c.client_name ||
-                          "Unnamed Client";
+                          clientDisplayName(c) || "Unnamed Client";
                         return (
                           <SelectItem
                             key={c.id || c.client_id}

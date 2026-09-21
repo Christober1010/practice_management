@@ -637,8 +637,14 @@ try {
 
                     $rowsAffected += $updateStmt->affected_rows;
                     $updateStmt->close();
+                    $sessionServiceType = sessions_resolve_service_type_for_write(
+                        $authUserPut,
+                        $serviceType,
+                        $session['service_type'] ?? $currentSession['service_type'] ?? 'Direct',
+                        $wasCompletedBeforeUpdate
+                    );
                     sessions_set_exclude_session($conn, $sessionId, $excludeSession, true);
-                    sessions_set_service_type($conn, $sessionId, $serviceType, true);
+                    sessions_set_service_type($conn, $sessionId, $sessionServiceType, true);
                     if (!session_status_is_cancelled($status)) {
                         $pendingPutWindows[] = [
                             'start' => $startUtc,
@@ -648,6 +654,13 @@ try {
                     if (session_is_completed_status($status)) {
                         ensure_session_claim_ready($conn, $sessionId, $startUtc);
                     }
+                    sessions_sync_misc_hrs_for_excluded_rendered(
+                        $conn,
+                        $sessionId,
+                        $excludeSession,
+                        $status,
+                        (float)$renderedHours
+                    );
                     $putAuthId = isset($input['authId']) && $input['authId'] !== null && $input['authId'] !== ''
                         ? (int)$input['authId']
                         : (int)($session['auth_id'] ?? $currentSession['auth_id'] ?? 0);
@@ -860,6 +873,13 @@ try {
                         if (session_is_completed_status($status)) {
                             ensure_session_claim_ready($conn, $newSessionId, $occStartUtc);
                         }
+                        sessions_sync_misc_hrs_for_excluded_rendered(
+                            $conn,
+                            $newSessionId,
+                            $excludeSession,
+                            $status,
+                            (float)$renderedHours
+                        );
                         $recurringPutAuthId = isset($input['authId']) && $input['authId'] !== null && $input['authId'] !== ''
                             ? (int)$input['authId']
                             : (int)($currentSession['auth_id'] ?? 0);

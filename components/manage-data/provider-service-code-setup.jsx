@@ -55,7 +55,7 @@ export default function ProviderServiceCodeSetup() {
   const loadMappings = async () => {
     try {
       setLoading(true);
-      const res = await mahaverseFetch(`/provider-service-codes.php?showArchived=${showArchived}`);
+      const res = await mahaverseFetch(`/api/v1/lookups/provider-service-codes?showArchived=${showArchived}`);
       const data = await res.json();
       if (data?.success) {
         setMappings(data.data || []);
@@ -134,7 +134,7 @@ export default function ProviderServiceCodeSetup() {
     try {
       const method = editingMapping ? "PUT" : "POST";
 
-      const res = await mahaverseFetch("/provider-service-codes.php", {
+      const res = await mahaverseFetch("/api/v1/lookups/provider-service-codes", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(mapping),
@@ -162,7 +162,7 @@ export default function ProviderServiceCodeSetup() {
   const handleDelete = async () => {
     if (!mappingToDelete) return;
     try {
-      const res = await mahaverseFetch('/provider-service-codes.php', {
+      const res = await mahaverseFetch('/api/v1/lookups/provider-service-codes', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: mappingToDelete.id }),

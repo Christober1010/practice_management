@@ -40,6 +40,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { sortClientsByName } from "@/lib/sort-clients";
 import { useSelector } from "react-redux";
 import DocumentViewerModal from "@/components/clients/DocumentViewerModal";
 import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
@@ -424,7 +425,7 @@ export default function AddStaffModal({
     let cancelled = false;
     (async () => {
       try {
-        const res = await mahaverseFetch("/locations.php");
+        const res = await mahaverseFetch("/api/v1/lookups/locations");
         const json = await res.json();
         if (cancelled) return;
         const rows = Array.isArray(json.data)
@@ -444,7 +445,7 @@ export default function AddStaffModal({
 
   useEffect(() => {
     if (baseUrl) {
-      mahaverseFetch('/document-types.php')
+      mahaverseFetch('/api/v1/lookups/document-types')
         .then((r) => r.json())
         .then((json) => {
           if (json.success && json.data) setDocumentTypes(json.data.filter((d) => d.archived !== 1));
@@ -456,12 +457,18 @@ export default function AddStaffModal({
   useEffect(() => {
     if (editingStaff) {
       const mapCertifications = (certs) => {
-        return certs.map((cert) => ({
+        const staffNpi =
+          editingStaff.npiNumber || editingStaff.npi_number || "";
+        return certs.map((cert, index) => ({
           certificationType:
             cert.certification_type || cert.certificationType || "RBT",
           certificationNumber:
             cert.certification_number || cert.certificationNumber || "",
-          npiNumber: cert.npi_number || cert.npiNumber || "",
+          npiNumber:
+            cert.npi_number ||
+            cert.npiNumber ||
+            (index === 0 ? staffNpi : "") ||
+            "",
           issueDate: cert.issue_date || cert.issueDate || "",
           expiryDate: cert.expiry_date || cert.expiryDate || "",
           status: cert.status || "Active",
@@ -673,6 +680,13 @@ export default function AddStaffModal({
     }
 
     dataToSave.certifications = normalizedCerts;
+
+    // Claims (CMS-1500 Box 24J) read staff.npiNumber — sync from Certification tab NPI.
+    const npiFromCert = normalizedCerts
+      .map((c) => String(c.npi_number || "").trim())
+      .find((n) => n !== "");
+    dataToSave.npiNumber =
+      npiFromCert || String(formData.npiNumber || "").trim() || null;
 
     // Remove flattened fields before sending
     Object.keys(initialStaffState).forEach((key) => {
@@ -1533,7 +1547,7 @@ export default function AddStaffModal({
                     <div>
                       <Label>Assigned Clients</Label>
                       <MultiSelect
-                        options={clients.filter(isClientActive).map((client) => ({
+                        options={sortClientsByName(clients.filter(isClientActive)).map((client) => ({
                           value: client.client_id,
                           label: `${client.first_name} ${client.last_name}`,
                         }))}

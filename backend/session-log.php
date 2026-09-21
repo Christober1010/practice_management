@@ -18,6 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
+require_once __DIR__ . '/scheduling_session_lib.php';
 
 $authUser = requireAuthReadWrite('reports.read', 'reports.write', 'mahaverse');
 $method = $_SERVER['REQUEST_METHOD'];
@@ -399,6 +400,17 @@ function session_log_map_row(array $row, ?string $tz = null): array
         $misc = null;
     }
 
+    if (function_exists('session_row_is_excluded') && session_row_is_excluded($row)) {
+        $renderedHrs = isset($row['rendered_hours']) ? (float)$row['rendered_hours'] : 0.0;
+        if (
+            $renderedHrs > 0
+            && function_exists('session_is_completed_status')
+            && session_is_completed_status($sessionStatus)
+        ) {
+            $misc = round($renderedHrs, 2);
+        }
+    }
+
     $clientFirst = trim((string)($row['client_first_name'] ?? ''));
     $clientLast = trim((string)($row['client_last_name'] ?? ''));
     if ($clientFirst === '' && $clientLast === '') {
@@ -446,6 +458,7 @@ function session_log_map_row(array $row, ?string $tz = null): array
             ? trim((string)$row['payer_name'])
             : null,
         'location_address' => $row['location_address'] ?? null,
+        'exclude_session' => $row['exclude_session'] ?? 'No',
         'claim_id' => $row['claim_id'] ?? null,
         'claim_status' => $row['claim_status'] ?? null,
         'session_status' => $sessionStatus,
@@ -480,6 +493,9 @@ if ($method === 'GET') {
     $claimIdSql = $cols['claim_id'] ? 's.claim_id' : 'NULL AS claim_id';
     $claimStatusSql = $cols['claim_status'] ? 's.claim_status' : 'NULL AS claim_status';
     $serviceCodeSql = !empty($cols['service_code']) ? 's.service_code' : 'NULL AS service_code';
+    $excludeSessionSql = !empty($cols['exclude_session'])
+        ? 's.exclude_session'
+        : "'No' AS exclude_session";
     $payerSelect = session_log_payer_select_sql($conn, !empty($cols['auth_id']));
 
     if ($dosFrom === '' && $dosTo === '') {
@@ -529,6 +545,7 @@ if ($method === 'GET') {
             {$payerSelect['id']},
             {$payerSelect['name']},
             s.location_address,
+            {$excludeSessionSql},
             s.scheduled_hours,
             s.rendered_hours,
             s.`{$statusCol}` AS STATUS,
@@ -564,6 +581,32 @@ if ($method === 'GET') {
     $result = $stmt->get_result();
     $rows = [];
     while ($row = $result->fetch_assoc()) {
+        if (function_exists('sessions_sync_misc_hrs_for_excluded_rendered')) {
+            $sid = (int)($row['session_id'] ?? 0);
+            if ($sid > 0 && session_row_is_excluded($row)) {
+                sessions_sync_misc_hrs_for_excluded_rendered(
+                    $conn,
+                    $sid,
+                    (string)($row['exclude_session'] ?? 'No'),
+                    session_log_session_status($row),
+                    (float)($row['rendered_hours'] ?? 0)
+                );
+                if ($sid > 0) {
+                    $miscStmt = $conn->prepare(
+                        'SELECT misc_hrs FROM session_log WHERE session_id = ? LIMIT 1'
+                    );
+                    if ($miscStmt) {
+                        $miscStmt->bind_param('i', $sid);
+                        $miscStmt->execute();
+                        $miscRow = $miscStmt->get_result()->fetch_assoc();
+                        $miscStmt->close();
+                        if ($miscRow && $miscRow['misc_hrs'] !== null && $miscRow['misc_hrs'] !== '') {
+                            $row['misc_hrs'] = $miscRow['misc_hrs'];
+                        }
+                    }
+                }
+            }
+        }
         $mapped = session_log_map_row($row, $tz);
         if ($tab !== '') {
             $tabLower = strtolower($tab);

@@ -353,7 +353,7 @@ export default function AddClientModal({
     
     const loadProviders = async () => {
       try {
-        const res = await mahaverseFetch('/providers.php');
+        const res = await mahaverseFetch('/api/v1/lookups/providers');
         const data = await res.json();
         if (data?.success) {
           setProviders(data.data || []);
@@ -365,7 +365,7 @@ export default function AddClientModal({
     
     const loadDiagnosisCodes = async () => {
       try {
-        const res = await mahaverseFetch('/diagnosis-codes.php');
+        const res = await mahaverseFetch('/api/v1/lookups/diagnosis-codes');
         const data = await res.json();
         if (data?.success) {
           setDiagnosisCodes(data.data || []);
@@ -377,7 +377,7 @@ export default function AddClientModal({
     
     const loadFacilityTypes = async () => {
       try {
-        const res = await mahaverseFetch('/facility-types.php?showArchived=false&showInactive=false');
+        const res = await mahaverseFetch('/api/v1/lookups/facility-types?showArchived=false&showInactive=false');
         const data = await res.json();
         if (data?.success) {
           setFacilityTypes(data.data || []);
@@ -389,7 +389,7 @@ export default function AddClientModal({
 
     const loadTreatmentTypes = async () => {
       try {
-        const res = await mahaverseFetch('/treatment-types.php');
+        const res = await mahaverseFetch('/api/v1/lookups/treatment-types');
         const data = await res.json();
         if (data?.success) {
           setTreatmentTypes(data.data || []);
@@ -401,7 +401,7 @@ export default function AddClientModal({
 
     const loadDocumentTypes = async () => {
       try {
-        const res = await mahaverseFetch('/document-types.php');
+        const res = await mahaverseFetch('/api/v1/lookups/document-types');
         const data = await res.json();
         if (data?.success) {
           setDocumentTypes(data.data || []);
@@ -424,7 +424,7 @@ export default function AddClientModal({
 
     const loadLocationsForModal = async () => {
       try {
-        const res = await mahaverseFetch('/locations.php');
+        const res = await mahaverseFetch('/api/v1/lookups/locations');
         const data = await res.json();
         if (!data?.success) {
           setLocations([]);
@@ -436,7 +436,7 @@ export default function AddClientModal({
           : "";
         if (currentId && !list.some((l) => String(l.id) === currentId)) {
           const oneRes = await mahaverseFetch(
-            `/locations.php?id=${encodeURIComponent(currentId)}`,
+            `/api/v1/lookups/locations?id=${encodeURIComponent(currentId)}`,
           );
           const oneData = await oneRes.json();
           if (oneData?.success && Array.isArray(oneData.data) && oneData.data[0]) {
@@ -486,7 +486,7 @@ export default function AddClientModal({
         const allMappings = [];
         for (const providerId of providerIds) {
           const res = await mahaverseFetch(
-            `/provider-service-codes.php?provider_id=${encodeURIComponent(providerId)}`,
+            `/api/v1/lookups/provider-service-codes?provider_id=${encodeURIComponent(providerId)}`,
           );
           const data = await res.json();
           if (data?.success && Array.isArray(data.data)) {

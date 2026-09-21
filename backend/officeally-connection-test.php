@@ -14,6 +14,18 @@ require_once __DIR__ . '/rbac_helpers.php';
 require_once __DIR__ . '/officeally_config_helper.php';
 require_once __DIR__ . '/officeally_sftp_helper.php';
 
+$host = "db5018266079.hosting-data.io";
+$dbUser = "dbu3321929";
+$dbPass = "M@h@B3h@v1or@lH3@lth4@ut1sm";
+$dbName = "dbs14484433";
+$conn = new mysqli($host, $dbUser, $dbPass, $dbName);
+if ($conn->connect_error) {
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => 'Database connection failed']);
+    exit();
+}
+$conn->set_charset('utf8mb4');
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET') {
     http_response_code(405);
     echo json_encode(['success' => false, 'message' => 'Method not allowed']);
@@ -30,7 +42,7 @@ function officeally_test_fail(int $status, string $message): void
 }
 
 try {
-    $config = officeally_get_config();
+    $config = officeally_get_config($conn);
     $result = [
         'success' => true,
         'config' => officeally_public_config($config),
@@ -46,6 +58,7 @@ try {
     }
 
     echo json_encode($result);
+    $conn->close();
 } catch (RuntimeException $e) {
     $code = $e->getCode();
     officeally_test_fail(($code >= 400 && $code < 600) ? $code : 502, $e->getMessage());

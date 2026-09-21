@@ -249,6 +249,7 @@ function handleGetSessionEntry($conn, $clientId, $sessionDate, $sessionId = null
             'session_date' => $entryRow['session_date'],
             'session_id' => $entryRow['session_id'],
             'session_notes' => $sessionNotes,
+            'session_completed' => session_notes_session_is_completed($conn, $sessionIdInt),
             'created_at' => $entryRow['created_at'],
             'updated_at' => $entryRow['updated_at'],
         ]
@@ -371,12 +372,26 @@ function persist_session_note_entry(mysqli $conn, array $input): string
         : null;
 
     $sessionNotes = is_array($input['session_notes']) ? $input['session_notes'] : [];
+    $existingRow = find_session_note_entry_row($conn, $clientId, $sessionDate, $sessionId);
+
+    $lockSessionId = $sessionId;
+    if (($lockSessionId === null || $lockSessionId === '') && $existingRow) {
+        $lockSessionId = $existingRow['session_id'] ?? null;
+    }
+    $authU = function_exists('getAuthenticatedUser') ? getAuthenticatedUser() : null;
+    if (!session_notes_user_is_admin($authU) && session_notes_session_is_completed($conn, $lockSessionId)) {
+        $stored = [];
+        if ($existingRow) {
+            $decoded = json_decode((string) ($existingRow['payload'] ?? ''), true);
+            $stored = is_array($decoded) ? $decoded : [];
+        }
+        $sessionNotes = session_notes_preserve_locked_soap($sessionNotes, $stored);
+    }
+
     $payload = json_encode($sessionNotes, JSON_UNESCAPED_UNICODE);
     if ($payload === false) {
         throw new Exception('Failed to encode session_notes payload');
     }
-
-    $existingRow = find_session_note_entry_row($conn, $clientId, $sessionDate, $sessionId);
 
     if ($existingRow) {
         if ($sessionId !== null) {
@@ -557,6 +572,14 @@ function finalize_session_ready_to_bill_notes(mysqli $conn, string $clientId, in
         $authSync = client_auth_sync_units_serviced_for_auth($conn, $authId);
     }
 
+    sessions_sync_misc_hrs_for_excluded_rendered(
+        $conn,
+        $sessionId,
+        (string)($row['exclude_session'] ?? 'No'),
+        'Rendered',
+        (float)$newRendered
+    );
+
     return [
         'session_id' => $sessionId,
         'claim_id' => $claimId,
@@ -574,6 +597,71 @@ function session_notes_date_is_future(string $sessionDate): bool
         return false;
     }
     return $sessionDate > date('Y-m-d');
+}
+
+function session_notes_soap_is_complete($sessionNotes): bool
+{
+    if (!is_array($sessionNotes)) {
+        return false;
+    }
+    $people = $sessionNotes['peoplePresent'] ?? [];
+    if (!is_array($people)) {
+        return false;
+    }
+    $hasPerson = false;
+    foreach ($people as $person) {
+        if (trim((string) $person) !== '') {
+            $hasPerson = true;
+            break;
+        }
+    }
+    if (!$hasPerson) {
+        return false;
+    }
+    foreach (['subjective', 'objective', 'assessment', 'plan'] as $key) {
+        if (trim((string) ($sessionNotes[$key] ?? '')) === '') {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function session_notes_user_is_admin($user): bool
+{
+    return is_array($user) && strtolower(trim((string) ($user['role'] ?? ''))) === 'admin';
+}
+
+function session_notes_session_is_completed(mysqli $conn, $sessionId): bool
+{
+    $sid = (int) $sessionId;
+    if ($sid <= 0) {
+        return false;
+    }
+    $stmt = $conn->prepare('SELECT * FROM sessions WHERE session_id = ? LIMIT 1');
+    if (!$stmt) {
+        return false;
+    }
+    $stmt->bind_param('i', $sid);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    return is_array($row) && function_exists('session_row_is_completed') && session_row_is_completed($row);
+}
+
+function session_notes_preserve_locked_soap(array $incoming, $stored): array
+{
+    if (!is_array($stored)) {
+        return $incoming;
+    }
+    foreach (['peoplePresent', 'subjective', 'objective', 'assessment', 'plan', 'soapNotes'] as $key) {
+        if (array_key_exists($key, $stored)) {
+            $incoming[$key] = $stored[$key];
+        }
+    }
+
+    return $incoming;
 }
 
 function handleCompleteSessionNotes(mysqli $conn, array $input): void
@@ -607,6 +695,18 @@ function handleCompleteSessionNotes(mysqli $conn, array $input): void
     if (!isset($input['client_id']) || !isset($input['session_notes'])) {
         http_response_code(400);
         echo json_encode(['success' => false, 'message' => 'client_id and session_notes are required']);
+
+        return;
+    }
+
+    $sessionNotes = is_array($input['session_notes']) ? $input['session_notes'] : [];
+    if (!session_notes_soap_is_complete($sessionNotes)) {
+        http_response_code(400);
+        echo json_encode([
+            'success' => false,
+            'code' => 'soap_notes_incomplete',
+            'message' => 'Complete all required SOAP notes fields.',
+        ]);
 
         return;
     }

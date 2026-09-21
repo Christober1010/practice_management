@@ -58,7 +58,7 @@ function availity_mark_sessions_submitted(mysqli $conn, array $sessionIds): void
         return;
     }
     $ph = cms1500_placeholders(count($ids));
-    $status = 'Submitted';
+    $status = 'Claim Submitted';
     $sql = "UPDATE sessions SET claim_status = ? WHERE session_id IN ($ph)";
     $stmt = $conn->prepare($sql);
     if (!$stmt) {
@@ -102,18 +102,34 @@ try {
     $allWarnings = [];
     $submittedSessionIds = [];
 
-    foreach ($sessionIds as $sessionId) {
+    $rangeSessions = cms1500_fetch_sessions_by_ids($conn, $sessionIds);
+    if (count($rangeSessions) === 0) {
+        availity_submit_fail(404, 'Session not found');
+    }
+
+    $groups = cms1500_group_sessions_for_claims($conn, $rangeSessions);
+    foreach ($groups as $groupSessions) {
+        $groupIds = [];
+        foreach ($groupSessions as $groupSession) {
+            $groupIds[] = (int)($groupSession['session_id'] ?? 0);
+        }
+        $groupIds = cms1500_numeric_id_array($groupIds);
+        if ($groupIds === []) {
+            continue;
+        }
         $built = cms1500_build_claim_payload($conn, [
             'location_id' => $locationId,
             'insurance_id' => $insuranceIdOverride > 0 ? $insuranceIdOverride : null,
-            'session_ids' => [$sessionId],
+            'session_ids' => $groupIds,
         ], [
             'require_ready_to_bill' => true,
-            'max_sessions' => 1,
+            'max_sessions' => 50,
         ]);
         $builtClaims[] = $built;
         $allWarnings = array_merge($allWarnings, $built['warnings']);
-        $submittedSessionIds[] = $sessionId;
+        foreach ($groupIds as $groupId) {
+            $submittedSessionIds[] = $groupId;
+        }
     }
 
     $ediContent = availity_build_837_from_claims($builtClaims, $config);

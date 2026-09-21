@@ -221,55 +221,58 @@ function cms1500_resolve_claim_prior_auth_number(mysqli $conn, array $sessions, 
 }
 
 /**
- * Box 32: keep location legal name; street/city from session service address when present.
+ * Box 32: facility name/NPI from location; Maha Willowbrook service address.
+ * POS 12 in Box 24B indicates home services — do not put the patient's home
+ * address in Box 32.
  *
  * @param array $location locations row
- * @param array $session sessions row
- * @param array $client clients row
+ * @param array $session sessions row (unused; kept for call-site compatibility)
+ * @param array $client clients row (unused; kept for call-site compatibility)
  */
 function cms1500_service_facility_for_claim($location, $session, $client)
 {
-    $name = $location['facility_name'] ?? '';
-    $npi = cms1500_normalize_npi($location['facility_npi_number'] ?? '');
-    $raw = trim((string)($session['location_address'] ?? ''));
-    if ($raw !== '') {
-        $parts = preg_split('/,\s*/', $raw, -1, PREG_SPLIT_NO_EMPTY);
-        $parts = array_map('trim', $parts);
-        if (count($parts) >= 2) {
-            $cityLine = (string)array_pop($parts);
-            $street = implode(', ', $parts);
-            return [
-                'name' => $name,
-                'npi' => $npi,
-                'address_line_1' => $street,
-                'address_line_2' => '',
-                'city' => '',
-                'state' => '',
-                'zip' => '',
-                'location_line' => $cityLine,
-            ];
-        }
-        return [
-            'name' => $name,
-            'npi' => $npi,
-            'address_line_1' => $raw,
-            'address_line_2' => '',
-            'city' => $client['city'] ?? '',
-            'state' => $client['state'] ?? '',
-            'zip' => $client['zipcode'] ?? '',
-            'location_line' => '',
-        ];
-    }
+    unset($session, $client);
     return [
-        'name' => $name,
-        'npi' => $npi,
-        'address_line_1' => $location['facility_address'] ?? '',
-        'address_line_2' => $location['facility_apt_unit'] ?? '',
-        'city' => $location['facility_city'] ?? '',
-        'state' => $location['facility_state'] ?? '',
-        'zip' => $location['facility_zip_code'] ?? '',
+        'name' => trim((string)($location['facility_name'] ?? '')),
+        'npi' => cms1500_normalize_npi($location['facility_npi_number'] ?? ''),
+        'address_line_1' => '7199 Kingery Hwy',
+        'address_line_2' => '',
+        'city' => 'Willowbrook',
+        'state' => 'IL',
+        'zip' => '60527',
         'location_line' => '',
     ];
+}
+
+/**
+ * Normalize NUCC taxonomy (strip optional ZZ qualifier used on paper CMS-1500).
+ */
+function cms1500_normalize_taxonomy_code($raw): string
+{
+    $t = strtoupper(preg_replace('/\s+/', '', (string)$raw) ?? '');
+    if (str_starts_with($t, 'ZZ') && strlen($t) > 2) {
+        $t = substr($t, 2);
+    }
+    return $t;
+}
+
+/**
+ * Box 24J taxonomy: staff → session → location.
+ */
+function cms1500_resolve_rendering_taxonomy_code($provider, array $session, array $location): string
+{
+    $candidates = [
+        is_array($provider) ? ($provider['taxonomy_code'] ?? '') : '',
+        $session['taxonomy_code'] ?? '',
+        $location['taxonomy_code'] ?? '',
+    ];
+    foreach ($candidates as $c) {
+        $n = cms1500_normalize_taxonomy_code($c);
+        if ($n !== '') {
+            return $n;
+        }
+    }
+    return '';
 }
 
 function cms1500_pos_code($raw)
@@ -291,6 +294,36 @@ function cms1500_pos_code($raw)
     ];
     $k = strtolower($v);
     return $map[$k] ?? $v;
+}
+
+/** YYYY-MM-DD from client/insurance DOB fields (empty if unusable). */
+function cms1500_normalize_dob($raw): string
+{
+    $raw = trim((string)$raw);
+    if ($raw === '') {
+        return '';
+    }
+    if (preg_match('/^(\d{4}-\d{2}-\d{2})/', $raw, $m)) {
+        return $m[1];
+    }
+    $ts = strtotime($raw);
+    if ($ts === false) {
+        return '';
+    }
+    return gmdate('Y-m-d', $ts);
+}
+
+/**
+ * Insured DOB for CMS-1500 / 837: use insured_dob when set, else patient DOB
+ * (common when insured_same_as_client and insured_dob is blank).
+ */
+function cms1500_resolve_insured_dob(array $insurance, array $client): string
+{
+    $insuredDob = cms1500_normalize_dob($insurance['insured_dob'] ?? '');
+    if ($insuredDob !== '') {
+        return $insuredDob;
+    }
+    return cms1500_normalize_dob($client['date_of_birth'] ?? ($client['dob'] ?? ''));
 }
 
 function cms1500_procedure_and_modifiers($raw)
@@ -643,17 +676,192 @@ function cms1500_session_is_ready_to_bill(array $session): bool
     return $claim !== '' && strpos($claim, 'ready') !== false;
 }
 
+function cms1500_session_claim_is_submitted(array $session): bool
+{
+    return stripos(trim((string)($session['claim_status'] ?? '')), 'submitted') !== false;
+}
+
+function cms1500_session_dos_ymd(array $session): string
+{
+    return substr(trim((string)($session['start_utc'] ?? '')), 0, 10);
+}
+
+/**
+ * Group key uses authorization number (Box 23), not CPT / auth_id.
+ * Same-day 97153 + 97155 + 97156 under one payer auth share one claim.
+ */
+function cms1500_session_auth_group_key(mysqli $conn, array $session): string
+{
+    $fromCode = cms1500_prior_auth_from_session_auth_code($session['auth_code'] ?? '');
+    if ($fromCode !== '') {
+        return strtoupper($fromCode);
+    }
+    if (!empty($session['auth_id'])) {
+        $info = cms1500_fetch_auth_info($conn, $session['auth_id']);
+        $an = trim((string)($info['authorization_number'] ?? ''));
+        if ($an !== '') {
+            return strtoupper($an);
+        }
+        return 'AUTHID:' . trim((string)$session['auth_id']);
+    }
+    return strtoupper(trim((string)($session['auth_code'] ?? '')));
+}
+
+function cms1500_session_claim_group_key(mysqli $conn, array $session): string
+{
+    $client = trim((string)($session['client_id'] ?? ''));
+    $dos = cms1500_session_dos_ymd($session);
+    $auth = cms1500_session_auth_group_key($conn, $session);
+    return $client . '|' . $dos . '|' . $auth;
+}
+
+function cms1500_assert_sessions_same_claim_group(mysqli $conn, array $sessions): void
+{
+    if (count($sessions) <= 1) {
+        return;
+    }
+    $key = cms1500_session_claim_group_key($conn, $sessions[0]);
+    foreach ($sessions as $session) {
+        if (cms1500_session_claim_group_key($conn, $session) !== $key) {
+            throw new InvalidArgumentException(
+                'All sessions on one claim must share the same date of service, client, and authorization number.'
+            );
+        }
+    }
+}
+
+/**
+ * @param list<array<string,mixed>> $sessions
+ * @return list<list<array<string,mixed>>>
+ */
+function cms1500_group_sessions_for_claims(mysqli $conn, array $sessions): array
+{
+    $groups = [];
+    foreach ($sessions as $session) {
+        $key = cms1500_session_claim_group_key($conn, $session);
+        if (!isset($groups[$key])) {
+            $groups[$key] = [];
+        }
+        $groups[$key][] = $session;
+    }
+    return array_values($groups);
+}
+
+function cms1500_canonical_claim_id(array $sessions): string
+{
+    if ($sessions === []) {
+        return '';
+    }
+    $byId = $sessions;
+    usort($byId, function ($a, $b) {
+        return ((int)($a['session_id'] ?? 0)) <=> ((int)($b['session_id'] ?? 0));
+    });
+    foreach ($byId as $session) {
+        $claimId = trim((string)($session['claim_id'] ?? ''));
+        if ($claimId !== '') {
+            return $claimId;
+        }
+    }
+    return 'CLM' . (int)($byId[0]['session_id'] ?? 0);
+}
+
+function cms1500_unify_unsubmitted_claim_ids(mysqli $conn, array $sessions, string $claimId): void
+{
+    $claimId = trim($claimId);
+    if ($claimId === '' || $sessions === []) {
+        return;
+    }
+    $ids = [];
+    foreach ($sessions as $session) {
+        if (cms1500_session_claim_is_submitted($session)) {
+            continue;
+        }
+        $sid = (int)($session['session_id'] ?? 0);
+        if ($sid > 0) {
+            $ids[] = $sid;
+        }
+    }
+    $ids = array_values(array_unique($ids));
+    if ($ids === []) {
+        return;
+    }
+    $ph = cms1500_placeholders(count($ids));
+    $sql = "UPDATE sessions SET claim_id = ? WHERE session_id IN ($ph)";
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return;
+    }
+    $types = 's' . str_repeat('i', count($ids));
+    $params = array_merge([$claimId], $ids);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $stmt->close();
+}
+
 function cms1500_resolve_insurance_id_for_session(mysqli $conn, array $session, int $overrideInsuranceId): int
 {
     if ($overrideInsuranceId > 0) {
         return $overrideInsuranceId;
     }
+
+    $clientId = trim((string)($session['client_id'] ?? ''));
+
     if (!empty($session['auth_id'])) {
         $authInfo = cms1500_fetch_auth_info($conn, $session['auth_id']);
         if ($authInfo && !empty($authInfo['insurance_id'])) {
-            return (int)$authInfo['insurance_id'];
+            $iid = (int)$authInfo['insurance_id'];
+            if ($iid > 0) {
+                if ($clientId === '' || cms1500_fetch_insurance($conn, $clientId, $iid)) {
+                    return $iid;
+                }
+            }
         }
     }
+
+    // Session auth_id may be stale after client re-save; match auth_code via client insurances.
+    $authCode = trim((string)($session['auth_code'] ?? ''));
+    if ($clientId !== '' && $authCode !== '') {
+        $stmt = $conn->prepare(
+            'SELECT ca.insurance_id, ca.billing_codes, ca.authorization_number, ca.start_date, ca.end_date
+             FROM client_auth ca
+             INNER JOIN client_insurance ci ON ci.insurance_id = ca.insurance_id
+             WHERE ci.client_id = ?'
+        );
+        if ($stmt) {
+            $stmt->bind_param('s', $clientId);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            $foundId = 0;
+            while ($row = $res->fetch_assoc()) {
+                if (cms1500_auth_row_matches_session_code($row, $authCode)) {
+                    $foundId = (int)($row['insurance_id'] ?? 0);
+                    break;
+                }
+            }
+            $stmt->close();
+            if ($foundId > 0) {
+                return $foundId;
+            }
+        }
+    }
+
+    // Last resort: first insurance on the client (common when auth link is missing).
+    if ($clientId !== '') {
+        $stmt = $conn->prepare(
+            'SELECT insurance_id FROM client_insurance WHERE client_id = ? ORDER BY insurance_id ASC LIMIT 1'
+        );
+        if ($stmt) {
+            $stmt->bind_param('s', $clientId);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            $iid = (int)($row['insurance_id'] ?? 0);
+            if ($iid > 0) {
+                return $iid;
+            }
+        }
+    }
+
     return 0;
 }
 
@@ -771,9 +979,11 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
 
     foreach ($sessions as $session) {
         if ($requireReady && !cms1500_session_is_ready_to_bill($session)) {
-            throw new InvalidArgumentException('Only sessions with claim status Ready to Bill can be billed');
+            throw new InvalidArgumentException('Only sessions with claim status Ready to Bill can generate CMS-1500');
         }
     }
+
+    cms1500_assert_sessions_same_claim_group($conn, $sessions);
 
     $session = $sessions[0];
     $clientId = $clientIdInput !== '' ? $clientIdInput : trim((string)($session['client_id'] ?? ''));
@@ -783,6 +993,20 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
     if ($clientIdInput !== '' && $clientIdInput !== trim((string)($session['client_id'] ?? ''))) {
         throw new InvalidArgumentException('client_id does not match the session');
     }
+    foreach ($sessions as $s) {
+        if (trim((string)($s['client_id'] ?? '')) !== $clientId) {
+            throw new InvalidArgumentException('All sessions on one claim must belong to the same client');
+        }
+    }
+
+    $canonicalClaimId = cms1500_canonical_claim_id($sessions);
+    cms1500_unify_unsubmitted_claim_ids($conn, $sessions, $canonicalClaimId);
+    foreach ($sessions as &$sUnify) {
+        if (!cms1500_session_claim_is_submitted($sUnify)) {
+            $sUnify['claim_id'] = $canonicalClaimId;
+        }
+    }
+    unset($sUnify);
 
     $insuranceId = cms1500_resolve_insurance_id_for_session($conn, $session, $insuranceIdOverride);
     if ($insuranceId <= 0) {
@@ -881,6 +1105,8 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
             $totalCharges += $charges;
         }
 
+        $renderingTaxonomy = cms1500_resolve_rendering_taxonomy_code($provider, $s, $location);
+
         $lines[] = [
             'dos_from' => substr((string)($s['start_utc'] ?? ''), 0, 10),
             'dos_to' => substr((string)($s['end_utc'] ?? ''), 0, 10),
@@ -888,9 +1114,8 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
             'emergency_indicator' => false,
             'procedure_code' => $pm['procedure'],
             'modifiers' => $pm['modifiers'],
-            'diagnosis_pointers' => count($dxCodes) > 0
-                ? cms1500_parse_diagnosis_pointers($s['diagnosis_pointer'] ?? 'A')
-                : [],
+            // Box 24E: default to primary diagnosis (A) when session pointer blank.
+            'diagnosis_pointers' => cms1500_parse_diagnosis_pointers($s['diagnosis_pointer'] ?? 'A'),
             'units' => $units,
             'unit_type' => 'UN',
             'charges' => $charges,
@@ -900,11 +1125,17 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
             'rendering_provider_npi' => $provider
                 ? (cms1500_normalize_npi($provider['npiNumber'] ?? '') ?: null)
                 : null,
+            'rendering_provider_taxonomy_code' => $renderingTaxonomy,
             'source' => [
                 'type' => 'session',
                 'id' => (int)$s['session_id'],
             ],
         ];
+    }
+
+    if (count($lines) > 6) {
+        $warnings[] = 'This claim has ' . count($lines)
+            . ' service lines. Paper CMS-1500 page 1 holds 6; extra lines continue on additional form pages. Electronic 837 keeps one claim.';
     }
 
     $firstSession = $sessions[0];
@@ -950,12 +1181,44 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
         $warnings[] = 'Insurance row is missing insurance_id_number (Box 1a).';
     }
 
+    $billingTaxonomy = cms1500_normalize_taxonomy_code($location['taxonomy_code'] ?? '');
+    if ($billingTaxonomy === '' && $renderingProvider) {
+        $billingTaxonomy = cms1500_normalize_taxonomy_code($renderingProvider['taxonomy_code'] ?? '');
+    }
+    if ($billingTaxonomy === '') {
+        foreach ($lines as $line) {
+            $t = cms1500_normalize_taxonomy_code($line['rendering_provider_taxonomy_code'] ?? '');
+            if ($t !== '') {
+                $billingTaxonomy = $t;
+                break;
+            }
+        }
+    }
+    if ($billingTaxonomy === '') {
+        $warnings[] = 'Taxonomy code is missing (Boxes 24J / 33b); set taxonomy on the location or rendering staff record.';
+    }
+
     $insuredSameAsPatient = cms1500_to_bool_yes_no($insurance['insured_same_as_client'] ?? '') === 'YES';
 
     $insuredStreetSeparate = trim((string)($insurance['insured_address'] ?? ''))
         ?: trim((string)($insurance['insured_street'] ?? ''));
     $insuredZipSeparate = trim((string)($insurance['insured_zipcode'] ?? ''))
         ?: trim((string)($insurance['insured_zip'] ?? ''));
+
+    $patientDob = cms1500_normalize_dob($client['date_of_birth'] ?? ($client['dob'] ?? ''));
+    $insuredDob = cms1500_resolve_insured_dob($insurance, $client);
+    if ($patientDob === '') {
+        $warnings[] = 'Client is missing date of birth (Box 3); Office Ally rejects claims without a valid DOB.';
+    }
+    if ($insuredDob === '') {
+        $warnings[] = 'Insured date of birth is empty (Box 11a); set insured_dob or client date_of_birth.';
+    }
+    foreach ($sessions as $s) {
+        $dos = substr((string)($s['start_utc'] ?? ''), 0, 10);
+        if ($patientDob !== '' && $dos !== '' && $dos < $patientDob) {
+            $warnings[] = "Session {$s['session_id']}: date of service ({$dos}) is before patient DOB ({$patientDob}) — Office Ally FE95.";
+        }
+    }
 
     $payer = cms1500_payer_for_claim($conn, $insurance, $firstSession, $warnings);
 
@@ -967,7 +1230,7 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
         'patient' => [
             'first_name' => $client['first_name'] ?? '',
             'last_name' => $client['last_name'] ?? '',
-            'dob' => isset($client['date_of_birth']) ? substr((string)$client['date_of_birth'], 0, 10) : '',
+            'dob' => $patientDob,
             'sex' => $client['gender'] ?? '',
             'address_line_1' => $client['address_line_1'] ?? '',
             'address_line_2' => $client['address_line_2'] ?? '',
@@ -978,7 +1241,7 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
         'insured' => [
             'first_name' => $insurance['insured_first_name'] ?? ($client['first_name'] ?? ''),
             'last_name' => $insurance['insured_last_name'] ?? ($client['last_name'] ?? ''),
-            'dob' => isset($insurance['insured_dob']) ? substr((string)$insurance['insured_dob'], 0, 10) : '',
+            'dob' => $insuredDob,
             'member_id' => $insurance['insurance_id_number'] ?? '',
             'relationship' => $insurance['insured_relationship'] ?? ($insurance['relationship_to_insured'] ?? ''),
             'same_as_patient' => cms1500_to_bool_yes_no($insurance['insured_same_as_client'] ?? ''),
@@ -1014,7 +1277,7 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
             'city' => $location['billing_city'] ?? '',
             'state' => $location['billing_state'] ?? '',
             'zip' => $location['billing_zip_code'] ?? '',
-            'taxonomy_code' => $location['taxonomy_code'] ?? '',
+            'taxonomy_code' => $billingTaxonomy,
             'tax_id' => $taxDigits !== '' ? $taxDigits : ($location['tax_id_professional'] ?? ''),
         ],
         'service_facility' => cms1500_service_facility_for_claim($location, $firstSession, $client),
@@ -1030,9 +1293,11 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
             'name' => $signingProviderName,
             'npi' => cms1500_normalize_npi($signingProviderNpi),
         ],
-        'patient_account_number' => trim((string)($firstSession['claim_id'] ?? '')) !== ''
-            ? trim((string)$firstSession['claim_id'])
-            : ('CLM' . (int)($firstSession['session_id'] ?? 0)),
+        'patient_account_number' => $canonicalClaimId !== ''
+            ? $canonicalClaimId
+            : (trim((string)($firstSession['claim_id'] ?? '')) !== ''
+                ? trim((string)$firstSession['claim_id'])
+                : ('CLM' . (int)($firstSession['session_id'] ?? 0))),
         'lines' => $lines,
         'amounts' => [
             'total_units' => round($totalUnits, 2),

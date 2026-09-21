@@ -93,7 +93,7 @@ export default function SessionImportModal({ isOpen, onClose, onImported }) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await mahaverseFetch("/staff.php", {
+        const res = await mahaverseFetch("/api/v1/staff", {
           headers: jsonAuthHeaders(),
         });
         const data = await res.json().catch(() => ({}));

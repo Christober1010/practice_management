@@ -1,6 +1,11 @@
 "use client";
 
 import { mahaverseFetch } from "@/lib/mahaverse-api";
+import { sortClientsByName } from "@/lib/sort-clients";
+import {
+  authorizationApprovedUnits,
+  authorizationCommittedUnits,
+} from "@/lib/authorization-units";
 import { createSlice } from "@reduxjs/toolkit";
 
 const initialState = {
@@ -14,14 +19,18 @@ const clientsSlice = createSlice({
   initialState,
   reducers: {
     setClients(state, action) {
-      state.items = action.payload; // This should be the formatted clients array
+      state.items = sortClientsByName(action.payload); // formatted + A–Z by name
     },
     addClient(state, action) {
       state.items.push(action.payload);
+      state.items = sortClientsByName(state.items);
     },
     updateClient(state, action) {
       const idx = state.items.findIndex((c) => c.id === action.payload.id);
-      if (idx !== -1) state.items[idx] = action.payload;
+      if (idx !== -1) {
+        state.items[idx] = action.payload;
+        state.items = sortClientsByName(state.items);
+      }
     },
     toggleArchive(state, action) {
       const { id, archived, client_status, is_active } = action.payload;
@@ -62,13 +71,17 @@ const formatClientData = (client) => {
           );
           index = index === -1 ? '' : String(index);
         }
-        const approved = Number.parseFloat(auth.units_approved_per_15_min) || 0;
-        const serviced = Number.parseFloat(auth.units_serviced) || 0;
-        const balance = approved - serviced;
+        const approved = authorizationApprovedUnits(auth);
+        const committed = authorizationCommittedUnits(auth);
+        const balance = approved - committed;
         return {
           ...auth,
           insurance_id: index,
           units_serviced: auth.units_serviced || '',
+          units_committed:
+            auth.units_committed != null && auth.units_committed !== ''
+              ? String(auth.units_committed)
+              : String(committed),
           balance_units: balance.toString(),
         };
       })
@@ -124,7 +137,7 @@ export const fetchClients = () => async (dispatch) => {
     dispatch(setClientsLoading(true));
     dispatch(setClientsError(null));
 
-    const res = await mahaverseFetch('/get-clients.php', {
+    const res = await mahaverseFetch('/api/v1/clients', {
       headers: { ...authHeaders() },
     });
     if (!res.ok) throw new Error("Failed to fetch clients");
@@ -135,8 +148,8 @@ export const fetchClients = () => async (dispatch) => {
       throw new Error(json.message || 'Failed to fetch clients');
     }
 
-    // ✅ Transform the data before dispatching
-    const formattedClients = json.clients.map(formatClientData);
+    // ✅ Transform + alphabetical order before dispatching
+    const formattedClients = sortClientsByName(json.clients.map(formatClientData));
     dispatch(setClients(formattedClients));
 
   } catch (err) {

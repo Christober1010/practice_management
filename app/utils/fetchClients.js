@@ -1,14 +1,19 @@
 import { mahaverseFetch } from "@/lib/mahaverse-api";
+import { sortClientsByName } from "@/lib/sort-clients";
+import {
+  authorizationApprovedUnits,
+  authorizationCommittedUnits,
+} from "@/lib/authorization-units";
 
 export async function fetchClientsUtil() {
-  const res = await mahaverseFetch("/get-clients.php");
+  const res = await mahaverseFetch("/api/v1/clients");
   const json = await res.json();
 
   if (!json.success || !Array.isArray(json.clients)) {
     throw new Error(json.message || "Failed to fetch clients");
   }
 
-  return json.clients.map((client) => {
+  return sortClientsByName(json.clients.map((client) => {
     const insurances = Array.isArray(client.insurances) ? client.insurances : [];
     const authorizations = Array.isArray(client.authorizations)
       ? client.authorizations.map((auth) => {
@@ -19,13 +24,17 @@ export async function fetchClientsUtil() {
             );
             index = index === -1 ? "" : String(index);
           }
-          const approved = Number.parseFloat(auth.units_approved_per_15_min) || 0;
-          const serviced = Number.parseFloat(auth.units_serviced) || 0;
-          const balance = approved - serviced;
+          const approved = authorizationApprovedUnits(auth);
+          const committed = authorizationCommittedUnits(auth);
+          const balance = approved - committed;
           return {
             ...auth,
             insurance_id: index,
             units_serviced: auth.units_serviced || "",
+            units_committed:
+              auth.units_committed != null && auth.units_committed !== ""
+                ? String(auth.units_committed)
+                : String(committed),
             balance_units: balance.toString(),
           };
         })
@@ -48,5 +57,5 @@ export async function fetchClientsUtil() {
       relation_other: client.relation_other || "",
       appointment_reminder: client.appointment_reminder || "",
     };
-  });
+  }));
 }

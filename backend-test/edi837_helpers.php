@@ -94,6 +94,38 @@ function edi837_date8(?string $isoDate): string
     return gmdate('Ymd', $ts);
 }
 
+/**
+ * Subscriber/patient DOB for DMG — never invent "today" (OA FE95 when DOS < fake DOB).
+ *
+ * @throws InvalidArgumentException when DOB is missing or unparseable
+ */
+function edi837_require_dob(string $raw, string $label = 'Patient/insured date of birth'): string
+{
+    $raw = trim($raw);
+    if ($raw === '') {
+        throw new InvalidArgumentException($label . ' is required');
+    }
+    if (preg_match('/^(\d{4})(\d{2})(\d{2})$/', $raw, $m)) {
+        return $m[1] . $m[2] . $m[3];
+    }
+    $ts = strtotime($raw);
+    if ($ts === false) {
+        throw new InvalidArgumentException($label . ' is invalid (' . $raw . ')');
+    }
+    return gmdate('Ymd', $ts);
+}
+
+/** Prefer insured DOB, then patient DOB (empty string does not count). */
+function edi837_resolve_subscriber_dob(array $insured, array $patient): string
+{
+    $insuredDob = trim((string)($insured['dob'] ?? ''));
+    if ($insuredDob !== '') {
+        return edi837_require_dob($insuredDob, 'Insured date of birth');
+    }
+    $patientDob = trim((string)($patient['dob'] ?? ''));
+    return edi837_require_dob($patientDob, 'Patient date of birth (Box 3)');
+}
+
 function edi837_date6(?string $isoDate = null): string
 {
     if ($isoDate === null || trim($isoDate) === '') {
@@ -162,6 +194,39 @@ function edi837_modifiers(array $modifiers): string
         return '';
     }
     return ':' . implode(':', $mods);
+}
+
+/**
+ * SV107 Composite Diagnosis Code Pointer: numeric 1–12 (CMS-1500 A–L).
+ * Office Ally RC66 rejects line items with missing/invalid diagnosis pointers.
+ */
+function edi837_diagnosis_pointers($pointers): string
+{
+    $nums = [];
+    foreach ((array)$pointers as $p) {
+        $p = strtoupper(trim((string)$p));
+        if (preg_match('/^[A-L]$/', $p)) {
+            $nums[] = (string)(ord($p) - ord('A') + 1);
+            continue;
+        }
+        if (preg_match('/^([1-9]|1[0-2])$/', $p)) {
+            $nums[] = $p;
+        }
+    }
+    if ($nums === []) {
+        $nums = ['1'];
+    }
+    return implode(':', array_slice(array_values(array_unique($nums)), 0, 4));
+}
+
+/** Strip optional ZZ qualifier; EDI PRV uses taxonomy digits/letters only. */
+function edi837_taxonomy_code(string $raw): string
+{
+    $t = edi837_sanitize($raw, 12);
+    if (str_starts_with($t, 'ZZ') && strlen($t) > 2) {
+        $t = substr($t, 2);
+    }
+    return edi837_sanitize($t, 10);
 }
 
 /** First non-empty place-of-service from claim lines (CLM05); default 12 (Home). */
@@ -233,7 +298,7 @@ function edi837_build_st_se_segments(array $builtClaims, array $config): array
     ]);
     $transactionSegments[] = edi837_segment('REF', ['EI', $billingTaxId]);
 
-    $billingTaxonomy = edi837_sanitize((string)($billing['taxonomy_code'] ?? ''), 10);
+    $billingTaxonomy = edi837_taxonomy_code((string)($billing['taxonomy_code'] ?? ''));
     if ($billingTaxonomy !== '') {
         $transactionSegments[] = edi837_segment('PRV', ['BI', 'PXC', $billingTaxonomy]);
     }
@@ -264,7 +329,11 @@ function edi837_build_st_se_segments(array $builtClaims, array $config): array
             edi837_sanitize((string)($insured['state'] ?? ''), 2),
             edi837_sanitize((string)($insured['zip'] ?? ''), 15),
         ]);
-        $transactionSegments[] = edi837_segment('DMG', ['D8', edi837_date8((string)($insured['dob'] ?? ($patient['dob'] ?? ''))), edi837_gender((string)($patient['sex'] ?? ''))]);
+        $transactionSegments[] = edi837_segment('DMG', [
+            'D8',
+            edi837_resolve_subscriber_dob($insured, $patient),
+            edi837_gender((string)($patient['sex'] ?? '')),
+        ]);
         $transactionSegments[] = edi837_segment('NM1', ['PR', '2', $payerName, '', '', '', '', 'PI', $payerId]);
 
         $claimId = edi837_sanitize((string)($payload['patient_account_number'] ?? ('CLM' . ($claimIndex + 1))), 38);
@@ -301,7 +370,19 @@ function edi837_build_st_se_segments(array $builtClaims, array $config): array
         $facility = $payload['service_facility'] ?? [];
         $facilityName = edi837_sanitize((string)($facility['name'] ?? ''), 60);
         $facilityNpiRaw = trim((string)($facility['npi'] ?? ''));
-        if ($facilityName !== '' || $facilityNpiRaw !== '') {
+        $facilityStreet = edi837_sanitize((string)($facility['address_line_1'] ?? ''), 55);
+        $facilityCity = edi837_sanitize((string)($facility['city'] ?? ''), 30);
+        $facilityState = edi837_sanitize((string)($facility['state'] ?? ''), 2);
+        $facilityZip = edi837_sanitize((string)($facility['zip'] ?? ''), 15);
+        if ($facilityCity === '' && $facilityState === '' && !empty($facility['location_line'])) {
+            $locLine = trim((string)$facility['location_line']);
+            if (preg_match('/^(.+?),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)$/i', $locLine, $m)) {
+                $facilityCity = edi837_sanitize($m[1], 30);
+                $facilityState = edi837_sanitize($m[2], 2);
+                $facilityZip = edi837_sanitize($m[3], 15);
+            }
+        }
+        if ($facilityName !== '' || $facilityNpiRaw !== '' || $facilityStreet !== '') {
             $facilityNpi = edi837_require_npi(
                 $facilityNpiRaw !== '' ? $facilityNpiRaw : $billingNpi,
                 'Facility NPI (Box 32a)'
@@ -310,6 +391,22 @@ function edi837_build_st_se_segments(array $builtClaims, array $config): array
                 'NM1',
                 ['77', '2', $facilityName !== '' ? $facilityName : $billingName, '', '', '', '', 'XX', $facilityNpi]
             );
+            if ($facilityStreet !== '') {
+                $transactionSegments[] = edi837_segment('N3', [$facilityStreet]);
+                if (!empty($facility['address_line_2'])) {
+                    $transactionSegments[] = edi837_segment(
+                        'N3',
+                        [edi837_sanitize((string)$facility['address_line_2'], 55)]
+                    );
+                }
+            }
+            if ($facilityCity !== '' || $facilityState !== '' || $facilityZip !== '') {
+                $transactionSegments[] = edi837_segment('N4', [
+                    $facilityCity,
+                    $facilityState,
+                    $facilityZip,
+                ]);
+            }
         }
 
         $lineNumber = 1;
@@ -326,14 +423,18 @@ function edi837_build_st_se_segments(array $builtClaims, array $config): array
             $dos = edi837_date8((string)($line['dos_from'] ?? ''));
             $modStr = edi837_modifiers($line['modifiers'] ?? []);
             $composite = 'HC:' . $proc . $modStr;
+            $pos = edi837_sanitize((string)($line['place_of_service'] ?? ''), 2);
+            $diagPtr = edi837_diagnosis_pointers($line['diagnosis_pointers'] ?? []);
             $transactionSegments[] = edi837_segment('LX', [(string)$lineNumber]);
+            // SV105 = POS, SV106 empty, SV107 = diagnosis pointers (required; OA RC66).
             $transactionSegments[] = edi837_segment('SV1', [
                 $composite,
                 number_format($charge, 2, '.', ''),
                 'UN',
                 (string)$units,
+                $pos,
                 '',
-                edi837_sanitize((string)($line['place_of_service'] ?? ''), 2),
+                $diagPtr,
             ]);
             $transactionSegments[] = edi837_segment('DTP', ['472', 'D8', $dos]);
 
@@ -349,6 +450,13 @@ function edi837_build_st_se_segments(array $builtClaims, array $config): array
                 $last = $parts[0] ?? 'PROVIDER';
                 $first = $parts[1] ?? '';
                 $transactionSegments[] = edi837_segment('NM1', ['82', '1', $last, $first, '', '', '', 'XX', $renderingNpi]);
+                $renderingTaxonomy = edi837_taxonomy_code((string)(
+                    $line['rendering_provider_taxonomy_code']
+                    ?? ($payload['billing_provider']['taxonomy_code'] ?? '')
+                ));
+                if ($renderingTaxonomy !== '') {
+                    $transactionSegments[] = edi837_segment('PRV', ['PE', 'PXC', $renderingTaxonomy]);
+                }
             }
 
             $lineNumber++;

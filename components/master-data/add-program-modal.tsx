@@ -26,9 +26,10 @@ import {
 } from "@/lib/domain-module-options";
 import {
   filterMasterDataForClientScope,
-  findClientByValue,
-  resolveClientRecordId,
+  normalizeAssignedClientIds,
+  pendingMasterDataClientIds,
 } from "@/lib/master-data-client-scope";
+import ClientAssignMultiSelect from "@/components/master-data/client-assign-multi-select";
 
 function generateId() {
   return `program_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -63,7 +64,7 @@ export default function AddProgramModal({
   const [description, setDescription] = useState("");
   const [domainId, setDomainId] = useState("");
   const [status, setStatus] = useState("Active");
-  const [selectedClientValue, setSelectedClientValue] = useState("generic");
+  const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
   const [domainSearch, setDomainSearch] = useState("");
 
   const modulesForLookup = mergeCanonicalDomainModules(modules);
@@ -72,13 +73,9 @@ export default function AddProgramModal({
     return dom?.name || dom?.NAME || "Unnamed Domain";
   };
 
-  // Find selected client
-  const selectedClientObj = findClientByValue(clients, selectedClientValue);
-
   const selectedClientId =
-    selectedClientValue === "generic"
-      ? ""
-      : resolveClientRecordId(selectedClientObj) || String(selectedClientValue).trim();
+    selectedClientIds.length === 1 ? selectedClientIds[0] : "";
+  const isGenericScope = selectedClientIds.length !== 1;
 
   // Reset / fill form
   useEffect(() => {
@@ -90,48 +87,21 @@ export default function AddProgramModal({
       const domId = editingProgram.domainId || editingProgram.domain_id || "";
       setDomainId(String(domId));
 
-      setSelectedClientValue(editingProgram.client_id ? String(editingProgram.client_id) : "generic");
+      setSelectedClientIds(normalizeAssignedClientIds(editingProgram));
     } else {
       setName("");
       setDescription("");
       setDomainId("");
       setStatus("Active");
       setDomainSearch("");
-      
-      // Check for pending client from client view navigation
-      const pendingClient = localStorage.getItem("pendingClientForMasterData");
-      if (pendingClient && isOpen) {
-        try {
-          const clientInfo = JSON.parse(pendingClient);
-          // Try to find client by ID first, then by name
-          const foundClient = clients.find(
-            (c) => String(c.id) === String(clientInfo.id) || c.name === clientInfo.name
-          );
-          if (foundClient) {
-            setSelectedClientValue(
-              resolveClientRecordId(foundClient) || String(foundClient.id ?? foundClient.name)
-            );
-          } else if (clientInfo.id) {
-            setSelectedClientValue(String(clientInfo.id));
-          } else if (clientInfo.name) {
-            setSelectedClientValue(clientInfo.name);
-          } else {
-            setSelectedClientValue("generic");
-          }
-        } catch (err) {
-          console.error("Error parsing pending client info:", err);
-          setSelectedClientValue("generic");
-        }
-      } else {
-        setSelectedClientValue("generic");
-      }
+      setSelectedClientIds(isOpen ? pendingMasterDataClientIds(clients) : []);
     }
   }, [editingProgram, isEditing, isOpen, clients]);
 
   // Client selected → only that client's domains; generic → master domains only
   const domainsForClient = filterMasterDataForClientScope(domains, {
     clientId: selectedClientId,
-    isGeneric: selectedClientValue === "generic",
+    isGeneric: isGenericScope,
     keepId: domainId,
   });
 
@@ -139,7 +109,7 @@ export default function AddProgramModal({
     if (!domainId) return;
     const stillValid = domainsForClient.some((d) => String(d.id) === String(domainId));
     if (!stillValid) setDomainId("");
-  }, [selectedClientValue, selectedClientId, domains, domainId]);
+  }, [selectedClientIds, selectedClientId, domains, domainId]);
 
   const selectedDomain = domainsForClient.find((d) => String(d.id) === String(domainId));
   const selectedDomainName = selectedDomain ? getDomainName(selectedDomain) : "";
@@ -195,12 +165,8 @@ export default function AddProgramModal({
       domainId: domainId,
       status: status,
       archived: 0,
-      ...(selectedClientValue !== "generic"
-        ? {
-            client_id:
-              resolveClientRecordId(selectedClientObj) || selectedClientValue,
-          }
-        : {}),
+      client_ids: selectedClientIds,
+      ...(selectedClientIds.length === 1 ? { client_id: selectedClientIds[0] } : {}),
     };
 
     try {
@@ -243,48 +209,15 @@ export default function AddProgramModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Client Selector */}
-          <div className="space-y-2">
-            <Label>Assign to Client</Label>
-            <Select
-              value={selectedClientValue === "generic" ? "generic" : selectedClientValue}
-              onValueChange={(val) => {
-                setSelectedClientValue(val === "generic" ? "generic" : val);
-                setDomainSearch("");
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Generic (no client)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="generic">Generic (no client)</SelectItem>
-                {clients
-                  .map((client) => {
-                    const cid = resolveClientRecordId(client);
-                    if (!cid) return null;
-                    const displayName =
-                      `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
-                      client.name ||
-                      client.NAME ||
-                      "Unnamed Client";
-                    return (
-                      <SelectItem key={cid} value={cid}>
-                        {displayName}
-                      </SelectItem>
-                    );
-                  })
-                  .filter(Boolean)}
-              </SelectContent>
-            </Select>
-
-            {selectedClientObj && (
-              <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded-md text-sm">
-                <div className="font-medium text-purple-900">
-                  {selectedClientObj.first_name || ""} {selectedClientObj.last_name || ""}
-                </div>
-              </div>
-            )}
-          </div>
+          <ClientAssignMultiSelect
+            clients={clients}
+            selectedIds={selectedClientIds}
+            onChange={(ids) => {
+              setSelectedClientIds(ids);
+              setDomainSearch("");
+            }}
+            disabled={loading}
+          />
 
           {/* Domain Selector */}
           <div className="space-y-2">
@@ -292,6 +225,10 @@ export default function AddProgramModal({
             {selectedClientId ? (
               <p className="text-xs text-slate-500">
                 Showing domains assigned to this client only.
+              </p>
+            ) : selectedClientIds.length > 1 ? (
+              <p className="text-xs text-slate-500">
+                Showing generic domains. A copy is created for each selected client.
               </p>
             ) : (
               <p className="text-xs text-slate-500">

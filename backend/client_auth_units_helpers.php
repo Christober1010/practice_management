@@ -183,6 +183,83 @@ function client_auth_session_is_cancelled(array $row): bool
     return $status === 'cancelled';
 }
 
+function client_auth_session_is_excluded(array $row): bool
+{
+    $ex = strtolower(trim((string)($row['exclude_session'] ?? $row['excludeSession'] ?? 'No')));
+    return in_array($ex, ['yes', 'y', '1', 'true'], true);
+}
+
+/**
+ * Units already on the calendar for an authorization: scheduled + rendered / billed,
+ * excluding cancelled and exclude-session rows.
+ *
+ * @return array{total_units: float}
+ */
+function client_auth_aggregate_committed_units(mysqli $conn, int $authId): array
+{
+    if ($authId <= 0 || !client_auth_sessions_has_auth_id($conn)) {
+        return ['total_units' => 0.0];
+    }
+
+    $hoursSelect = client_auth_sessions_hours_select_mysqli($conn);
+    $statusSelect = client_auth_sessions_status_select_mysqli($conn);
+    $statusSql = $statusSelect !== '' ? ", {$statusSelect}" : '';
+    $excludeSql = client_auth_sessions_has_column_mysqli($conn, 'exclude_session')
+        ? ', exclude_session'
+        : '';
+    $claimSql = client_auth_sessions_has_claim_status($conn) ? ', claim_status' : '';
+
+    $stmt = $conn->prepare("
+        SELECT session_id, auth_id, start_utc, end_utc,
+               {$hoursSelect}session_id AS _keep{$claimSql}{$statusSql}{$excludeSql}
+        FROM sessions
+        WHERE auth_id = ?
+    ");
+    if (!$stmt) {
+        return ['total_units' => 0.0];
+    }
+    $stmt->bind_param('i', $authId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    $total = 0.0;
+    while ($row = $result->fetch_assoc()) {
+        if (client_auth_session_is_cancelled($row) || client_auth_session_is_excluded($row)) {
+            continue;
+        }
+        $units = client_auth_hours_to_units(client_auth_session_duration_hours($row));
+        if ($units > 0) {
+            $total += $units;
+        }
+    }
+    $stmt->close();
+
+    return ['total_units' => round($total, 2)];
+}
+
+function client_auth_approved_units_mysqli(mysqli $conn, int $authId): float
+{
+    if ($authId <= 0) {
+        return 0.0;
+    }
+    $match = client_auth_identifier_where_units($conn, '');
+    $stmt = $conn->prepare(
+        "SELECT units_approved_per_15_min FROM client_auth WHERE {$match['clause']} LIMIT 1"
+    );
+    if (!$stmt) {
+        return 0.0;
+    }
+    if ($match['dual']) {
+        $stmt->bind_param('ii', $authId, $authId);
+    } else {
+        $stmt->bind_param('i', $authId);
+    }
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return max(0.0, (float)($row['units_approved_per_15_min'] ?? 0));
+}
+
 function client_auth_session_service_date(array $row): string
 {
     $start = $row['start_utc'] ?? null;
@@ -333,6 +410,7 @@ function client_auth_sync_units_serviced_for_auth(mysqli $conn, int $authId): ar
 
 /**
  * Enrich authorization rows (PDO get-clients) with synced units + date breakdown.
+ * units_serviced = Ready to Bill only. units_committed includes scheduled appointments.
  */
 function client_auth_enrich_authorizations_pdo(PDO $conn, array &$authorizations): void
 {
@@ -358,40 +436,49 @@ function client_auth_enrich_authorizations_pdo(PDO $conn, array &$authorizations
         return;
     }
 
+    $hasClaim = false;
     try {
         $colCheck = $conn->query("SHOW COLUMNS FROM sessions LIKE 'claim_status'");
-        if (!$colCheck || $colCheck->rowCount() === 0) {
-            return;
-        }
+        $hasClaim = $colCheck && $colCheck->rowCount() > 0;
     } catch (Throwable $e) {
-        return;
+        $hasClaim = false;
     }
 
     $hoursSelect = client_auth_sessions_hours_select_pdo($conn);
     $statusSelect = client_auth_sessions_status_select_pdo($conn);
+    $claimSelect = $hasClaim ? 'claim_status' : "'' AS claim_status";
+    $excludeSelect = client_auth_sessions_has_column_pdo($conn, 'exclude_session')
+        ? ', exclude_session'
+        : '';
 
     $sql = "
-        SELECT session_id, auth_id, start_utc, end_utc, {$hoursSelect}claim_status, {$statusSelect}
+        SELECT session_id, auth_id, start_utc, end_utc, {$hoursSelect}{$claimSelect}, {$statusSelect}{$excludeSelect}
         FROM sessions
         WHERE auth_id IN ($placeholders)
-          AND LOWER(TRIM(IFNULL(claim_status, ''))) LIKE '%ready%'
     ";
-    $stmt = $conn->prepare($sql);
-    $stmt->execute($ids);
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    try {
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($ids);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        return;
+    }
 
     $aggByAuth = [];
     foreach ($rows as $row) {
-        $status = strtolower(trim((string)($row['STATUS'] ?? $row['status'] ?? '')));
-        if ($status === 'cancelled') {
-            continue;
-        }
-        $claim = strtolower(trim((string)($row['claim_status'] ?? '')));
-        if ($claim === '' || strpos($claim, 'ready') === false) {
-            continue;
-        }
         $authId = (int)($row['auth_id'] ?? 0);
         if ($authId <= 0) {
+            continue;
+        }
+        if (!isset($aggByAuth[$authId])) {
+            $aggByAuth[$authId] = [
+                'serviced' => 0.0,
+                'committed' => 0.0,
+                'by_date' => [],
+                'sessions' => [],
+            ];
+        }
+        if (client_auth_session_is_cancelled($row)) {
             continue;
         }
         $hours = client_auth_session_duration_hours($row);
@@ -399,27 +486,43 @@ function client_auth_enrich_authorizations_pdo(PDO $conn, array &$authorizations
         if ($units <= 0) {
             continue;
         }
-        if (!isset($aggByAuth[$authId])) {
-            $aggByAuth[$authId] = ['total' => 0.0, 'by_date' => [], 'sessions' => []];
+        if (!client_auth_session_is_excluded($row)) {
+            $aggByAuth[$authId]['committed'] += $units;
         }
-        $dateKey = client_auth_session_service_date($row);
-        $aggByAuth[$authId]['by_date'][$dateKey] = ($aggByAuth[$authId]['by_date'][$dateKey] ?? 0.0) + $units;
-        $aggByAuth[$authId]['total'] += $units;
-        $aggByAuth[$authId]['sessions'][] = [
-            'session_id' => (int)($row['session_id'] ?? 0),
-            'service_date' => $dateKey,
-            'units' => $units,
-            'hours' => round($hours, 2),
-        ];
+        if (client_auth_session_is_ready_to_bill($row)) {
+            $dateKey = client_auth_session_service_date($row);
+            $aggByAuth[$authId]['by_date'][$dateKey] = ($aggByAuth[$authId]['by_date'][$dateKey] ?? 0.0) + $units;
+            $aggByAuth[$authId]['serviced'] += $units;
+            $aggByAuth[$authId]['sessions'][] = [
+                'session_id' => (int)($row['session_id'] ?? 0),
+                'service_date' => $dateKey,
+                'units' => $units,
+                'hours' => round($hours, 2),
+            ];
+        }
     }
 
     foreach ($authorizations as &$auth) {
         $authId = (int)($auth['auth_id'] ?? $auth['id'] ?? 0);
-        if ($authId <= 0 || !isset($aggByAuth[$authId])) {
+        if ($authId <= 0) {
             continue;
         }
-        $bucket = $aggByAuth[$authId];
-        $total = round($bucket['total'], 2);
+        $approved = max(0.0, (float)($auth['units_approved_per_15_min'] ?? 0));
+        $bucket = $aggByAuth[$authId] ?? [
+            'serviced' => 0.0,
+            'committed' => 0.0,
+            'by_date' => [],
+            'sessions' => [],
+        ];
+        $committed = round((float)$bucket['committed'], 2);
+        $auth['units_committed'] = number_format($committed, 2, '.', '');
+        $auth['units_remaining'] = number_format(max(0, round($approved - $committed, 2)), 2, '.', '');
+
+        if (empty($bucket['sessions']) && (float)$bucket['serviced'] <= 0) {
+            continue;
+        }
+
+        $total = round((float)$bucket['serviced'], 2);
         $totalStr = number_format($total, 2, '.', '');
 
         $auth['units_serviced'] = $totalStr;

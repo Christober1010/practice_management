@@ -45,6 +45,10 @@ import {
   getDomainModuleLabel,
   mergeCanonicalDomainModules,
 } from "@/lib/domain-module-options";
+import {
+  assignedClientSaveTargets,
+  uniqueMasterDataId,
+} from "@/lib/master-data-client-scope";
 
 export default function DomainsList() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -240,49 +244,60 @@ export default function DomainsList() {
   ]);
 
   const handleAddDomain = async (domain) => {
-    const isClientDomain = domain.client_id != null;
-
+    const clientTargets = assignedClientSaveTargets(domain);
     const moduleId = domain.moduleId || domain.module_id;
-    const domainRow = {
-      id: domain.rawId || domain.id,
-      name: domain.name,
-      description: domain.description || "",
-      status: domain.status || "Active",
-      archived: 0,
-      ...(moduleId ? { moduleId, module_id: moduleId } : {}),
-    };
+    let saved = 0;
 
-    const payload = isClientDomain
-      ? {
-          client_id: domain.client_id,
-          domains: [domainRow],
+    for (let i = 0; i < clientTargets.length; i++) {
+      const clientId = clientTargets[i];
+      const isClientDomain = clientId != null;
+      const domainRow = {
+        id:
+          i === 0
+            ? domain.rawId || domain.id
+            : uniqueMasterDataId("domain", i),
+        name: domain.name,
+        description: domain.description || "",
+        status: domain.status || "Active",
+        archived: 0,
+        ...(moduleId ? { moduleId, module_id: moduleId } : {}),
+      };
+      const payload = isClientDomain
+        ? {
+            client_id: clientId,
+            domains: [domainRow],
+          }
+        : {
+            domains: [domainRow],
+          };
+
+      try {
+        const url = isClientDomain ? "/client-modules.php" : "/programs.php";
+        const res = await mahaverseFetch(`${url}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const result = await res.json();
+        if (!result.success) {
+          toast.error(result.message || "Save failed");
+          return;
         }
-      : {
-          domains: [domainRow],
-        };
-
-    try {
-      const url = isClientDomain ? "/client-modules.php" : "/programs.php";
-      const res = await mahaverseFetch(`${url}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const result = await res.json();
-
-      if (result.success) {
-        toast.success("Domain saved!");
-        dispatch(fetchPrograms());
-        if (viewMode === "client" || viewMode === "all") {
-          fetchClientData();
-        }
-        setIsAddModalOpen(false);
-      } else {
-        toast.error(result.message || "Save failed");
+        saved += 1;
+      } catch (err) {
+        toast.error("Network error");
+        return;
       }
-    } catch (err) {
-      toast.error("Network error");
     }
+
+    toast.success(
+      saved > 1 ? `Domain saved for ${saved} clients` : "Domain saved!"
+    );
+    dispatch(fetchPrograms());
+    if (viewMode === "client" || viewMode === "all") {
+      fetchClientData();
+    }
+    setIsAddModalOpen(false);
   };
 
   const handleDeleteDomain = async () => {

@@ -18,6 +18,7 @@ import LogoutConfirmationModal from "@/components/launchpad/LogoutConfirmationMo
 import img from "../../public/favicon.ico";
 import Image from "next/image";
 import { getMahaverseAuthHeaders } from "@/lib/api-auth";
+import { resolveMahaverseApiPath } from "@/lib/mahaverse-api";
 import { MAHAVERSE_PERMISSIONS_REFRESH_EVENT } from "@/lib/mahaverse-permissions-events";
 import { useDispatch } from "react-redux";
 import { setClients } from "@/app/store/clientSlice";
@@ -25,7 +26,7 @@ import { setClients } from "@/app/store/clientSlice";
 const API_BASE_URL = process.env.NEXT_PUBLIC_BASE_URL;
 
 /**
- * GET me-permissions.php — effective keys + canonical role from DB (same source as APIs).
+ * GET /api/v1/me/permissions — effective keys + canonical role from DB (same source as APIs).
  * @returns {{ permissions: string[], role?: string } | null}
  */
 async function fetchMahaversePermissionKeysFromApi() {
@@ -33,7 +34,7 @@ async function fetchMahaversePermissionKeysFromApi() {
   const token = localStorage.getItem("aba_token");
   if (!token) return null;
   try {
-    const res = await fetch(`${API_BASE_URL}/me-permissions.php?scope=mahaverse`, {
+    const res = await fetch(`${API_BASE_URL}/${resolveMahaverseApiPath("api/v1/me/permissions?scope=mahaverse")}`, {
       headers: getMahaverseAuthHeaders(),
     });
     const data = await res.json();
@@ -213,7 +214,7 @@ export default function LoginPage() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/login.php`, {
+      const response = await fetch(`${API_BASE_URL}/${resolveMahaverseApiPath("api/v1/auth/login")}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -341,7 +342,7 @@ export default function LoginPage() {
     const token = localStorage.getItem("aba_token");
     if (token && API_BASE_URL) {
       try {
-        await fetch(`${API_BASE_URL}/logout.php`, {
+        await fetch(`${API_BASE_URL}/${resolveMahaverseApiPath("api/v1/auth/logout")}`, {
           method: "POST",
           headers: getMahaverseAuthHeaders(),
         });

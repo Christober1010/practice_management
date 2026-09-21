@@ -57,7 +57,7 @@ export default function FacilityTypesSetup() {
         showArchived: showArchived.toString(),
         showInactive: showInactive.toString(),
       });
-      const res = await mahaverseFetch(`/facility-types.php?${params}`);
+      const res = await mahaverseFetch(`/api/v1/lookups/facility-types?${params}`);
       const data = await res.json();
       if (data?.success) {
         // Ensure pos_code is always a string and normalize any 3-digit codes with trailing zero
@@ -120,7 +120,7 @@ export default function FacilityTypesSetup() {
     try {
       const method = editingFacilityType ? "PUT" : "POST";
 
-      const res = await mahaverseFetch("/facility-types.php", {
+      const res = await mahaverseFetch("/api/v1/lookups/facility-types", {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(facilityType),
@@ -152,7 +152,7 @@ export default function FacilityTypesSetup() {
   const handleDelete = async () => {
     if (!facilityTypeToDelete) return;
     try {
-      const res = await mahaverseFetch('/facility-types.php', {
+      const res = await mahaverseFetch('/api/v1/lookups/facility-types', {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: facilityTypeToDelete.id }),

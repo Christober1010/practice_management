@@ -80,6 +80,7 @@ import ClientDomainModal from "./add-client-domain";
 import ClientProgramModal, { ProgramsListModal } from "./add-client-program";
 import ClientTargetModal, { TargetsListModal } from "./add-client-target";
 import { usePermissions } from "@/hooks/usePermissions";
+import { clientDisplayName } from "@/lib/sort-clients";
 import {
   allowsClientArchive,
   allowsClientCreate,
@@ -326,7 +327,7 @@ export default function ClientsView({ userRole }) {
         documents: docsUploaded.map(({ document_file, ...rest }) => rest),
       };
 
-      const res = await mahaverseFetch('/update-clients.php', {
+      const res = await mahaverseFetch('/api/v1/clients', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -399,7 +400,7 @@ export default function ClientsView({ userRole }) {
         documents: docsUploaded.map(({ document_file, ...rest }) => rest),
       };
 
-      const res = await mahaverseFetch('/update-clients.php', {
+      const res = await mahaverseFetch('/api/v1/clients', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -450,7 +451,7 @@ export default function ClientsView({ userRole }) {
     };
 
     try {
-      const res = await mahaverseFetch('/update-clients.php', {
+      const res = await mahaverseFetch('/api/v1/clients', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -560,7 +561,7 @@ export default function ClientsView({ userRole }) {
   useEffect(() => {
     const fetchStaff = async () => {
       try {
-        const response = await mahaverseFetch('/staff.php');
+        const response = await mahaverseFetch('/api/v1/staff');
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -582,7 +583,7 @@ export default function ClientsView({ userRole }) {
   useEffect(() => {
     const fetchLocations = async () => {
       try {
-        const response = await mahaverseFetch("/locations.php");
+        const response = await mahaverseFetch("/api/v1/lookups/locations");
         const result = await response.json();
         if (result.success) {
           setLocations(result.data || []);
@@ -1137,7 +1138,13 @@ export default function ClientsView({ userRole }) {
                 </TableHeader>
                 <TableBody>
                   {filteredClients
-                    .sort((a, b) => a.first_name.localeCompare(b.first_name))
+                    .sort((a, b) =>
+                      clientDisplayName(a).localeCompare(
+                        clientDisplayName(b),
+                        undefined,
+                        { sensitivity: "base", numeric: true }
+                      )
+                    )
                     .map((client) => {
                       const isExpanded = expandedClient === client.id;
                       const insurances = Array.isArray(client.insurances)
@@ -2556,6 +2563,7 @@ export default function ClientsView({ userRole }) {
           setSessionNotesClient(null);
         }}
         client={sessionNotesClient}
+        userRole={userRole}
       />
 
       {/* Modules Modal — now supports clicking into domains */}

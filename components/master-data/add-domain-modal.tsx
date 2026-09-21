@@ -25,6 +25,11 @@ import {
   inferDomainModuleKey,
   resolveModuleIdForDomain,
 } from "@/lib/domain-module-options";
+import {
+  normalizeAssignedClientIds,
+  pendingMasterDataClientIds,
+} from "@/lib/master-data-client-scope";
+import ClientAssignMultiSelect from "@/components/master-data/client-assign-multi-select";
 
 function generateId() {
   return `domain_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -44,14 +49,8 @@ export default function AddDomainModal({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("Active");
-  const [selectedClientValue, setSelectedClientValue] = useState("generic");
+  const [selectedClientIds, setSelectedClientIds] = useState<string[]>([]);
   const [moduleKey, setModuleKey] = useState(DEFAULT_DOMAIN_MODULE_KEY);
-
-  // Find selected client
-  const selectedClientObj =
-    selectedClientValue === "generic"
-      ? null
-      : clients.find((c) => String(c.id) === String(selectedClientValue)) || null;
 
   // Reset / fill form
   useEffect(() => {
@@ -66,38 +65,13 @@ export default function AddDomainModal({
         )
       );
 
-      setSelectedClientValue(editingDomain.client_id ? String(editingDomain.client_id) : "generic");
+      setSelectedClientIds(normalizeAssignedClientIds(editingDomain));
     } else {
       setName("");
       setDescription("");
       setStatus("Active");
       setModuleKey(DEFAULT_DOMAIN_MODULE_KEY);
-      
-      // Check for pending client from client view navigation
-      const pendingClient = localStorage.getItem("pendingClientForMasterData");
-      if (pendingClient && isOpen) {
-        try {
-          const clientInfo = JSON.parse(pendingClient);
-          // Try to find client by ID first, then by name
-          const foundClient = clients.find(
-            (c) => String(c.id) === String(clientInfo.id) || c.name === clientInfo.name
-          );
-          if (foundClient) {
-            setSelectedClientValue(String(foundClient.id ?? foundClient.name));
-          } else if (clientInfo.id) {
-            setSelectedClientValue(String(clientInfo.id));
-          } else if (clientInfo.name) {
-            setSelectedClientValue(clientInfo.name);
-          } else {
-            setSelectedClientValue("generic");
-          }
-        } catch (err) {
-          console.error("Error parsing pending client info:", err);
-          setSelectedClientValue("generic");
-        }
-      } else {
-        setSelectedClientValue("generic");
-      }
+      setSelectedClientIds(isOpen ? pendingMasterDataClientIds(clients) : []);
     }
   }, [editingDomain, isEditing, isOpen, clients, modules]);
 
@@ -123,9 +97,8 @@ export default function AddDomainModal({
       archived: 0,
       moduleId,
       module_id: moduleId,
-      ...(selectedClientValue !== "generic"
-        ? { client_id: selectedClientObj?.id || selectedClientValue }
-        : {}),
+      client_ids: selectedClientIds,
+      ...(selectedClientIds.length === 1 ? { client_id: selectedClientIds[0] } : {}),
     };
 
     try {
@@ -166,40 +139,12 @@ export default function AddDomainModal({
             </Select>
           </div>
 
-          {/* Client Selector */}
-          <div className="space-y-2">
-            <Label>Assign to Client</Label>
-            <Select
-              value={selectedClientValue === "generic" ? "generic" : selectedClientValue}
-              onValueChange={(val) => setSelectedClientValue(val === "generic" ? "generic" : val)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Generic (no client)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="generic">Generic (no client)</SelectItem>
-                {clients.map((client) => {
-                  const displayName =
-                    `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
-                    client.name ||
-                    "Unnamed Client";
-                  return (
-                    <SelectItem key={client.id} value={String(client.id)}>
-                      {displayName}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-
-            {selectedClientObj && (
-              <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded-md text-sm">
-                <div className="font-medium text-purple-900">
-                  {selectedClientObj.first_name || ""} {selectedClientObj.last_name || ""}
-                </div>
-              </div>
-            )}
-          </div>
+          <ClientAssignMultiSelect
+            clients={clients}
+            selectedIds={selectedClientIds}
+            onChange={setSelectedClientIds}
+            disabled={loading}
+          />
 
           {/* Domain Name */}
           <div className="space-y-2">

@@ -481,7 +481,7 @@ export default function AddLocationModal({
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="p-4 bg-blue-50 border-l-4 border-blue-400 rounded-r text-sm text-blue-800">
-                <strong>Note:</strong> Mahaverse will use this address in Box 32 of the claim form if POS 11 is selected. If the service address is home (POS 12) or another location then Mahaverse will display that address in Box 32.
+                <strong>Note:</strong> Box 32 uses the Maha service address (7199 Kingery Hwy, Willowbrook, IL 60527). Place of service in Box 24B (e.g. POS 12 for home) indicates where services were rendered.
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

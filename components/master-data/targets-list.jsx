@@ -43,6 +43,10 @@ import {
   getDomainModuleLabel,
   mergeCanonicalDomainModules,
 } from "@/lib/domain-module-options";
+import {
+  assignedClientSaveTargets,
+  uniqueMasterDataId,
+} from "@/lib/master-data-client-scope";
 
 export default function TargetsList() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -349,77 +353,73 @@ export default function TargetsList() {
   }, [genericTargets, clientTargets]);
 
   const handleAddTarget = async (newTarget) => {
-    const isClientTarget = newTarget.client_id != null;
+    const clientTargets = assignedClientSaveTargets(newTarget);
+    let saved = 0;
 
-    const payload = isClientTarget
-      ? {
-          client_id: newTarget.client_id,
-          activities: [
-            {
-              id: newTarget.id,
-              programId: newTarget.programId,
-              name: newTarget.name,
-              goalDescription: newTarget.goalDescription || "",
-              trials: newTarget.trials || 1,
-              activityType: newTarget.activityType || "",
-              instructions: newTarget.instructions || "",
-              status: newTarget.status || "Active",
-              archived: 0,
-              prompts: newTarget.prompts || [],
-              tasks: newTarget.tasks || [],
-            },
-          ],
+    for (let i = 0; i < clientTargets.length; i++) {
+      const clientId = clientTargets[i];
+      const isClientTarget = clientId != null;
+      const activityRow = {
+        id: i === 0 ? newTarget.id : uniqueMasterDataId("target", i),
+        programId: newTarget.programId,
+        name: newTarget.name,
+        goalDescription: newTarget.goalDescription || "",
+        trials: newTarget.trials || 1,
+        activityType: newTarget.activityType || "",
+        instructions: newTarget.instructions || "",
+        status: newTarget.status || "Active",
+        archived: 0,
+        prompts: newTarget.prompts || [],
+        tasks: newTarget.tasks || [],
+      };
+      const payload = isClientTarget
+        ? {
+            client_id: clientId,
+            activities: [activityRow],
+          }
+        : {
+            activities: [activityRow],
+          };
+
+      try {
+        const url = isClientTarget ? "/client-modules.php" : "/programs.php";
+        const res = await mahaverseFetch(`${url}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const result = await res.json();
+        if (!result.success) {
+          toast.error(result.message || "Save failed");
+          return;
         }
-      : {
-          activities: [
-            {
-              id: newTarget.id,
-              programId: newTarget.programId,
-              name: newTarget.name,
-              goalDescription: newTarget.goalDescription || "",
-              trials: newTarget.trials || 1,
-              activityType: newTarget.activityType || "",
-              instructions: newTarget.instructions || "",
-              status: newTarget.status || "Active",
-              archived: 0,
-              prompts: newTarget.prompts || [],
-              tasks: newTarget.tasks || [],
-            },
-          ],
-        };
-
-    try {
-      const url = isClientTarget ? "/client-modules.php" : "/programs.php";
-      const res = await mahaverseFetch(`${url}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const result = await res.json();
-
-      if (result.success) {
-        toast.success("Target saved!");
-        dispatch(fetchPrograms());
-        if (viewMode === "client" || viewMode === "all") {
-          fetchClientSpecificData();
-        }
-        setIsAddModalOpen(false);
-      } else {
-        toast.error(result.message || "Save failed");
+        saved += 1;
+      } catch (err) {
+        toast.error("Network error");
+        return;
       }
-    } catch (err) {
-      toast.error("Network error");
     }
+
+    toast.success(
+      saved > 1 ? `Target saved for ${saved} clients` : "Target saved!"
+    );
+    dispatch(fetchPrograms());
+    if (viewMode === "client" || viewMode === "all") {
+      fetchClientSpecificData();
+    }
+    setIsAddModalOpen(false);
   };
 
   const handleEditTarget = async (updatedTarget) => {
-    const isClientTarget = updatedTarget.client_id != null;
+    const clientIds = assignedClientSaveTargets(updatedTarget);
+    const primaryClientId = clientIds[0];
+    const isClientTarget = primaryClientId != null;
 
     try {
       let res;
       if (isClientTarget) {
         const payload = {
-          client_id: updatedTarget.client_id,
+          client_id: primaryClientId,
           activities: [
             {
               id: updatedTarget.rawId || updatedTarget.id,
@@ -462,17 +462,28 @@ export default function TargetsList() {
 
       const result = await res.json();
 
-      if (result.success) {
-        toast.success("Target updated!");
-        dispatch(fetchPrograms());
-        if (viewMode === "client" || viewMode === "all") {
-          fetchClientSpecificData();
-        }
-        setIsAddModalOpen(false);
-        setEditingTarget(null);
-      } else {
+      if (!result.success) {
         toast.error(result.message || "Update failed");
+        return;
       }
+
+      const extraClientIds = clientIds.slice(1).filter(Boolean);
+      if (extraClientIds.length > 0) {
+        await handleAddTarget({
+          ...updatedTarget,
+          id: uniqueMasterDataId("target", 1),
+          client_ids: extraClientIds,
+        });
+        return;
+      }
+
+      toast.success("Target updated!");
+      dispatch(fetchPrograms());
+      if (viewMode === "client" || viewMode === "all") {
+        fetchClientSpecificData();
+      }
+      setIsAddModalOpen(false);
+      setEditingTarget(null);
     } catch (err) {
       toast.error("Network error");
     }

@@ -24,6 +24,7 @@ import {
   Activity,
   FolderOpen,
   Car,
+  Server,
 } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
@@ -164,6 +165,12 @@ export default function AppSidebar({
       label: "Mileage Rate",
       icon: Car,
       color: "text-teal-700",
+    },
+    {
+      id: "clearingHouse",
+      label: "Clearing House",
+      icon: Server,
+      color: "text-blue-700",
     },
   ];
   const billingSubItems = [

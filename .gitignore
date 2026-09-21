@@ -39,3 +39,10 @@ next-env.d.ts
 /playwright-report-prod/
 /e2e/.env
 /playwright/.cache/
+
+# Java backend (local dev artifacts)
+/java-backend/**/target/
+*.log
+
+# Local DB dumps (do not commit)
+/db/

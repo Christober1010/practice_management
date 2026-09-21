@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "dev:test": "dotenv -e .env.test -- next dev",
+    "dev:java": "dotenv -e .env.java -- next dev",
     "dev:prod": "dotenv -e .env.prod -- next dev -p 3001",
     "build": "dotenv -e .env.prod -o -- next build && bash scripts/zip-static-export.sh prod",
     "build:test": "dotenv -e .env.test -o -- next build && bash scripts/zip-static-export.sh test",

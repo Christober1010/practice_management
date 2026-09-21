@@ -15,7 +15,13 @@ import {
   FUTURE_SESSION_COMPLETE_MESSAGE,
   isFutureSessionDateYmd,
 } from "@/lib/session-notes-date";
+import {
+  SOAP_NOTES_REQUIRED_MESSAGE,
+  soapNotesFieldErrors,
+} from "@/lib/session-notes-soap";
+import { sessionIsRenderedOrReadyToBill } from "@/lib/scheduling-session-status";
 import { behaviorsToSessionRows, mergeBehaviorSessionRows } from "@/lib/behavior-recording-types";
+import { serviceCodeDescriptionMap } from "@/lib/session-appointment-label";
 import DataCollectionPanel from "./data-collection/DataCollectionPanel";
 import SessionNotesPanel from "./session-notes/SessionNotesPanel";
 
@@ -85,6 +91,7 @@ export default function SessionNotesModal({
   linkedSessionId = null,
   onSessionBillingFinalized,
   initialTab = "data-collection",
+  userRole = null,
 }) {
   // Shared state (used across panels)
   const [loading, setLoading] = useState(false);
@@ -96,10 +103,14 @@ export default function SessionNotesModal({
   const [clientTargets, setClientTargets] = useState([]);
   // Session data (appointment metadata)
   const [sessionData, setSessionData] = useState(null);
+  const [serviceCodeDescriptions, setServiceCodeDescriptions] = useState({});
 
   // Session Notes structured state
   const [sessionNotes, setSessionNotes] = useState({ ...INITIAL_SESSION_NOTES });
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [notesInnerTab, setNotesInnerTab] = useState("overview");
+  const [soapErrors, setSoapErrors] = useState({});
+  const [sessionCompleted, setSessionCompleted] = useState(false);
   const scrollContainerRef = useRef(null);
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
@@ -134,6 +145,14 @@ export default function SessionNotesModal({
   const clientDisplayName = useMemo(
     () => `${client?.first_name || ""} ${client?.last_name || ""}`.trim() || "Client",
     [client]
+  );
+
+  const isAdminUser = String(userRole?.role || "").toLowerCase() === "admin";
+  const soapLocked = useMemo(
+    () =>
+      !isAdminUser &&
+      (sessionCompleted || sessionIsRenderedOrReadyToBill(sessionData)),
+    [isAdminUser, sessionCompleted, sessionData]
   );
 
   const appointmentTimezone = useMemo(() => {
@@ -178,6 +197,9 @@ export default function SessionNotesModal({
     const tab =
       initialTab === "session-notes" ? "session-notes" : "data-collection";
     setActiveTab(tab);
+    setNotesInnerTab("overview");
+    setSoapErrors({});
+    setSessionCompleted(false);
   }, [isOpen, initialTab]);
 
   // Reset state when modal closes
@@ -189,10 +211,14 @@ export default function SessionNotesModal({
       setClientPrograms([]);
       setClientTargets([]);
       setSessionData(null);
+      setServiceCodeDescriptions({});
       setSessionNotes({ ...INITIAL_SESSION_NOTES });
       setActiveTab(
         initialTab === "session-notes" ? "session-notes" : "data-collection"
       );
+      setNotesInnerTab("overview");
+      setSoapErrors({});
+      setSessionCompleted(false);
     }
   }, [isOpen, initialTab]);
 
@@ -206,29 +232,61 @@ export default function SessionNotesModal({
 
         // Session (appointment metadata)
         try {
-          const sessionRes = await mahaverseFetch(`/add-session.php?client_id=${encodeURIComponent(String(clientId))}&date=${encodeURIComponent(
-              String(apiSessionDate)
-            )}`,
-            { headers: getMahaverseAuthHeaders() }
-          );
-          const sd = await readJsonFromResponse(sessionRes);
-          if (Array.isArray(sd) && sd.length > 0) {
-            // Prefer the calendar card that opened notes — never default to the
-            // first same-day row (multiple providers/sessions share one client+date).
-            const linked = linkedSessionId != null ? String(linkedSessionId).trim() : "";
-            const match =
-              linked && !linked.startsWith("temp-")
-                ? sd.find((s) => String(s?.session_id) === linked)
-                : null;
-            setSessionData(match || sd[0]);
-          } else if (sd?.session_id) {
-            setSessionData(sd);
-          } else {
-            setSessionData(null);
+          const linked =
+            linkedSessionId != null ? String(linkedSessionId).trim() : "";
+          let resolvedSession = null;
+
+          if (linked && !linked.startsWith("temp-")) {
+            const byIdRes = await mahaverseFetch(
+              `/add-session.php?id=${encodeURIComponent(linked)}`,
+              { headers: getMahaverseAuthHeaders() }
+            );
+            const byId = await readJsonFromResponse(byIdRes);
+            if (byId?.session_id) {
+              resolvedSession = byId;
+            }
           }
+
+          if (!resolvedSession) {
+            const sessionRes = await mahaverseFetch(
+              `/add-session.php?client_id=${encodeURIComponent(String(clientId))}&date=${encodeURIComponent(
+                String(apiSessionDate)
+              )}`,
+              { headers: getMahaverseAuthHeaders() }
+            );
+            const sd = await readJsonFromResponse(sessionRes);
+            if (Array.isArray(sd) && sd.length > 0) {
+              // Prefer the calendar card that opened notes — never default to the
+              // first same-day row (multiple providers/sessions share one client+date).
+              const match =
+                linked && !linked.startsWith("temp-")
+                  ? sd.find((s) => String(s?.session_id) === linked)
+                  : null;
+              resolvedSession = match || sd[0];
+            } else if (sd?.session_id) {
+              resolvedSession = sd;
+            }
+          }
+
+          setSessionData(resolvedSession);
         } catch (err) {
           setSessionData(null);
           console.log("No session found for date:", err);
+        }
+
+        try {
+          const codesRes = await mahaverseFetch("/api/v1/lookups/service-codes", {
+            headers: getMahaverseAuthHeaders(),
+          });
+          const codesJson = await readJsonFromResponse(codesRes);
+          if (codesJson?.success && Array.isArray(codesJson.data)) {
+            setServiceCodeDescriptions(serviceCodeDescriptionMap(codesJson.data));
+          } else {
+            setServiceCodeDescriptions({});
+          }
+        } catch (err) {
+          console.error("Failed to load service code descriptions", err);
+          setServiceCodeDescriptions({});
         }
 
         // Client modules + saved session notes (keyed by session_id when linked)
@@ -257,14 +315,19 @@ export default function SessionNotesModal({
         }
 
         let savedNotesPayload = null;
+        let savedSessionCompleted = false;
         try {
           const savedData = await readJsonFromResponse(savedRes);
-          if (savedData?.success && savedData?.data?.session_notes) {
-            savedNotesPayload = savedData.data.session_notes;
+          if (savedData?.success && savedData?.data) {
+            if (savedData.data.session_notes) {
+              savedNotesPayload = savedData.data.session_notes;
+            }
+            savedSessionCompleted = Boolean(savedData.data.session_completed);
           }
         } catch (err) {
           console.error("Failed to load saved session notes payload", err);
         }
+        setSessionCompleted(savedSessionCompleted);
 
         const activities = data.data?.activities || data.data?.targets || [];
         const programs = data.data?.programs || [];
@@ -348,6 +411,22 @@ export default function SessionNotesModal({
     return Number.isFinite(n) && n > 0 ? n : null;
   };
 
+  const revealSoapTab = () => {
+    setActiveTab("session-notes");
+    setNotesInnerTab("clinical");
+  };
+
+  const requireSoapNotes = (notes) => {
+    const errors = soapNotesFieldErrors(notes);
+    if (Object.keys(errors).length === 0) {
+      setSoapErrors({});
+      return true;
+    }
+    setSoapErrors(errors);
+    revealSoapTab();
+    return false;
+  };
+
   const handleSaveSessionNotes = async ({
     silent = false,
     completeSession = false,
@@ -361,6 +440,10 @@ export default function SessionNotesModal({
       }
 
       const notesToSave = sessionNotesOverride ?? sessionNotes;
+      if (completeSession && !soapLocked && !requireSoapNotes(notesToSave)) {
+        throw new Error(SOAP_NOTES_REQUIRED_MESSAGE);
+      }
+
       const schedulingSid = resolveSchedulingSessionId();
       const payload = {
         client_id: clientId,
@@ -388,6 +471,10 @@ export default function SessionNotesModal({
       if (!data?.success) {
         if (data?.code === "future_session_date") {
           throw new Error(FUTURE_SESSION_COMPLETE_MESSAGE);
+        }
+        if (data?.code === "soap_notes_incomplete") {
+          requireSoapNotes(notesToSave);
+          throw new Error(data?.message || SOAP_NOTES_REQUIRED_MESSAGE);
         }
         throw new Error(data?.message || "Failed to save session notes");
       }
@@ -520,13 +607,26 @@ export default function SessionNotesModal({
                 client={client}
                 sessionDate={sessionDate}
                 sessionData={sessionData}
+                serviceCodeDescriptions={serviceCodeDescriptions}
                 sessionNotes={sessionNotes}
                 setSessionNotes={setSessionNotes}
-                onSave={handleSaveSessionNotes}
+                onSave={() => handleSaveSessionNotes()}
                 onComplete={handleComplete}
                 onClose={onClose}
                 isFutureSessionDate={isFutureSessionDate}
                 futureCompleteMessage={FUTURE_SESSION_COMPLETE_MESSAGE}
+                notesTab={notesInnerTab}
+                onNotesTabChange={setNotesInnerTab}
+                soapErrors={soapErrors}
+                soapLocked={soapLocked}
+                onClearSoapError={(key) =>
+                  setSoapErrors((prev) => {
+                    if (!prev[key]) return prev;
+                    const next = { ...prev };
+                    delete next[key];
+                    return next;
+                  })
+                }
               />
             </TabsContent>
           </div>
