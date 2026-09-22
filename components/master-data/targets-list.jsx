@@ -27,12 +27,19 @@ import {
   Zap,
   Plus,
   Edit,
-  Trash2,
+  Copy,
   Archive,
   ArchiveRestore,
   BookOpen,
   Users,
+  MoreVertical,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import toast, { Toaster } from "react-hot-toast";
 import { useAppDispatch, useAppSelector } from "@/app/store/hooks";
 import { fetchPrograms } from "@/app/store/programSlice";
@@ -95,13 +102,23 @@ export default function TargetsList() {
   const fetchClientSpecificData = async () => {
     try {
       setLoadingClientData(true);
-      const selectedClientObj =
-        selectedClient === "all"
-          ? null
-          : clients.find((c) => String(c?.NAME || c?.name || "").trim() === selectedClient);
-
-      const selectedClientId =
-        selectedClientObj?.client_id || selectedClientObj?.id || selectedClientObj?.clientId || null;
+      const selectedClientId = (() => {
+        if (selectedClient === "all") return null;
+        const match = clients.find((c) => {
+          const name =
+            `${c.first_name || ""} ${c.last_name || ""}`.trim() ||
+            c.name ||
+            c.NAME ||
+            c.client_name ||
+            "";
+          return (
+            name === selectedClient ||
+            String(c.id) === String(selectedClient) ||
+            String(c.client_id) === String(selectedClient)
+          );
+        });
+        return match?.client_id || match?.id || match?.clientId || null;
+      })();
 
       // If a specific client is selected, prefer client-modules.php so we get per-client activities (+ tasks/prompts if backend supports)
       const url = selectedClientId
@@ -149,21 +166,23 @@ export default function TargetsList() {
     const pendingClient = localStorage.getItem("pendingClientForMasterData");
     const pendingAction = localStorage.getItem("pendingAction");
     const pendingType = localStorage.getItem("pendingMasterDataType");
-    
-    if (pendingClient && pendingAction === "add" && pendingType === "targets") {
-      try {
-        // Just open the add modal - client will be pre-selected in the modal
+
+    if (!pendingClient || pendingType !== "targets") return;
+
+    try {
+      const client = JSON.parse(pendingClient);
+      if (pendingAction === "filter") {
+        setViewMode("client");
+        setSelectedClient(client.name || "all");
+      } else if (pendingAction === "add") {
         setIsAddModalOpen(true);
-        // Clear localStorage
-        localStorage.removeItem("pendingClientForMasterData");
-        localStorage.removeItem("pendingAction");
-        localStorage.removeItem("pendingMasterDataType");
-      } catch (err) {
-        console.error("Error parsing pending client info:", err);
-        localStorage.removeItem("pendingClientForMasterData");
-        localStorage.removeItem("pendingAction");
-        localStorage.removeItem("pendingMasterDataType");
       }
+    } catch (err) {
+      console.error("Error parsing pending client info:", err);
+    } finally {
+      localStorage.removeItem("pendingClientForMasterData");
+      localStorage.removeItem("pendingAction");
+      localStorage.removeItem("pendingMasterDataType");
     }
   }, []);
 
@@ -478,33 +497,36 @@ export default function TargetsList() {
     }
   };
 
-  const handleDeleteTarget = async () => {
+  const handleArchiveTarget = async () => {
     const target = targetToDelete;
     if (!target) return;
     const isClientTarget = target.type === "client";
     const activityId = target.rawId || target.id;
+    const willArchive = !target.archived;
     try {
+      const body = isClientTarget
+        ? {
+            client_id: target.client_id,
+            activityId,
+            archived: willArchive ? 1 : 0,
+            status: willArchive ? "Inactive" : "Active",
+          }
+        : {
+            activityId,
+            archived: willArchive ? 1 : 0,
+            status: willArchive ? "Inactive" : "Active",
+          };
       const res = await mahaverseFetch(
         isClientTarget ? "/client-modules.php" : "/programs.php",
         {
-          method: "DELETE",
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            isClientTarget
-              ? {
-                  client_id: target.client_id,
-                  activityId,
-                }
-              : {
-                  activityId,
-                  delete: true,
-                }
-          ),
-        }
+          body: JSON.stringify(body),
+        },
       );
       const result = await res.json().catch(() => ({}));
       if (res.ok && result.success) {
-        toast.success("Target deleted!");
+        toast.success(willArchive ? "Target archived!" : "Target restored!");
         dispatch(fetchPrograms());
         if (viewMode === "client" || viewMode === "all") {
           fetchClientSpecificData();
@@ -512,13 +534,66 @@ export default function TargetsList() {
         setIsDeleteModalOpen(false);
         setTargetToDelete(null);
       } else {
-        toast.error(result.message || "Delete failed");
+        toast.error(result.message || "Archive failed");
       }
     } catch (err) {
       toast.error("Network error");
     }
   };
 
+  const handleCloneTarget = async (target) => {
+    if (!target) return;
+    const isClientTarget = target.type === "client";
+    const newId = `target_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const clonedPrompts = (target.prompts || []).map((p) => ({
+      ...p,
+      id: p.id ? `${p.id}_clone_${Date.now()}` : undefined,
+    }));
+    const clonedTasks = (target.tasks || []).map((t, idx) => ({
+      ...t,
+      id: t.id
+        ? `${t.id}_clone_${Date.now()}_${idx}`
+        : `task_${Date.now()}_${idx}`,
+    }));
+    const activity = {
+      id: newId,
+      programId: target.programId || target.program_id,
+      name: `${target.name || "Target"} (Copy)`,
+      goalDescription: target.goalDescription || target.description || "",
+      trials: target.trials || 1,
+      activityType: target.activityType || target.activity_type || "",
+      instructions: target.instructions || "",
+      status: "Active",
+      archived: 0,
+      prompts: clonedPrompts,
+      tasks: clonedTasks,
+    };
+    try {
+      const payload = isClientTarget
+        ? { client_id: target.client_id, activities: [activity] }
+        : { activities: [activity] };
+      const res = await mahaverseFetch(
+        isClientTarget ? "/client-modules.php" : "/programs.php",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+      );
+      const result = await res.json().catch(() => ({}));
+      if (res.ok && result.success) {
+        toast.success("Target cloned!");
+        dispatch(fetchPrograms());
+        if (viewMode === "client" || viewMode === "all") {
+          fetchClientSpecificData();
+        }
+      } else {
+        toast.error(result.message || "Clone failed");
+      }
+    } catch (err) {
+      toast.error("Network error");
+    }
+  };
 
   const openEditModal = (target) => {
     setEditingTarget(target);
@@ -552,10 +627,18 @@ export default function TargetsList() {
           setIsDeleteModalOpen(false);
           setTargetToDelete(null);
         }}
-        onConfirm={handleDeleteTarget}
+        onConfirm={handleArchiveTarget}
         entityType="target"
         moduleName={targetToDelete?.name || ""}
         loading={false}
+        variant="archive"
+        title={targetToDelete?.archived ? "Restore Target?" : undefined}
+        message={
+          targetToDelete?.archived
+            ? `Restore "${targetToDelete?.name || ""}"? It will appear in the active list again.`
+            : undefined
+        }
+        confirmLabel={targetToDelete?.archived ? "Restore" : undefined}
       />
 
 
@@ -791,14 +874,40 @@ export default function TargetsList() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="text-red-600 border-red-300"
+                            className={
+                              t.archived
+                                ? "text-green-600 border-green-300"
+                                : "text-amber-600 border-amber-300"
+                            }
+                            title={t.archived ? "Restore" : "Archive"}
                             onClick={() => {
                               setTargetToDelete(t);
                               setIsDeleteModalOpen(true);
                             }}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            {t.archived ? (
+                              <ArchiveRestore className="h-4 w-4" />
+                            ) : (
+                              <Archive className="h-4 w-4" />
+                            )}
                           </Button>
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="outline" size="sm">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => handleCloneTarget(t)}
+                                className="cursor-pointer"
+                              >
+                                <Copy className="h-4 w-4 mr-2" />
+                                Clone
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
                       </TableCell>
                     </TableRow>

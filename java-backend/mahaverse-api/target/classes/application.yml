@@ -1,0 +1,20 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: mahaverse-api
+  datasource:
+    url: jdbc:mysql://${MAHAVERSE_DB_HOST:127.0.0.1}:${MAHAVERSE_DB_PORT:3306}/${MAHAVERSE_DB_NAME:mahaverse}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MAHAVERSE_DB_USER:mahaverse}
+    password: ${MAHAVERSE_DB_PASS:mahaverse}
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+

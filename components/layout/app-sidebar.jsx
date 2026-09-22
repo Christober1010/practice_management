@@ -200,6 +200,18 @@ export default function AppSidebar({
       color: "text-teal-600",
     },
     {
+      id: "reportsSessionNotes",
+      label: "Session Notes",
+      icon: FileText,
+      color: "text-teal-700",
+    },
+    {
+      id: "reportsDataCollection",
+      label: "Data Collection Report",
+      icon: FileText,
+      color: "text-teal-700",
+    },
+    {
       id: "reportsInsuranceUtilization",
       label: "Insurance Utilization",
       icon: Shield,

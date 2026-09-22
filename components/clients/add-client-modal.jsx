@@ -308,9 +308,8 @@ export default function AddClientModal({
     );
   }, [locations, formData.location]);
 
-  const primaryTabs = ["personal", "contact", "insurance"];
+  const primaryTabs = ["personal", "contact", "insurance", "configureData"];
   const moreTabs = [
-    "configureData",
     "authorization",
     "guardian",
     "availability",
@@ -1642,7 +1641,7 @@ export default function AddClientModal({
           >
             <div className="space-y-2">
               <div className="flex items-center gap-2 w-full">
-                <TabsList className="flex-1 grid grid-cols-3">
+                <TabsList className="flex-1 grid grid-cols-4">
                   {primaryTabs.map((tab) => (
                     <TabsTrigger
                       key={tab}
@@ -1664,6 +1663,11 @@ export default function AddClientModal({
                           <Shield className="h-4 w-4" /> Insurance
                         </>
                       )}
+                      {tab === "configureData" && (
+                        <>
+                          <SlidersHorizontal className="h-4 w-4" /> Configure data
+                        </>
+                      )}
                     </TabsTrigger>
                   ))}
                 </TabsList>
@@ -1676,14 +1680,12 @@ export default function AddClientModal({
                     >
                       {moreTabs.includes(activeTab) ? (
                         <>
-                          {activeTab === "configureData" && <SlidersHorizontal className="h-4 w-4" />}
                           {activeTab === "authorization" && <FileText className="h-4 w-4" />}
                           {activeTab === "guardian" && <User className="h-4 w-4" />}
                           {activeTab === "availability" && <Clock className="h-4 w-4" />}
                           {activeTab === "documents" && <File className="h-4 w-4" />}
                           {activeTab === "notes" && <FileText className="h-4 w-4" />}
                           {activeTab === "nearbyStaff" && <MapPin className="h-4 w-4" />}
-                          {activeTab === "configureData" && "Configure data"}
                           {activeTab === "authorization" && "Authorization"}
                           {activeTab === "guardian" && "Guardian"}
                           {activeTab === "availability" && "Availability"}
@@ -1707,12 +1709,6 @@ export default function AddClientModal({
                         onClick={() => setActiveTab(tab)}
                         className={activeTab === tab ? "bg-teal-50 font-medium" : ""}
                       >
-                        {tab === "configureData" && (
-                          <>
-                            <SlidersHorizontal className="h-4 w-4 mr-2" /> Configure data
-                            {activeTab === tab && <span className="ml-auto">✓</span>}
-                          </>
-                        )}
                         {tab === "authorization" && (
                           <>
                             <FileText className="h-4 w-4 mr-2" /> Authorization

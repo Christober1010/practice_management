@@ -27,7 +27,6 @@ import {
   Layers,
   Plus,
   Edit,
-  Trash2,
   Archive,
   ArchiveRestore,
   BookOpen,
@@ -79,13 +78,23 @@ export default function ProgramsList() {
   const fetchClientSpecificData = async () => {
     try {
       setLoadingClientData(true);
-      const selectedClientObj =
-        selectedClient === "all"
-          ? null
-          : clients.find((c) => String(c?.NAME || c?.name || "").trim() === selectedClient);
-
-      const selectedClientId =
-        selectedClientObj?.client_id || selectedClientObj?.id || selectedClientObj?.clientId || null;
+      const selectedClientId = (() => {
+        if (selectedClient === "all") return null;
+        const match = clients.find((c) => {
+          const name =
+            `${c.first_name || ""} ${c.last_name || ""}`.trim() ||
+            c.name ||
+            c.NAME ||
+            c.client_name ||
+            "";
+          return (
+            name === selectedClient ||
+            String(c.id) === String(selectedClient) ||
+            String(c.client_id) === String(selectedClient)
+          );
+        });
+        return match?.client_id || match?.id || match?.clientId || null;
+      })();
 
       const url = selectedClientId
         ? `/client-modules.php?client_id=${encodeURIComponent(String(selectedClientId))}`
@@ -123,21 +132,23 @@ export default function ProgramsList() {
     const pendingClient = localStorage.getItem("pendingClientForMasterData");
     const pendingAction = localStorage.getItem("pendingAction");
     const pendingType = localStorage.getItem("pendingMasterDataType");
-    
-    if (pendingClient && pendingAction === "add" && pendingType === "programs") {
-      try {
-        // Just open the add modal - client will be pre-selected in the modal
+
+    if (!pendingClient || pendingType !== "programs") return;
+
+    try {
+      const client = JSON.parse(pendingClient);
+      if (pendingAction === "filter") {
+        setViewMode("client");
+        setSelectedClient(client.name || "all");
+      } else if (pendingAction === "add") {
         setIsAddModalOpen(true);
-        // Clear localStorage
-        localStorage.removeItem("pendingClientForMasterData");
-        localStorage.removeItem("pendingAction");
-        localStorage.removeItem("pendingMasterDataType");
-      } catch (err) {
-        console.error("Error parsing pending client info:", err);
-        localStorage.removeItem("pendingClientForMasterData");
-        localStorage.removeItem("pendingAction");
-        localStorage.removeItem("pendingMasterDataType");
       }
+    } catch (err) {
+      console.error("Error parsing pending client info:", err);
+    } finally {
+      localStorage.removeItem("pendingClientForMasterData");
+      localStorage.removeItem("pendingAction");
+      localStorage.removeItem("pendingMasterDataType");
     }
   }, []);
 
@@ -365,33 +376,36 @@ export default function ProgramsList() {
   };
 
 
-  const handleDeleteProgram = async () => {
+  const handleArchiveProgram = async () => {
     const program = programToDelete;
     if (!program) return;
     const isClientProgram = program.type === "client";
     const programId = program.rawId || program.id;
+    const willArchive = !program.archived;
     try {
+      const body = isClientProgram
+        ? {
+            client_id: program.client_id,
+            programId,
+            archived: willArchive ? 1 : 0,
+            status: willArchive ? "Inactive" : "Active",
+          }
+        : {
+            programId,
+            archived: willArchive ? 1 : 0,
+            status: willArchive ? "Inactive" : "Active",
+          };
       const res = await mahaverseFetch(
         isClientProgram ? "/client-modules.php" : "/programs.php",
         {
-          method: "DELETE",
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            isClientProgram
-              ? {
-                  client_id: program.client_id,
-                  programId,
-                }
-              : {
-                  programId,
-                  delete: true,
-                }
-          ),
-        }
+          body: JSON.stringify(body),
+        },
       );
       const result = await res.json().catch(() => ({}));
       if (res.ok && result.success) {
-        toast.success("Program deleted!");
+        toast.success(willArchive ? "Program archived!" : "Program restored!");
         dispatch(fetchPrograms());
         if (viewMode === "client" || viewMode === "all") {
           fetchClientSpecificData();
@@ -399,7 +413,7 @@ export default function ProgramsList() {
         setIsDeleteModalOpen(false);
         setProgramToDelete(null);
       } else {
-        toast.error(result.message || "Delete failed");
+        toast.error(result.message || "Archive failed");
       }
     } catch (err) {
       toast.error("Network error");
@@ -436,10 +450,18 @@ export default function ProgramsList() {
           setIsDeleteModalOpen(false);
           setProgramToDelete(null);
         }}
-        onConfirm={handleDeleteProgram}
+        onConfirm={handleArchiveProgram}
         entityType="program"
         moduleName={programToDelete?.name || ""}
         loading={false}
+        variant="archive"
+        title={programToDelete?.archived ? "Restore Program?" : undefined}
+        message={
+          programToDelete?.archived
+            ? `Restore "${programToDelete?.name || ""}"? It will appear in the active list again.`
+            : undefined
+        }
+        confirmLabel={programToDelete?.archived ? "Restore" : undefined}
       />
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -643,13 +665,22 @@ export default function ProgramsList() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="text-red-600 border-red-300"
+                            className={
+                              program.archived
+                                ? "text-green-600 border-green-300"
+                                : "text-amber-600 border-amber-300"
+                            }
+                            title={program.archived ? "Restore" : "Archive"}
                             onClick={() => {
                               setProgramToDelete(program);
                               setIsDeleteModalOpen(true);
                             }}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            {program.archived ? (
+                              <ArchiveRestore className="h-4 w-4" />
+                            ) : (
+                              <Archive className="h-4 w-4" />
+                            )}
                           </Button>
                         </div>
                       </TableCell>

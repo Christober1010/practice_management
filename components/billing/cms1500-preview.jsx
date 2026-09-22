@@ -103,8 +103,8 @@ export default function Cms1500Preview({ claims = [] }) {
             )}
             <p className="text-[11px] text-slate-500 mt-2">
               {claims.length > 1
-                ? "Scroll in the preview to see each form in order (matches your selected sessions)."
-                : "Each claim uses one CMS-1500 (page 1 only)."}
+                ? "Scroll in the preview to see each claim form in order. Sessions on the same DOS + client + authorization share one claim."
+                : "Sessions on the same DOS + client + authorization share one CMS-1500. Extra lines beyond 6 continue on additional pages."}
             </p>
           </CardContent>
         </div>

@@ -21,6 +21,7 @@ export default function DataCollectionPanel({
   setSessionNotes,
   onPersistSessionNotes,
   scrollContainerRef,
+  readOnly = false,
 }) {
   const [activeSection, setActiveSection] = useState(DATA_SECTIONS[0].id);
 
@@ -102,7 +103,12 @@ export default function DataCollectionPanel({
         </div>
       </nav>
 
-      <div className="space-y-6">
+      <div
+        className={cn(
+          "space-y-6",
+          readOnly && "pointer-events-none select-none opacity-90"
+        )}
+      >
         <div
           id="dc-section-skill-acquisition"
           data-section="skill-acquisition"
@@ -119,7 +125,7 @@ export default function DataCollectionPanel({
             clientTargets={clientTargets}
             sessionNotes={sessionNotes}
             setSessionNotes={setSessionNotes}
-            onPersistSessionNotes={onPersistSessionNotes}
+            onPersistSessionNotes={readOnly ? undefined : onPersistSessionNotes}
           />
         </div>
 
@@ -131,7 +137,7 @@ export default function DataCollectionPanel({
           <BehaviorReductionPanel
             sessionNotes={sessionNotes}
             setSessionNotes={setSessionNotes}
-            onPersistSessionNotes={onPersistSessionNotes}
+            onPersistSessionNotes={readOnly ? undefined : onPersistSessionNotes}
           />
         </div>
       </div>

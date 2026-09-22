@@ -554,6 +554,89 @@ function build_claim_id($sessionId, $startUtc = null): string
     return 'CLM' . (int)$sessionId;
 }
 
+function session_authorization_group_key(mysqli $conn, array $row): string
+{
+    $raw = trim((string)($row['auth_code'] ?? ''));
+    if ($raw !== '') {
+        if (preg_match('/\s-\s([^-]+)-\d{2}\/\d{2}\/\d{4}/', $raw, $m)) {
+            $n = trim($m[1]);
+            if ($n !== '' && $n !== '—') {
+                return strtoupper($n);
+            }
+        }
+        if (preg_match('/^([^-]+)-\d{2}\/\d{2}\/\d{4}/', $raw, $m)) {
+            $n = trim($m[1]);
+            if ($n !== '' && $n !== '—') {
+                return strtoupper($n);
+            }
+        }
+    }
+    $authId = trim((string)($row['auth_id'] ?? ''));
+    if ($authId !== '') {
+        $match = client_auth_identifier_where($conn, '');
+        $sql = "SELECT authorization_number FROM client_auth WHERE {$match['clause']} LIMIT 1";
+        $stmt = $conn->prepare($sql);
+        if ($stmt) {
+            $aid = (int)$authId;
+            if (!empty($match['dual'])) {
+                $stmt->bind_param('ii', $aid, $aid);
+            } else {
+                $stmt->bind_param('i', $aid);
+            }
+            $stmt->execute();
+            $authRow = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+            $n = trim((string)($authRow['authorization_number'] ?? ''));
+            if ($n !== '') {
+                return strtoupper($n);
+            }
+        }
+        return 'AUTHID:' . $authId;
+    }
+    return $raw !== '' ? strtoupper($raw) : '';
+}
+
+function find_unsubmitted_group_claim_id(mysqli $conn, array $row, int $excludeSessionId): string
+{
+    $clientId = trim((string)($row['client_id'] ?? ''));
+    $dos = substr(trim((string)($row['start_utc'] ?? '')), 0, 10);
+    $authKey = session_authorization_group_key($conn, $row);
+    if ($clientId === '' || $dos === '' || $authKey === '') {
+        return '';
+    }
+    $stmt = $conn->prepare(
+        "SELECT session_id, claim_id, claim_status, auth_id, auth_code
+         FROM sessions
+         WHERE client_id = ?
+           AND LEFT(TRIM(IFNULL(start_utc,'')), 10) = ?
+           AND TRIM(IFNULL(claim_id,'')) <> ''
+           AND session_id <> ?
+         ORDER BY session_id ASC"
+    );
+    if (!$stmt) {
+        return '';
+    }
+    $stmt->bind_param('ssi', $clientId, $dos, $excludeSessionId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $found = '';
+    while ($res && ($sibling = $res->fetch_assoc())) {
+        if (claim_status_is_submitted($sibling['claim_status'] ?? '')) {
+            continue;
+        }
+        if (session_authorization_group_key($conn, $sibling) !== $authKey) {
+            continue;
+        }
+        $cid = trim((string)($sibling['claim_id'] ?? ''));
+        if ($cid !== '') {
+            $found = $cid;
+            break;
+        }
+    }
+    $stmt->close();
+    return $found;
+}
+
 function claim_status_is_submitted($status): bool
 {
     return stripos(trim((string) $status), 'submitted') !== false;
@@ -589,7 +672,7 @@ function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = nu
     }
 
     $stmt = $conn->prepare(
-        "SELECT claim_id, claim_status, provider_id, service_code, auth_code, auth_id, client_id
+        "SELECT claim_id, claim_status, provider_id, service_code, auth_code, auth_id, client_id, start_utc
          FROM sessions WHERE session_id = ? LIMIT 1"
     );
     if (!$stmt) {
@@ -664,7 +747,13 @@ function ensure_session_claim_ready(mysqli $conn, int $sessionId, $startUtc = nu
     } else {
         $nextClaimId = $existingClaimId;
         $nextClaimStatus = $existingClaimStatus;
-        if ($nextClaimId === '') {
+        if ($startUtc && trim((string)($row['start_utc'] ?? '')) === '') {
+            $row['start_utc'] = $startUtc;
+        }
+        $groupClaimId = find_unsubmitted_group_claim_id($conn, $row, $sessionId);
+        if ($groupClaimId !== '') {
+            $nextClaimId = $groupClaimId;
+        } elseif ($nextClaimId === '') {
             $nextClaimId = build_claim_id($sessionId, $startUtc);
         }
         if ($nextClaimStatus === '' || claim_status_is_not_applicable($nextClaimStatus)) {

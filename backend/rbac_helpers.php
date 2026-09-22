@@ -10,7 +10,7 @@ if (!function_exists('rbac_mahaverse_perm_keys')) {
             'nav.dashboard','nav.scheduling','nav.clients','nav.staff','nav.users','nav.master_data','nav.manage_data','nav.reports','nav.launchpad','nav.billing',
             'view.dashboard','view.scheduling','view.clients','view.staff','view.users','view.master_data','view.manage_data','view.reports','view.launchpad','view.billing',
             'view.domains','view.programs','view.targets','view.prompts','view.behavior_categories','view.behaviors','view.mileage_rate','view.provider','view.provider_service_code','view.service_code','view.diagnosis','view.locations','view.facility_types','view.treatment_types','view.document_types',
-            'view.reports_session_log','view.reports_session_log_billing','view.reports_session_import','view.reports_insurance_utilization','view.reports_mileage',
+            'view.reports_session_log','view.reports_session_log_billing','view.reports_session_import','view.reports_session_notes','view.reports_data_collection','view.reports_insurance_utilization','view.reports_mileage',
             'clients.read','clients.write','staff.read','staff.write','users.read','users.write','scheduling.read','scheduling.write','reports.read','reports.write','master_data.read','master_data.write','manage_data.read','manage_data.write','billing.read','billing.write','billing.sftp',
             'scheduling.session.create','scheduling.session.create_past','scheduling.session.view','scheduling.session.notes','scheduling.session.update','scheduling.session.delete',
             'clients.create','clients.view','clients.update','clients.archive',

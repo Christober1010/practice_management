@@ -643,6 +643,193 @@ function cms1500_session_is_ready_to_bill(array $session): bool
     return $claim !== '' && strpos($claim, 'ready') !== false;
 }
 
+function cms1500_session_claim_is_submitted(array $session): bool
+{
+    return stripos(trim((string)($session['claim_status'] ?? '')), 'submitted') !== false;
+}
+
+function cms1500_session_dos_ymd(array $session): string
+{
+    return substr(trim((string)($session['start_utc'] ?? '')), 0, 10);
+}
+
+/**
+ * Group key uses authorization number (Box 23), not CPT / auth_id.
+ * Same-day 97153 + 97155 + 97156 under one payer auth share one claim.
+ */
+function cms1500_session_auth_group_key(mysqli $conn, array $session): string
+{
+    $fromCode = cms1500_prior_auth_from_session_auth_code($session['auth_code'] ?? '');
+    if ($fromCode !== '') {
+        return strtoupper($fromCode);
+    }
+    if (!empty($session['auth_id'])) {
+        $info = cms1500_fetch_auth_info($conn, $session['auth_id']);
+        $an = trim((string)($info['authorization_number'] ?? ''));
+        if ($an !== '') {
+            return strtoupper($an);
+        }
+        return 'AUTHID:' . trim((string)$session['auth_id']);
+    }
+    return strtoupper(trim((string)($session['auth_code'] ?? '')));
+}
+
+function cms1500_session_claim_group_key(mysqli $conn, array $session): string
+{
+    $client = trim((string)($session['client_id'] ?? ''));
+    $dos = cms1500_session_dos_ymd($session);
+    $auth = cms1500_session_auth_group_key($conn, $session);
+    return $client . '|' . $dos . '|' . $auth;
+}
+
+function cms1500_assert_sessions_same_claim_group(mysqli $conn, array $sessions): void
+{
+    if (count($sessions) <= 1) {
+        return;
+    }
+    $key = cms1500_session_claim_group_key($conn, $sessions[0]);
+    foreach ($sessions as $session) {
+        if (cms1500_session_claim_group_key($conn, $session) !== $key) {
+            throw new InvalidArgumentException(
+                'All sessions on one claim must share the same date of service, client, and authorization number.'
+            );
+        }
+    }
+}
+
+/**
+ * @param list<array<string,mixed>> $sessions
+ * @return list<list<array<string,mixed>>>
+ */
+function cms1500_group_sessions_for_claims(mysqli $conn, array $sessions): array
+{
+    $groups = [];
+    foreach ($sessions as $session) {
+        $key = cms1500_session_claim_group_key($conn, $session);
+        if (!isset($groups[$key])) {
+            $groups[$key] = [];
+        }
+        $groups[$key][] = $session;
+    }
+    return array_values($groups);
+}
+
+function cms1500_canonical_claim_id(array $sessions): string
+{
+    if ($sessions === []) {
+        return '';
+    }
+    $byId = $sessions;
+    usort($byId, function ($a, $b) {
+        return ((int)($a['session_id'] ?? 0)) <=> ((int)($b['session_id'] ?? 0));
+    });
+    foreach ($byId as $session) {
+        $claimId = trim((string)($session['claim_id'] ?? ''));
+        if ($claimId !== '') {
+            return $claimId;
+        }
+    }
+    return 'CLM' . (int)($byId[0]['session_id'] ?? 0);
+}
+
+function cms1500_unify_unsubmitted_claim_ids(mysqli $conn, array $sessions, string $claimId): void
+{
+    $claimId = trim($claimId);
+    if ($claimId === '' || $sessions === []) {
+        return;
+    }
+    $ids = [];
+    foreach ($sessions as $session) {
+        if (cms1500_session_claim_is_submitted($session)) {
+            continue;
+        }
+        $sid = (int)($session['session_id'] ?? 0);
+        if ($sid > 0) {
+            $ids[] = $sid;
+        }
+    }
+    $ids = array_values(array_unique($ids));
+    if ($ids === []) {
+        return;
+    }
+    $ph = cms1500_placeholders(count($ids));
+    $sql = "UPDATE sessions SET claim_id = ? WHERE session_id IN ($ph)";
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return;
+    }
+    $types = 's' . str_repeat('i', count($ids));
+    $params = array_merge([$claimId], $ids);
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $stmt->close();
+}
+
+/**
+ * Roll up same-day claim lines that share procedure + modifiers + POS into one line.
+ * Units and charges are summed (e.g. 97153 × 8 + 97153 × 6 → 97153 × 14).
+ *
+ * @param list<array<string,mixed>> $lines
+ * @return list<array<string,mixed>>
+ */
+function cms1500_merge_lines_by_service_code(array $lines): array
+{
+    if (count($lines) <= 1) {
+        return $lines;
+    }
+    $merged = [];
+    foreach ($lines as $line) {
+        $mods = array_values(array_filter(array_map('strval', (array)($line['modifiers'] ?? []))));
+        sort($mods);
+        $key = implode('|', [
+            strtoupper(trim((string)($line['procedure_code'] ?? ''))),
+            implode(':', $mods),
+            trim((string)($line['place_of_service'] ?? '')),
+            substr(trim((string)($line['dos_from'] ?? '')), 0, 10),
+        ]);
+        $sessionId = null;
+        if (is_array($line['source'] ?? null) && isset($line['source']['id'])) {
+            $sessionId = (int)$line['source']['id'];
+        }
+        if (!isset($merged[$key])) {
+            $copy = $line;
+            $copy['source'] = [
+                'type' => 'merged_sessions',
+                'ids' => $sessionId ? [$sessionId] : [],
+            ];
+            $merged[$key] = $copy;
+            continue;
+        }
+        $units = $merged[$key]['units'];
+        $addUnits = $line['units'];
+        if ($units !== null || $addUnits !== null) {
+            $merged[$key]['units'] = round((float)($units ?? 0) + (float)($addUnits ?? 0), 2);
+        }
+        $charges = $merged[$key]['charges'];
+        $addCharges = $line['charges'];
+        if ($charges !== null || $addCharges !== null) {
+            $merged[$key]['charges'] = round((float)($charges ?? 0) + (float)($addCharges ?? 0), 2);
+        }
+        $dosTo = substr(trim((string)($line['dos_to'] ?? '')), 0, 10);
+        $curTo = substr(trim((string)($merged[$key]['dos_to'] ?? '')), 0, 10);
+        if ($dosTo !== '' && ($curTo === '' || $dosTo > $curTo)) {
+            $merged[$key]['dos_to'] = $dosTo;
+        }
+        if ($sessionId) {
+            $merged[$key]['source']['ids'][] = $sessionId;
+        }
+        if (empty($merged[$key]['rendering_provider_npi']) && !empty($line['rendering_provider_npi'])) {
+            $merged[$key]['rendering_provider_name'] = $line['rendering_provider_name']
+                ?? ($merged[$key]['rendering_provider_name'] ?? '');
+            $merged[$key]['rendering_provider_npi'] = $line['rendering_provider_npi'];
+            if (!empty($line['rendering_provider_id_qualifier'])) {
+                $merged[$key]['rendering_provider_id_qualifier'] = $line['rendering_provider_id_qualifier'];
+            }
+        }
+    }
+    return array_values($merged);
+}
+
 function cms1500_resolve_insurance_id_for_session(mysqli $conn, array $session, int $overrideInsuranceId): int
 {
     if ($overrideInsuranceId > 0) {
@@ -775,6 +962,8 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
         }
     }
 
+    cms1500_assert_sessions_same_claim_group($conn, $sessions);
+
     $session = $sessions[0];
     $clientId = $clientIdInput !== '' ? $clientIdInput : trim((string)($session['client_id'] ?? ''));
     if ($clientId === '') {
@@ -783,6 +972,20 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
     if ($clientIdInput !== '' && $clientIdInput !== trim((string)($session['client_id'] ?? ''))) {
         throw new InvalidArgumentException('client_id does not match the session');
     }
+    foreach ($sessions as $s) {
+        if (trim((string)($s['client_id'] ?? '')) !== $clientId) {
+            throw new InvalidArgumentException('All sessions on one claim must belong to the same client');
+        }
+    }
+
+    $canonicalClaimId = cms1500_canonical_claim_id($sessions);
+    cms1500_unify_unsubmitted_claim_ids($conn, $sessions, $canonicalClaimId);
+    foreach ($sessions as &$sUnify) {
+        if (!cms1500_session_claim_is_submitted($sUnify)) {
+            $sUnify['claim_id'] = $canonicalClaimId;
+        }
+    }
+    unset($sUnify);
 
     $insuranceId = cms1500_resolve_insurance_id_for_session($conn, $session, $insuranceIdOverride);
     if ($insuranceId <= 0) {
@@ -905,6 +1108,13 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
                 'id' => (int)$s['session_id'],
             ],
         ];
+    }
+
+    $lines = cms1500_merge_lines_by_service_code($lines);
+
+    if (count($lines) > 6) {
+        $warnings[] = 'This claim has ' . count($lines)
+            . ' service lines. Paper CMS-1500 page 1 holds 6; extra lines continue on additional form pages. Electronic 837 keeps one claim.';
     }
 
     $firstSession = $sessions[0];
@@ -1030,9 +1240,11 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
             'name' => $signingProviderName,
             'npi' => cms1500_normalize_npi($signingProviderNpi),
         ],
-        'patient_account_number' => trim((string)($firstSession['claim_id'] ?? '')) !== ''
-            ? trim((string)$firstSession['claim_id'])
-            : ('CLM' . (int)($firstSession['session_id'] ?? 0)),
+        'patient_account_number' => $canonicalClaimId !== ''
+            ? $canonicalClaimId
+            : (trim((string)($firstSession['claim_id'] ?? '')) !== ''
+                ? trim((string)$firstSession['claim_id'])
+                : ('CLM' . (int)($firstSession['session_id'] ?? 0))),
         'lines' => $lines,
         'amounts' => [
             'total_units' => round($totalUnits, 2),

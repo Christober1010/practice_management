@@ -8,6 +8,8 @@ import ScheduleTrackerImport from "./schedule-tracker-import";
 import SessionLogGrid from "./session-log-grid";
 import InsuranceUtilizationView from "./insurance-utilization-view";
 import MileageView from "./mileage-view";
+import SessionNotesReportView from "./session-notes-report-view";
+import DataCollectionReportView from "./data-collection-report-view";
 
 export default function ReportsView({ initialTab = "sessionImport", userRole = null }) {
   const reloadGridRef = useRef(null);
@@ -16,6 +18,8 @@ export default function ReportsView({ initialTab = "sessionImport", userRole = n
   const isSessionLog = initialTab === "sessionLog";
   const isSessionLogBilling = initialTab === "sessionLogBilling";
   const isMileage = initialTab === "mileage";
+  const isSessionNotes = initialTab === "sessionNotes";
+  const isDataCollection = initialTab === "dataCollection";
 
   const handleReload = useCallback(() => {
     reloadGridRef.current?.();
@@ -25,15 +29,19 @@ export default function ReportsView({ initialTab = "sessionImport", userRole = n
     reloadGridRef.current = reload;
   }, []);
 
-  const title = isMileage
-    ? "Mileage Reimbursement"
-    : isInsuranceView
-      ? "Insurance Utilization"
-      : isSessionLogBilling
-        ? "Session Log-Billing"
-        : isSessionLog
-          ? "Session Log"
-          : "Session Import";
+  const title = isDataCollection
+    ? "Data Collection Report"
+    : isSessionNotes
+      ? "Session Notes by Client and Appointment Date"
+      : isMileage
+        ? "Mileage Reimbursement"
+        : isInsuranceView
+          ? "Insurance Utilization"
+          : isSessionLogBilling
+            ? "Session Log-Billing"
+            : isSessionLog
+              ? "Session Log"
+              : "Session Import";
 
   return (
     <div className="space-y-8">
@@ -43,7 +51,11 @@ export default function ReportsView({ initialTab = "sessionImport", userRole = n
         </div>
       </div>
 
-      {isMileage ? (
+      {isDataCollection ? (
+        <DataCollectionReportView />
+      ) : isSessionNotes ? (
+        <SessionNotesReportView />
+      ) : isMileage ? (
         <MileageView userRole={userRole} />
       ) : isInsuranceView ? (
         <InsuranceUtilizationView />

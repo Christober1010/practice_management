@@ -353,6 +353,25 @@ function handlePost($conn, $input)
         return;
     }
 
+    // TARGET / ACTIVITY ARCHIVE/RESTORE
+    if (isset($input['activityId']) && isset($input['archived'])) {
+        $activityId = $conn->real_escape_string($input['activityId']);
+        $archived = (int)$input['archived'];
+        $status = $conn->real_escape_string($input['status'] ?? ($archived ? 'Inactive' : 'Active'));
+
+        $query = "UPDATE master_targets
+              SET archived = $archived, status = '$status'
+              WHERE id = '$activityId'";
+
+        if ($conn->query($query)) {
+            echo json_encode(['success' => true, 'message' => 'Target updated']);
+        } else {
+            http_response_code(500);
+            echo json_encode(['success' => false, 'message' => $conn->error]);
+        }
+        return;
+    }
+
     if (isset($input['modules']) || isset($input['domains']) || isset($input['programs']) || isset($input['activities'])) {
         $conn->begin_transaction();
 

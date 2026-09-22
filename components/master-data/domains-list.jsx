@@ -27,10 +27,8 @@ import {
   Layers,
   Plus,
   Edit,
-  Trash2,
   Archive,
   ArchiveRestore,
-  MoreVertical,
   BookOpen,
   Users,
 } from "lucide-react";
@@ -76,13 +74,7 @@ export default function DomainsList() {
   const fetchClientData = async () => {
     try {
       setLoadingClientData(true);
-      const selectedClientObj =
-        selectedClient === "all"
-          ? null
-          : clients.find((c) => String(c?.NAME || c?.name || "").trim() === selectedClient);
-
-      const selectedClientId =
-        selectedClientObj?.client_id || selectedClientObj?.id || selectedClientObj?.clientId || null;
+      const selectedClientId = resolveSelectedClientId();
 
       const url = selectedClientId
         ? `/client-modules.php?client_id=${encodeURIComponent(String(selectedClientId))}`
@@ -115,23 +107,43 @@ export default function DomainsList() {
     const pendingClient = localStorage.getItem("pendingClientForMasterData");
     const pendingAction = localStorage.getItem("pendingAction");
     const pendingType = localStorage.getItem("pendingMasterDataType");
-    
-    if (pendingClient && pendingAction === "add" && pendingType === "domains") {
-      try {
-        // Just open the add modal - client will be pre-selected in the modal
+
+    if (!pendingClient || pendingType !== "domains") return;
+
+    try {
+      const client = JSON.parse(pendingClient);
+      if (pendingAction === "filter") {
+        setViewMode("client");
+        setSelectedClient(client.name || "all");
+      } else if (pendingAction === "add") {
         setIsAddModalOpen(true);
-        // Clear localStorage
-        localStorage.removeItem("pendingClientForMasterData");
-        localStorage.removeItem("pendingAction");
-        localStorage.removeItem("pendingMasterDataType");
-      } catch (err) {
-        console.error("Error parsing pending client info:", err);
-        localStorage.removeItem("pendingClientForMasterData");
-        localStorage.removeItem("pendingAction");
-        localStorage.removeItem("pendingMasterDataType");
       }
+    } catch (err) {
+      console.error("Error parsing pending client info:", err);
+    } finally {
+      localStorage.removeItem("pendingClientForMasterData");
+      localStorage.removeItem("pendingAction");
+      localStorage.removeItem("pendingMasterDataType");
     }
   }, []);
+
+  const clientDisplayName = (c) =>
+    `${c.first_name || ""} ${c.last_name || ""}`.trim() ||
+    c.name ||
+    c.NAME ||
+    c.client_name ||
+    "";
+
+  const resolveSelectedClientId = () => {
+    if (selectedClient === "all") return null;
+    const match = clients.find(
+      (c) =>
+        clientDisplayName(c) === selectedClient ||
+        String(c.id) === String(selectedClient) ||
+        String(c.client_id) === String(selectedClient),
+    );
+    return match?.client_id || match?.id || match?.clientId || null;
+  };
 
   const allModules = useMemo(
     () =>
@@ -285,33 +297,36 @@ export default function DomainsList() {
     }
   };
 
-  const handleDeleteDomain = async () => {
+  const handleArchiveDomain = async () => {
     const domain = domainToDelete;
     if (!domain) return;
     const isClientDomain = domain.type === "client";
     const domainId = domain.rawId || domain.id;
+    const willArchive = !domain.archived;
     try {
+      const body = isClientDomain
+        ? {
+            client_id: domain.client_id,
+            domainId,
+            archived: willArchive ? 1 : 0,
+            status: willArchive ? "Inactive" : "Active",
+          }
+        : {
+            domainId,
+            archived: willArchive ? 1 : 0,
+            status: willArchive ? "Inactive" : "Active",
+          };
       const res = await mahaverseFetch(
         isClientDomain ? "/client-modules.php" : "/programs.php",
         {
-          method: "DELETE",
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            isClientDomain
-              ? {
-                  client_id: domain.client_id,
-                  domainId,
-                }
-              : {
-                  domainId,
-                  delete: true,
-                }
-          ),
-        }
+          body: JSON.stringify(body),
+        },
       );
       const result = await res.json().catch(() => ({}));
       if (res.ok && result.success) {
-        toast.success("Domain deleted!");
+        toast.success(willArchive ? "Domain archived!" : "Domain restored!");
         dispatch(fetchPrograms());
         if (viewMode === "client" || viewMode === "all") {
           await fetchClientData();
@@ -319,7 +334,7 @@ export default function DomainsList() {
         setIsDeleteModalOpen(false);
         setDomainToDelete(null);
       } else {
-        toast.error(result.message || "Delete failed");
+        toast.error(result.message || "Archive failed");
       }
     } catch (err) {
       toast.error("Network error");
@@ -354,10 +369,18 @@ export default function DomainsList() {
           setIsDeleteModalOpen(false);
           setDomainToDelete(null);
         }}
-        onConfirm={handleDeleteDomain}
+        onConfirm={handleArchiveDomain}
         entityType="domain"
         moduleName={domainToDelete?.name || ""}
         loading={false}
+        variant="archive"
+        title={domainToDelete?.archived ? "Restore Domain?" : undefined}
+        message={
+          domainToDelete?.archived
+            ? `Restore "${domainToDelete?.name || ""}"? It will appear in the active list again.`
+            : undefined
+        }
+        confirmLabel={domainToDelete?.archived ? "Restore" : undefined}
       />
 
       {/* Header */}
@@ -564,13 +587,22 @@ export default function DomainsList() {
                           <Button
                             variant="outline"
                             size="sm"
-                            className="text-red-600 border-red-300"
+                            className={
+                              domain.archived
+                                ? "text-green-600 border-green-300"
+                                : "text-amber-600 border-amber-300"
+                            }
+                            title={domain.archived ? "Restore" : "Archive"}
                             onClick={() => {
                               setDomainToDelete(domain);
                               setIsDeleteModalOpen(true);
                             }}
                           >
-                            <Trash2 className="h-4 w-4" />
+                            {domain.archived ? (
+                              <ArchiveRestore className="h-4 w-4" />
+                            ) : (
+                              <Archive className="h-4 w-4" />
+                            )}
                           </Button>
                         </div>
                       </TableCell>

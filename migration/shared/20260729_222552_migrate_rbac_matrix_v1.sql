@@ -64,7 +64,10 @@ INSERT INTO rbac_permissions (perm_key, label, perm_group, app_scope, sort_order
 ('manage_data.diagnosis', 'Manage data: Diagnosis codes', 'mahaverse_action', 'mahaverse', 534),
 ('view.reports_session_log', 'Reports: Session Log', 'mahaverse_view', 'mahaverse', 181),
 ('view.reports_session_import', 'Reports: Session Import', 'mahaverse_view', 'mahaverse', 182),
-('view.reports_insurance_utilization', 'Reports: Insurance Utilization', 'mahaverse_view', 'mahaverse', 183)
+('view.reports_insurance_utilization', 'Reports: Insurance Utilization', 'mahaverse_view', 'mahaverse', 183),
+('view.reports_mileage', 'Reports: Mileage', 'mahaverse_view', 'mahaverse', 184),
+('view.reports_session_notes', 'Reports: Session Notes', 'mahaverse_view', 'mahaverse', 185),
+('view.reports_data_collection', 'Reports: Data Collection', 'mahaverse_view', 'mahaverse', 186)
 ON DUPLICATE KEY UPDATE label = VALUES(label), perm_group = VALUES(perm_group), sort_order = VALUES(sort_order);
 
 -- 4) Default matrix-aligned grants (adjust after run via Admin Role Access UI)

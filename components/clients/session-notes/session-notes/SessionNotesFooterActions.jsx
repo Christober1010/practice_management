@@ -11,10 +11,11 @@ export default function SessionNotesFooterActions({
   isFutureSessionDate = false,
   futureCompleteMessage = "",
   className,
+  readOnly = false,
 }) {
   return (
     <div className={cn("space-y-3 pt-4 border-t", className)}>
-      {isFutureSessionDate && futureCompleteMessage ? (
+      {!readOnly && isFutureSessionDate && futureCompleteMessage ? (
         <p
           className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2"
           role="status"
@@ -24,24 +25,28 @@ export default function SessionNotesFooterActions({
       ) : null}
       <div className="flex justify-end gap-2 flex-wrap">
         <Button variant="outline" onClick={onClose}>
-          CANCEL
+          {readOnly ? "CLOSE" : "CANCEL"}
         </Button>
-        <Button
-          variant="outline"
-          className="border-teal-600 text-teal-700 hover:bg-teal-50"
-          onClick={onSave}
-        >
-          SAVE
-        </Button>
-        <Button
-          onClick={onComplete}
-          disabled={isFutureSessionDate}
-          title={isFutureSessionDate ? futureCompleteMessage : undefined}
-          className="bg-teal-600 hover:bg-teal-700 disabled:opacity-50"
-        >
-          <CheckCircle className="h-4 w-4 mr-2" />
-          COMPLETE
-        </Button>
+        {!readOnly ? (
+          <>
+            <Button
+              variant="outline"
+              className="border-teal-600 text-teal-700 hover:bg-teal-50"
+              onClick={onSave}
+            >
+              SAVE
+            </Button>
+            <Button
+              onClick={onComplete}
+              disabled={isFutureSessionDate}
+              title={isFutureSessionDate ? futureCompleteMessage : undefined}
+              className="bg-teal-600 hover:bg-teal-700 disabled:opacity-50"
+            >
+              <CheckCircle className="h-4 w-4 mr-2" />
+              COMPLETE
+            </Button>
+          </>
+        ) : null}
       </div>
     </div>
   );

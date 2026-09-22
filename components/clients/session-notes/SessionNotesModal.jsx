@@ -85,6 +85,7 @@ export default function SessionNotesModal({
   linkedSessionId = null,
   onSessionBillingFinalized,
   initialTab = "data-collection",
+  readOnly = false,
 }) {
   // Shared state (used across panels)
   const [loading, setLoading] = useState(false);
@@ -353,6 +354,11 @@ export default function SessionNotesModal({
     completeSession = false,
     sessionNotesOverride = null,
   } = {}) => {
+    if (readOnly) {
+      const msg = "Session notes are view-only";
+      if (!silent) toast.error(msg);
+      throw new Error(msg);
+    }
     try {
       if (!clientId) {
         const msg = "Missing client ID";
@@ -401,6 +407,10 @@ export default function SessionNotesModal({
   };
 
   const handleComplete = async () => {
+    if (readOnly) {
+      toast.error("Session notes are view-only");
+      return;
+    }
     try {
       if (isFutureSessionDate) {
         toast.error(FUTURE_SESSION_COMPLETE_MESSAGE);
@@ -467,9 +477,14 @@ export default function SessionNotesModal({
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <DialogTitle className="flex items-center gap-2 text-xl">
                   <BookOpen className="h-5 w-5 shrink-0 text-teal-600" />
-                  Session Notes
+                  {readOnly ? "View Session Notes" : "Session Notes"}
                 </DialogTitle>
                 <div className="flex flex-wrap items-center gap-2">
+                  {readOnly ? (
+                    <Badge variant="outline" className="font-normal text-slate-600">
+                      View only
+                    </Badge>
+                  ) : null}
                   <Badge variant="secondary" className="font-normal">
                     {clientDisplayName}
                   </Badge>
@@ -482,9 +497,13 @@ export default function SessionNotesModal({
                 </div>
               </div>
               <p className="text-sm text-muted-foreground">
-                {activeTab === "data-collection"
-                  ? "Record skill acquisition and behaviors for this session."
-                  : "Complete SOAP notes, documentation, and signatures."}
+                {readOnly
+                  ? activeTab === "data-collection"
+                    ? "Review skill acquisition and behaviors for this session."
+                    : "Review SOAP notes, documentation, and signatures."
+                  : activeTab === "data-collection"
+                    ? "Record skill acquisition and behaviors for this session."
+                    : "Complete SOAP notes, documentation, and signatures."}
               </p>
             </DialogHeader>
 
@@ -508,10 +527,17 @@ export default function SessionNotesModal({
                 clientTargets={clientTargets}
                 sessionNotes={sessionNotes}
                 setSessionNotes={setSessionNotes}
-                onPersistSessionNotes={(notes) =>
-                  handleSaveSessionNotes({ silent: true, sessionNotesOverride: notes })
+                onPersistSessionNotes={
+                  readOnly
+                    ? undefined
+                    : (notes) =>
+                        handleSaveSessionNotes({
+                          silent: true,
+                          sessionNotesOverride: notes,
+                        })
                 }
                 scrollContainerRef={scrollContainerRef}
+                readOnly={readOnly}
               />
             </TabsContent>
 
@@ -527,6 +553,7 @@ export default function SessionNotesModal({
                 onClose={onClose}
                 isFutureSessionDate={isFutureSessionDate}
                 futureCompleteMessage={FUTURE_SESSION_COMPLETE_MESSAGE}
+                readOnly={readOnly}
               />
             </TabsContent>
           </div>

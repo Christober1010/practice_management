@@ -172,6 +172,10 @@ export default function DashboardLayout({ userRole, onLogout }) {
         return <ReportsView initialTab="sessionLog" userRole={userRole} />;
       case "reportsSessionLogBilling":
         return <ReportsView initialTab="sessionLogBilling" userRole={userRole} />;
+      case "reportsSessionNotes":
+        return <ReportsView initialTab="sessionNotes" userRole={userRole} />;
+      case "reportsDataCollection":
+        return <ReportsView initialTab="dataCollection" userRole={userRole} />;
       case "reportsInsuranceUtilization":
         return <ReportsView initialTab="insuranceUtilization" userRole={userRole} />;
       case "reportsMileage":

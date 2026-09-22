@@ -773,9 +773,10 @@ export default function ClientsView({ userRole }) {
       toast.error("You do not have permission to open that screen.");
       return;
     }
-    // Store client info in localStorage for the master data component to pick up
+    // Store client info so Domains/Programs/Targets lists open filtered to this client
     const clientInfo = {
-      id: client.id,
+      id: client.id || client.client_id,
+      client_id: client.client_id || client.id,
       name:
         `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
         client.name ||
@@ -787,13 +788,33 @@ export default function ClientsView({ userRole }) {
       "pendingClientForMasterData",
       JSON.stringify(clientInfo),
     );
-    localStorage.setItem("pendingAction", "add"); // Indicate we want to add new item
-    localStorage.setItem("pendingMasterDataType", itemId); // Store which type (modules/domains/programs/targets)
+    localStorage.setItem("pendingAction", "filter");
+    localStorage.setItem("pendingMasterDataType", itemId);
 
-    // Navigate to the appropriate master data view using custom event
     localStorage.setItem("currentView", itemId);
     window.dispatchEvent(
       new CustomEvent("navigateToView", { detail: { view: itemId } }),
+    );
+  };
+
+  const handleOpenSessionNotesReport = (client) => {
+    const clientInfo = {
+      id: client.id || client.client_id,
+      client_id: client.client_id || client.id,
+      name:
+        `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
+        client.name ||
+        "Unknown Client",
+    };
+    localStorage.setItem(
+      "pendingReportClientFilter",
+      JSON.stringify(clientInfo),
+    );
+    localStorage.setItem("currentView", "reportsSessionNotes");
+    window.dispatchEvent(
+      new CustomEvent("navigateToView", {
+        detail: { view: "reportsSessionNotes" },
+      }),
     );
   };
 
@@ -1336,10 +1357,9 @@ export default function ClientsView({ userRole }) {
                                       <DropdownMenuSeparator />
                                       {allowSessionNotes && (
                                         <DropdownMenuItem
-                                          onClick={() => {
-                                            setSessionNotesClient(client);
-                                            setIsSessionNotesModalOpen(true);
-                                          }}
+                                          onClick={() =>
+                                            handleOpenSessionNotesReport(client)
+                                          }
                                           className="cursor-pointer"
                                         >
                                           <BookOpen className="h-4 w-4 mr-2" />
@@ -1355,7 +1375,7 @@ export default function ClientsView({ userRole }) {
                                       {allowUpdate && (
                                         <>
                                           <DropdownMenuLabel className="text-xs text-slate-500 font-semibold p-1">
-                                            Data Collection
+                                            Configure
                                           </DropdownMenuLabel>
                                           <DropdownMenuItem
                                             onClick={() => {

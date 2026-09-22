@@ -279,6 +279,85 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
             </Button>
             <Button
               type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const openList = (view) => {
+                  const clientInfo = {
+                    id: clientId,
+                    client_id: clientId,
+                    name: clientName || "Client",
+                  };
+                  localStorage.setItem(
+                    "pendingClientForMasterData",
+                    JSON.stringify(clientInfo),
+                  );
+                  localStorage.setItem("pendingAction", "filter");
+                  localStorage.setItem("pendingMasterDataType", view);
+                  localStorage.setItem("currentView", view);
+                  window.dispatchEvent(
+                    new CustomEvent("navigateToView", { detail: { view } }),
+                  );
+                };
+                openList("domains");
+              }}
+            >
+              Full Domains list
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const clientInfo = {
+                  id: clientId,
+                  client_id: clientId,
+                  name: clientName || "Client",
+                };
+                localStorage.setItem(
+                  "pendingClientForMasterData",
+                  JSON.stringify(clientInfo),
+                );
+                localStorage.setItem("pendingAction", "filter");
+                localStorage.setItem("pendingMasterDataType", "programs");
+                localStorage.setItem("currentView", "programs");
+                window.dispatchEvent(
+                  new CustomEvent("navigateToView", {
+                    detail: { view: "programs" },
+                  }),
+                );
+              }}
+            >
+              Full Programs list
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const clientInfo = {
+                  id: clientId,
+                  client_id: clientId,
+                  name: clientName || "Client",
+                };
+                localStorage.setItem(
+                  "pendingClientForMasterData",
+                  JSON.stringify(clientInfo),
+                );
+                localStorage.setItem("pendingAction", "filter");
+                localStorage.setItem("pendingMasterDataType", "targets");
+                localStorage.setItem("currentView", "targets");
+                window.dispatchEvent(
+                  new CustomEvent("navigateToView", {
+                    detail: { view: "targets" },
+                  }),
+                );
+              }}
+            >
+              Full Targets list
+            </Button>
+            <Button
+              type="button"
               variant="ghost"
               size="sm"
               onClick={() => loadClientPrograms()}
