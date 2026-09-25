@@ -24,7 +24,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   BookOpen,
@@ -36,6 +35,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { localYmd } from "@/lib/session-notes-date";
+import { formatReportDos } from "@/lib/report-dos-format";
 import { sessionIsRenderedOrReadyToBill } from "@/lib/scheduling-session-status";
 import SessionNotesModal from "@/components/clients/session-notes/SessionNotesModal";
 import NewSessionFormModal from "@/components/scheduling/new-session-form-modal";
@@ -183,6 +183,7 @@ export default function SessionNotesReportView({ initialClientId = "" }) {
       const params = new URLSearchParams({
         date_from: dateFrom,
         date_to: dateTo,
+        tz: userTimezone,
       });
       if (clientId && clientId !== "all") params.set("client_id", clientId);
       if (search.trim()) params.set("search", search.trim());
@@ -199,7 +200,7 @@ export default function SessionNotesReportView({ initialClientId = "" }) {
     } finally {
       setLoading(false);
     }
-  }, [clientId, dateFrom, dateTo, search]);
+  }, [clientId, dateFrom, dateTo, search, userTimezone]);
 
   useEffect(() => {
     load();
@@ -368,11 +369,11 @@ export default function SessionNotesReportView({ initialClientId = "" }) {
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-50">
+                  <TableHead>DOS</TableHead>
                   <TableHead>Client</TableHead>
-                  <TableHead>Appointment date</TableHead>
-                  <TableHead>Session</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Updated</TableHead>
+                  <TableHead>Staff</TableHead>
+                  <TableHead>Billing Code</TableHead>
+                  <TableHead>Session ID</TableHead>
                   <TableHead className="text-right w-[220px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -401,30 +402,31 @@ export default function SessionNotesReportView({ initialClientId = "" }) {
                     const hasSession =
                       row.session_id != null &&
                       String(row.session_id).trim() !== "";
+                    const dosLabel =
+                      formatReportDos(
+                        row.dos || row.appointment_date,
+                        row.start_utc || row.appointment_start,
+                        userTimezone
+                      ) ||
+                      row.dos ||
+                      row.appointment_date ||
+                      "—";
                     return (
                       <TableRow key={row.id}>
+                        <TableCell className="whitespace-nowrap">
+                          {dosLabel}
+                        </TableCell>
                         <TableCell className="font-medium">
                           {row.client_name}
                         </TableCell>
-                        <TableCell>{row.appointment_date}</TableCell>
-                        <TableCell className="text-slate-600 text-sm">
-                          {row.session_id || "—"}
+                        <TableCell>
+                          {row.staff || row.provider_name || "—"}
                         </TableCell>
                         <TableCell>
-                          {row.session_status ? (
-                            <Badge variant="secondary">
-                              {row.session_status}
-                            </Badge>
-                          ) : (
-                            "—"
-                          )}
+                          {row.billing_code || row.auth_code || "—"}
                         </TableCell>
-                        <TableCell className="text-sm text-slate-500">
-                          {row.updated_at
-                            ? String(row.updated_at)
-                                .slice(0, 16)
-                                .replace("T", " ")
-                            : "—"}
+                        <TableCell className="text-slate-600 text-sm">
+                          {row.session_id || "—"}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="inline-flex flex-wrap justify-end gap-1">

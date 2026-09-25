@@ -24,6 +24,7 @@ import DomainsList from "@/components/master-data/domains-list";
 import ProgramsList from "@/components/master-data/programs-list";
 import TargetsList from "@/components/master-data/targets-list";
 import PromptsList from "@/components/master-data/prompts-list";
+import MaintenancePeriodsList from "@/components/master-data/maintenance-periods-list";
 import BehaviorCategoriesList from "@/components/master-data/behavior-categories-list";
 import BehaviorsList from "@/components/master-data/behaviors-list";
 import MileageRateView from "@/components/manage-data/mileage-rate-view";
@@ -161,6 +162,8 @@ export default function DashboardLayout({ userRole, onLogout }) {
         return <TargetsList />;
       case "prompts":
         return <PromptsList />;
+      case "maintenancePeriods":
+        return <MaintenancePeriodsList />;
       case "behaviorCategories":
         return <BehaviorCategoriesList />;
       case "behaviors":

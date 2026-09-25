@@ -23,12 +23,18 @@ import toast from "react-hot-toast";
 import {
   getDomainModuleLabel,
   mergeCanonicalDomainModules,
+  resolveDomainModuleId,
 } from "@/lib/domain-module-options";
 import {
   filterMasterDataForClientScope,
   findClientByValue,
+  isArchivedEntity,
   resolveClientRecordId,
 } from "@/lib/master-data-client-scope";
+
+const EMPTY_DOMAINS: any[] = [];
+const EMPTY_MODULES: any[] = [];
+const EMPTY_CLIENTS: any[] = [];
 
 function generateId() {
   return `program_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -37,13 +43,15 @@ function generateId() {
 interface AddProgramModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (program: any) => Promise<void>;
-  onEdit: (program: any) => Promise<void>;
+  onAdd: (program: any) => Promise<void | boolean>;
+  onEdit: (program: any) => Promise<void | boolean>;
   domains?: any[];
   modules?: any[];
   clients?: any[];
   loading?: boolean;
   editingProgram?: any | null;
+  lockedClientId?: string;
+  lockedClientName?: string;
 }
 
 export default function AddProgramModal({
@@ -51,13 +59,16 @@ export default function AddProgramModal({
   onClose,
   onAdd,
   onEdit,
-  domains = [],
-  modules = [],
-  clients = [],
+  domains = EMPTY_DOMAINS,
+  modules = EMPTY_MODULES,
+  clients = EMPTY_CLIENTS,
   loading = false,
   editingProgram = null,
+  lockedClientId = "",
+  lockedClientName = "",
 }: AddProgramModalProps) {
   const isEditing = !!editingProgram;
+  const isClientLocked = Boolean(lockedClientId);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -72,82 +83,108 @@ export default function AddProgramModal({
     return dom?.name || dom?.NAME || "Unnamed Domain";
   };
 
-  // Find selected client
-  const selectedClientObj = findClientByValue(clients, selectedClientValue);
+  const selectedClientObj = isClientLocked
+    ? findClientByValue(clients, lockedClientId) || {
+        id: lockedClientId,
+        client_id: lockedClientId,
+        first_name: lockedClientName || "",
+        last_name: "",
+        name: lockedClientName || "",
+      }
+    : findClientByValue(clients, selectedClientValue);
 
-  const selectedClientId =
-    selectedClientValue === "generic"
+  const selectedClientId = isClientLocked
+    ? String(lockedClientId).trim()
+    : selectedClientValue === "generic"
       ? ""
       : resolveClientRecordId(selectedClientObj) || String(selectedClientValue).trim();
 
+  const filterClientScopedRows = (items: any[], keepId = "") =>
+    (items || []).filter((item) => {
+      if (item?.id == null || String(item.id).trim() === "") return false;
+      if (isArchivedEntity(item) && String(item.id) !== String(keepId ?? "")) {
+        return false;
+      }
+      return true;
+    });
+
   // Reset / fill form
   useEffect(() => {
+    if (!isOpen) return;
     if (isEditing && editingProgram) {
-      setName(editingProgram.name || "");
+      setName(editingProgram.name || editingProgram.NAME || "");
       setDescription(editingProgram.description || "");
       setStatus(editingProgram.status || "Active");
 
       const domId = editingProgram.domainId || editingProgram.domain_id || "";
       setDomainId(String(domId));
 
-      setSelectedClientValue(editingProgram.client_id ? String(editingProgram.client_id) : "generic");
+      setSelectedClientValue(
+        editingProgram.client_id
+          ? String(editingProgram.client_id)
+          : isClientLocked
+            ? String(lockedClientId)
+            : "generic"
+      );
     } else {
       setName("");
       setDescription("");
       setDomainId("");
       setStatus("Active");
       setDomainSearch("");
-      
-      // Check for pending client from client view navigation
-      const pendingClient = localStorage.getItem("pendingClientForMasterData");
-      if (pendingClient && isOpen) {
-        try {
-          const clientInfo = JSON.parse(pendingClient);
-          // Try to find client by ID first, then by name
-          const foundClient = clients.find(
-            (c) => String(c.id) === String(clientInfo.id) || c.name === clientInfo.name
-          );
-          if (foundClient) {
-            setSelectedClientValue(
-              resolveClientRecordId(foundClient) || String(foundClient.id ?? foundClient.name)
+
+      if (isClientLocked) {
+        setSelectedClientValue(String(lockedClientId));
+      } else {
+        const pendingClient = localStorage.getItem("pendingClientForMasterData");
+        if (pendingClient) {
+          try {
+            const clientInfo = JSON.parse(pendingClient);
+            const foundClient = clients.find(
+              (c) => String(c.id) === String(clientInfo.id) || c.name === clientInfo.name
             );
-          } else if (clientInfo.id) {
-            setSelectedClientValue(String(clientInfo.id));
-          } else if (clientInfo.name) {
-            setSelectedClientValue(clientInfo.name);
-          } else {
+            if (foundClient) {
+              setSelectedClientValue(
+                resolveClientRecordId(foundClient) || String(foundClient.id ?? foundClient.name)
+              );
+            } else if (clientInfo.id) {
+              setSelectedClientValue(String(clientInfo.id));
+            } else if (clientInfo.name) {
+              setSelectedClientValue(clientInfo.name);
+            } else {
+              setSelectedClientValue("generic");
+            }
+          } catch (err) {
+            console.error("Error parsing pending client info:", err);
             setSelectedClientValue("generic");
           }
-        } catch (err) {
-          console.error("Error parsing pending client info:", err);
+        } else {
           setSelectedClientValue("generic");
         }
-      } else {
-        setSelectedClientValue("generic");
       }
     }
-  }, [editingProgram, isEditing, isOpen, clients]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingProgram, isEditing, isOpen, isClientLocked, lockedClientId]);
 
-  // Client selected → only that client's domains; generic → master domains only
-  const domainsForClient = filterMasterDataForClientScope(domains, {
-    clientId: selectedClientId,
-    isGeneric: selectedClientValue === "generic",
-    keepId: domainId,
-  });
+  // Client Configure data already passes this client's domains (often without client_id).
+  const domainsForClient = isClientLocked
+    ? filterClientScopedRows(domains, domainId)
+    : filterMasterDataForClientScope(domains, {
+        clientId: selectedClientId,
+        isGeneric: selectedClientValue === "generic",
+        keepId: domainId,
+      });
 
   useEffect(() => {
     if (!domainId) return;
     const stillValid = domainsForClient.some((d) => String(d.id) === String(domainId));
     if (!stillValid) setDomainId("");
-  }, [selectedClientValue, selectedClientId, domains, domainId]);
+  }, [selectedClientValue, selectedClientId, domains, domainId, domainsForClient]);
 
   const selectedDomain = domainsForClient.find((d) => String(d.id) === String(domainId));
   const selectedDomainName = selectedDomain ? getDomainName(selectedDomain) : "";
   const selectedModuleName = selectedDomain
-    ? getDomainModuleLabel(
-        modulesForLookup,
-        selectedDomain.moduleId || selectedDomain.module_id
-      )
+    ? getDomainModuleLabel(modulesForLookup, resolveDomainModuleId(selectedDomain))
     : "";
 
   // SAFE filtering + sorting (scoped to client or generic)
@@ -156,7 +193,7 @@ export default function AddProgramModal({
       const search = domainSearch.toLowerCase();
       const moduleName = getDomainModuleLabel(
         modulesForLookup,
-        d.moduleId || d.module_id
+        resolveDomainModuleId(d)
       ).toLowerCase();
       const domainName = getDomainName(d).toLowerCase();
       const label = `${moduleName} - ${domainName}`;
@@ -165,11 +202,11 @@ export default function AddProgramModal({
     .sort((a, b) => {
       const moduleA = getDomainModuleLabel(
         modulesForLookup,
-        a.moduleId || a.module_id
+        resolveDomainModuleId(a)
       );
       const moduleB = getDomainModuleLabel(
         modulesForLookup,
-        b.moduleId || b.module_id
+        resolveDomainModuleId(b)
       );
       const moduleCompare = moduleA.localeCompare(moduleB);
       if (moduleCompare !== 0) return moduleCompare;
@@ -188,26 +225,33 @@ export default function AddProgramModal({
       return;
     }
 
+    const clientPayload =
+      isClientLocked || selectedClientValue !== "generic"
+        ? {
+            client_id: isClientLocked
+              ? lockedClientId
+              : resolveClientRecordId(selectedClientObj) || selectedClientValue,
+          }
+        : {};
+
     const payload = {
       id: editingProgram?.id || generateId(),
       name: name.trim(),
       description: description.trim(),
       domainId: domainId,
+      domain_id: domainId,
       status: status,
       archived: 0,
-      ...(selectedClientValue !== "generic"
-        ? {
-            client_id:
-              resolveClientRecordId(selectedClientObj) || selectedClientValue,
-          }
-        : {}),
+      ...clientPayload,
     };
 
     try {
       if (isEditing) {
-        await onEdit(payload);
+        const result = await onEdit(payload);
+        if (result === false) return;
       } else {
-        await onAdd(payload);
+        const result = await onAdd(payload);
+        if (result === false) return;
       }
       onClose();
     } catch (err) {
@@ -246,43 +290,58 @@ export default function AddProgramModal({
           {/* Client Selector */}
           <div className="space-y-2">
             <Label>Assign to Client</Label>
-            <Select
-              value={selectedClientValue === "generic" ? "generic" : selectedClientValue}
-              onValueChange={(val) => {
-                setSelectedClientValue(val === "generic" ? "generic" : val);
-                setDomainSearch("");
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Generic (no client)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="generic">Generic (no client)</SelectItem>
-                {clients
-                  .map((client) => {
-                    const cid = resolveClientRecordId(client);
-                    if (!cid) return null;
-                    const displayName =
-                      `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
-                      client.name ||
-                      client.NAME ||
-                      "Unnamed Client";
-                    return (
-                      <SelectItem key={cid} value={cid}>
-                        {displayName}
-                      </SelectItem>
-                    );
-                  })
-                  .filter(Boolean)}
-              </SelectContent>
-            </Select>
-
-            {selectedClientObj && (
-              <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded-md text-sm">
-                <div className="font-medium text-purple-900">
-                  {selectedClientObj.first_name || ""} {selectedClientObj.last_name || ""}
+            {isClientLocked ? (
+              <div className="p-3 bg-teal-50 border border-teal-200 rounded-md text-sm">
+                <div className="font-medium text-teal-900">
+                  {lockedClientName ||
+                    `${selectedClientObj?.first_name || ""} ${selectedClientObj?.last_name || ""}`.trim() ||
+                    "This client"}
                 </div>
+                <p className="text-xs text-teal-700 mt-1">
+                  Program will be saved for this client.
+                </p>
               </div>
+            ) : (
+              <>
+                <Select
+                  value={selectedClientValue === "generic" ? "generic" : selectedClientValue}
+                  onValueChange={(val) => {
+                    setSelectedClientValue(val === "generic" ? "generic" : val);
+                    setDomainSearch("");
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Generic (no client)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="generic">Generic (no client)</SelectItem>
+                    {clients
+                      .map((client) => {
+                        const cid = resolveClientRecordId(client);
+                        if (!cid) return null;
+                        const displayName =
+                          `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
+                          client.name ||
+                          client.NAME ||
+                          "Unnamed Client";
+                        return (
+                          <SelectItem key={cid} value={cid}>
+                            {displayName}
+                          </SelectItem>
+                        );
+                      })
+                      .filter(Boolean)}
+                  </SelectContent>
+                </Select>
+
+                {selectedClientObj && (
+                  <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded-md text-sm">
+                    <div className="font-medium text-purple-900">
+                      {selectedClientObj.first_name || ""} {selectedClientObj.last_name || ""}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -329,7 +388,7 @@ export default function AddProgramModal({
                     .map((dom) => {
                       const modName = getDomainModuleLabel(
                         modulesForLookup,
-                        dom.moduleId || dom.module_id
+                        resolveDomainModuleId(dom)
                       );
                       const label = `${modName !== "—" ? modName : "—"} - ${getDomainName(dom)}`;
                       return (

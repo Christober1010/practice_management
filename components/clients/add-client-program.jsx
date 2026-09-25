@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,20 +8,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   ArrowRight,
-  Badge,
-  ChevronRight,
   Edit,
   ListChecks,
   Plus,
@@ -31,9 +19,24 @@ import toast from "react-hot-toast";
 import { Card, CardContent, CardHeader } from "../ui/card";
 import { mahaverseFetch } from "@/lib/mahaverse-api";
 import {
+  DEFAULT_DOMAIN_MODULE_KEY,
   getDomainModuleLabel,
-  mergeCanonicalDomainModules,
 } from "@/lib/domain-module-options";
+import AddProgramModal from "@/components/master-data/add-program-modal";
+
+function normalizeProgramRow(p, clientId) {
+  if (!p || typeof p !== "object") return p;
+  return {
+    id: p.id,
+    name: p.NAME || p.name || "Unnamed Program",
+    description: p.description || p.DESCRIPTION || "",
+    domain_id: p.domain_id || p.domainId,
+    domainId: p.domainId || p.domain_id,
+    status: p.status || p.STATUS || "Active",
+    archived: p.archived === 1 || p.archived === true || p.archived === "1",
+    client_id: p.client_id || clientId,
+  };
+}
 
 export function ProgramsListModal({
   isOpen,
@@ -44,9 +47,9 @@ export function ProgramsListModal({
   domains,
   modules,
   loading,
-  onReload, // call fetchPrograms again after save/delete
-  onAddProgram, // wraps handleAddProgram
-  onEditProgram, // wraps handleEditProgram
+  onReload,
+  onAddProgram,
+  onEditProgram,
 }) {
   const [isProgramFormOpen, setIsProgramFormOpen] = useState(false);
   const [editingProgram, setEditingProgram] = useState(null);
@@ -57,17 +60,17 @@ export function ProgramsListModal({
   };
 
   const openEdit = (program) => {
-    setEditingProgram(program);
+    setEditingProgram(normalizeProgramRow(program, clientId));
     setIsProgramFormOpen(true);
   };
 
-  const handleProgramSaved = async (payload, isEdit) => {
-    if (isEdit) {
-      await onEditProgram(payload);
-    } else {
-      await onAddProgram(payload);
-    }
+  const handleProgramSaved = async (program, isEdit) => {
+    const ok = isEdit
+      ? await onEditProgram(program)
+      : await onAddProgram(program);
+    if (ok === false) return false;
     await onReload();
+    return true;
   };
 
   const handleDeleteProgram = async (programId) => {
@@ -128,11 +131,21 @@ export function ProgramsListModal({
               <div className="space-y-3">
                 {programs.filter(Boolean).map((program) => {
                   const domain = domains.find(
-                    (d) => String(d.id) === String(program.domain_id)
+                    (d) =>
+                      String(d.id) ===
+                      String(program.domain_id || program.domainId)
                   );
-                  const module = modules.find(
-                    (m) => m.id === domain?.module_id
-                  );
+                  const moduleLabel = domain
+                    ? getDomainModuleLabel(
+                        modules,
+                        domain.module_id ||
+                          domain.moduleId ||
+                          domain.MODULE_ID ||
+                          DEFAULT_DOMAIN_MODULE_KEY
+                      )
+                    : "—";
+                  const domainLabel =
+                    domain?.name || domain?.NAME || "Not assigned";
 
                   return (
                     <Card
@@ -143,7 +156,7 @@ export function ProgramsListModal({
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
                             <h3 className="font-semibold text-lg">
-                              {program.name}
+                              {program.name || program.NAME || "Unnamed Program"}
                             </h3>
                             {program.description && (
                               <p className="text-sm text-gray-600 mt-1">
@@ -153,14 +166,18 @@ export function ProgramsListModal({
                             <div className="flex items-center gap-1 mt-2 flex-wrap text-xs text-black">
                               <span className="flex items-center gap-1">
                                 <span className="font-medium">Module:</span>
-                                <span>{module?.name || "Not assigned"}</span>
+                                <span>
+                                  {moduleLabel && moduleLabel !== "—"
+                                    ? moduleLabel
+                                    : "Not assigned"}
+                                </span>
                               </span>
 
                               <ArrowRight className="w-3 h-3 text-muted-foreground" />
 
                               <span className="flex items-center gap-1">
                                 <span className="font-medium">Domain:</span>
-                                <span>{domain?.name || "Not assigned"}</span>
+                                <span>{domainLabel}</span>
                               </span>
                             </div>
                           </div>
@@ -192,20 +209,20 @@ export function ProgramsListModal({
         </DialogContent>
       </Dialog>
 
-      <ClientProgramModal
+      <AddProgramModal
         isOpen={isProgramFormOpen}
         onClose={() => {
           setIsProgramFormOpen(false);
           setEditingProgram(null);
         }}
-        onAdd={(payload) => handleProgramSaved(payload, false)}
-        onEdit={(payload) => handleProgramSaved(payload, true)}
-        clientId={clientId}
-        clientName={clientName}
+        onAdd={(program) => handleProgramSaved(program, false)}
+        onEdit={(program) => handleProgramSaved(program, true)}
         domains={domains}
         modules={modules}
         loading={loading}
         editingProgram={editingProgram}
+        lockedClientId={clientId ? String(clientId) : ""}
+        lockedClientName={clientName || ""}
       />
     </>
   );
@@ -223,267 +240,18 @@ export default function ClientProgramModal({
   loading = false,
   editingProgram,
 }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [domainId, setDomainId] = useState("");
-  const [domainSearch, setDomainSearch] = useState("");
-
-  const isEditMode = !!editingProgram;
-
-  // Normalize API data to consistent lowercase keys
-  const normalizedDomains = useMemo(() => {
-    return domains.map((d) => ({
-      id: d.id || d.ID,
-      name: d.NAME || d.name || "Unnamed Domain",
-      module_id: d.module_id || d.moduleId,
-      description: d.description || d.DESCRIPTION || "",
-    }));
-  }, [domains]);
-
-  const modulesForLookup = useMemo(
-    () => mergeCanonicalDomainModules(modules),
-    [modules]
-  );
-
-  // Reset form when modal opens/closes or editing changes
-  useEffect(() => {
-    if (isOpen) {
-      if (editingProgram) {
-        setName(editingProgram.name || "");
-        setDescription(editingProgram.description || "");
-        setDomainId(editingProgram.domain_id || editingProgram.domainId || "");
-      } else {
-        setName("");
-        setDescription("");
-        setDomainId("");
-        setDomainSearch("");
-      }
-    }
-  }, [editingProgram, isOpen]);
-
-  // Find selected domain and its module
-  const selectedDomain = normalizedDomains.find(
-    (d) => String(d.id) === String(domainId)
-  );
-  const selectedModuleName = selectedDomain
-    ? getDomainModuleLabel(modulesForLookup, selectedDomain.module_id)
-    : "";
-
-  // Filter and sort domains with search
-  const filteredDomains = useMemo(() => {
-    return normalizedDomains
-      .filter((domain) => {
-        if (!domain.id) return false;
-        const moduleName = getDomainModuleLabel(
-          modulesForLookup,
-          domain.module_id
-        );
-        const domainName = domain.name || "";
-        const fullLabel = `${moduleName} - ${domainName}`.toLowerCase();
-        const search = domainSearch.toLowerCase();
-        return fullLabel.includes(search);
-      })
-      .sort((a, b) => {
-        const moduleA = getDomainModuleLabel(modulesForLookup, a.module_id);
-        const moduleB = getDomainModuleLabel(modulesForLookup, b.module_id);
-        if (moduleA !== moduleB) return moduleA.localeCompare(moduleB);
-        return a.name.localeCompare(b.name);
-      });
-  }, [normalizedDomains, modulesForLookup, domainSearch]);
-
-  const selectedDomainLabel = selectedDomain
-    ? `${selectedModuleName !== "—" ? selectedModuleName : "Unknown Module"} - ${selectedDomain.name}`
-    : "Select a domain";
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!name.trim()) {
-      toast.error("Program name is required");
-      return;
-    }
-    if (!domainId) {
-      toast.error("Please select a domain");
-      return;
-    }
-
-    try {
-      const programData = {
-        id: isEditMode ? editingProgram.id : `program_${Date.now()}`,
-        name: name.trim(),
-        description: description.trim(),
-        domain_id: domainId,
-        status: "Active",
-        archived: 0,
-      };
-
-      if (isEditMode) {
-        // For edit, send root client_id + programs array with one element
-        await onEdit({
-          client_id: clientId,
-          programs: [{ ...editingProgram, ...programData }],
-        });
-      } else {
-        // For add, send root client_id + programs array with new program
-        await onAdd({
-          client_id: clientId,
-          programs: [programData],
-        });
-      }
-
-      toast.success(isEditMode ? "Program updated!" : "Program added!");
-      onClose();
-    } catch (error) {
-      console.error("Error saving program:", error);
-      toast.error("Failed to save program");
-    }
-  };
-
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle className="flex flex-col items-center text-center">
-            <div className="flex items-center gap-2 mb-3">
-              <ListChecks size={24} className="text-blue-600" />
-              <span className="text-xl font-semibold">
-                {isEditMode ? "Edit Program" : "Add New Program"}
-              </span>
-            </div>
-
-            {/* Breadcrumb */}
-            {clientName && selectedDomain && selectedModuleName !== "—" && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap justify-center mt-2">
-                <span className="font-medium">{clientName}</span>
-                <ChevronRight size={16} />
-                <span className="font-medium text-blue-600">
-                  {selectedModuleName}
-                </span>
-                <ChevronRight size={16} />
-                <span className="font-medium text-teal-600">
-                  {selectedDomain.name}
-                </span>
-                {name && (
-                  <>
-                    <ChevronRight size={16} />
-                    <span className="font-medium text-teal-600">{name}</span>
-                  </>
-                )}
-              </div>
-            )}
-          </DialogTitle>
-        </DialogHeader>
-
-        <form onSubmit={handleSubmit} className="space-y-5 mt-4">
-          {/* Domain Selection */}
-          <div className="space-y-2">
-            <Label htmlFor="domain-select">Domain *</Label>
-            <Select
-              value={domainId}
-              onValueChange={(value) => {
-                setDomainId(value);
-                setDomainSearch("");
-              }}
-              disabled={loading}
-            >
-              <SelectTrigger id="domain-select">
-                <SelectValue placeholder="Choose a domain">
-                  {domainId ? selectedDomainLabel : "Select a domain"}
-                </SelectValue>
-              </SelectTrigger>
-
-              <SelectContent className="max-h-96">
-                <div className="sticky top-0 z-10 bg-white border-b px-2 py-2">
-                  <Input
-                    placeholder="Search domains..."
-                    value={domainSearch}
-                    onChange={(e) => setDomainSearch(e.target.value)}
-                    onKeyDown={(e) => e.stopPropagation()}
-                    className="h-9 text-sm"
-                    autoFocus={false}
-                  />
-                </div>
-
-                {filteredDomains.length > 0 ? (
-                  filteredDomains.map((domain) => {
-                    const moduleName = getDomainModuleLabel(
-                      modulesForLookup,
-                      domain.module_id
-                    );
-                    return (
-                      <SelectItem
-                        key={domain.id}
-                        value={String(domain.id)}
-                        className="cursor-pointer"
-                      >
-                        <div className="flex flex-col">
-                          <span className="font-medium">{domain.name}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {moduleName !== "—" ? moduleName : "Unknown Module"}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    );
-                  })
-                ) : (
-                  <div className="py-8 text-center text-sm text-muted-foreground">
-                    {domainSearch
-                      ? "No domains match your search"
-                      : "No domains available"}
-                  </div>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Program Name */}
-          <div className="space-y-2">
-            <Label htmlFor="program-name">Program Name *</Label>
-            <Input
-              id="program-name"
-              placeholder="e.g., Matching, Receptive ID, Manding"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={loading}
-              required
-            />
-          </div>
-
-          {/* Description */}
-          <div className="space-y-2">
-            <Label htmlFor="program-description">Description (Optional)</Label>
-            <Textarea
-              id="program-description"
-              placeholder="Add any notes or goals for this program..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={loading}
-              rows={3}
-            />
-          </div>
-
-          {/* Buttons */}
-          <div className="flex justify-end gap-3 pt-4 border-t">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={loading}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? (
-                <>Saving...</>
-              ) : isEditMode ? (
-                "Save Changes"
-              ) : (
-                "Add Program"
-              )}
-            </Button>
-          </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <AddProgramModal
+      isOpen={isOpen}
+      onClose={onClose}
+      onAdd={onAdd}
+      onEdit={onEdit}
+      domains={domains}
+      modules={modules}
+      loading={loading}
+      editingProgram={editingProgram}
+      lockedClientId={clientId ? String(clientId) : ""}
+      lockedClientName={clientName || ""}
+    />
   );
 }

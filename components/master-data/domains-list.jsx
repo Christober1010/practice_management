@@ -42,6 +42,7 @@ import DeleteConfirmModal from "./DeleteConfirmModal";
 import {
   getDomainModuleLabel,
   mergeCanonicalDomainModules,
+  resolveDomainModuleId,
 } from "@/lib/domain-module-options";
 
 export default function DomainsList() {
@@ -158,7 +159,7 @@ export default function DomainsList() {
   const genericDomains = useMemo(() => {
     if (!programsData.domains) return [];
     return programsData.domains.map((d) => {
-      const moduleId = d.moduleId || d.module_id;
+      const moduleId = resolveDomainModuleId(d);
       return {
         id: `generic-${d.id}`,
         rawId: d.id,
@@ -194,7 +195,7 @@ export default function DomainsList() {
 
     return clientData.domains.map((d) => {
       const clientName = clientMap[String(d.client_id)] || "Unknown Client";
-      const moduleId = d.moduleId || d.module_id;
+      const moduleId = resolveDomainModuleId(d);
 
       return {
         id: `client-${d.id}`,

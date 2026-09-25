@@ -2,7 +2,7 @@
 
 import { mahaverseFetch } from "@/lib/mahaverse-api";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -58,6 +58,11 @@ export function BehaviorsListModal({
   useEffect(() => {
     if (isOpen) load();
   }, [isOpen, load]);
+
+  const lockedClients = useMemo(
+    () => [{ id: clientId, name: clientName }],
+    [clientId, clientName]
+  );
 
   const handleSave = async (payload) => {
     const res = await mahaverseFetch('/client-behaviors.php', {
@@ -205,7 +210,7 @@ export function BehaviorsListModal({
         }}
         onSave={(payload) => handleSave({ ...payload, client_id: clientId })}
         categories={categories.filter((c) => !isDbArchived(c))}
-        clients={[{ id: clientId, name: clientName }]}
+        clients={lockedClients}
         clientName={clientName}
         hideClientSelector
         editingBehavior={editing ? { ...editing, client_id: clientId } : null}

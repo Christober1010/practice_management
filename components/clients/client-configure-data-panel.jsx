@@ -20,6 +20,7 @@ import ClientDomainModal from "./add-client-domain";
 import { ProgramsListModal } from "./add-client-program";
 import ClientBehaviorSetupSection from "./client-behavior-setup-section";
 import { TargetsListModal } from "./add-client-target";
+import { DEFAULT_DOMAIN_MODULE_KEY } from "@/lib/domain-module-options";
 
 export default function ClientConfigureDataPanel({ clientId, clientName }) {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
@@ -54,13 +55,20 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
         const prompts = result.data.allPrompts || result.data.prompts || [];
 
         setClientDomains(
-          domains.map((d) => ({
-            id: d.id,
-            name: d.NAME || d.name || "Unnamed Domain",
-            description: d.description || "",
-            module_id: d.module_id || d.moduleId || d.MODULE_ID,
-            moduleId: d.module_id || d.moduleId || d.MODULE_ID,
-          })),
+          domains.map((d) => {
+            const moduleId =
+              d.module_id ||
+              d.moduleId ||
+              d.MODULE_ID ||
+              DEFAULT_DOMAIN_MODULE_KEY;
+            return {
+              id: d.id,
+              name: d.NAME || d.name || "Unnamed Domain",
+              description: d.description || "",
+              module_id: moduleId,
+              moduleId,
+            };
+          }),
         );
         setClientModules(
           modules.map((m) => ({
@@ -74,7 +82,9 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
             id: p.id,
             name: p.NAME || p.name || "Unnamed Program",
             description: p.description || "",
-            domain_id: p.domain_id,
+            domain_id: p.domain_id || p.domainId,
+            domainId: p.domainId || p.domain_id,
+            client_id: clientId,
             status: p.status || "Active",
           })),
         );
@@ -82,11 +92,19 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
           rawTargets.map((t) => ({
             id: t.id,
             name: t.name || t.NAME || "Unnamed Target",
-            description: t.description || t.goal_description || "",
-            program_id: t.program_id,
-            activity_type: t.activity_type || "",
+            description: t.description || t.goal_description || t.goalDescription || "",
+            goalDescription: t.goalDescription || t.goal_description || t.description || "",
+            goal_description: t.goal_description || t.goalDescription || t.description || "",
+            program_id: t.program_id || t.programId,
+            programId: t.programId || t.program_id,
+            activity_type: t.activity_type || t.activityType || "",
+            activityType: t.activityType || t.activity_type || "",
+            instructions: t.instructions || "",
+            trials: t.trials || 1,
             status: t.status || "Active",
             prompts: t.prompts || [],
+            tasks: t.tasks || [],
+            client_id: clientId,
           })),
         );
         setAllPrompts(prompts);
@@ -111,45 +129,74 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
   }, [loadClientPrograms]);
 
   const handleAddProgram = async (payload) => {
-    const res = await mahaverseFetch('/client-programs.php', {
+    const program = payload?.programs?.[0] || payload;
+    const domainId = program.domainId || program.domain_id;
+    const body = {
+      client_id: clientId,
+      programs: [
+        {
+          id: program.id,
+          domainId,
+          name: program.name,
+          description: program.description || "",
+          status: program.status || "Active",
+          archived: program.archived ?? 0,
+        },
+      ],
+    };
+    const res = await mahaverseFetch("/client-modules.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     if (data.success) {
-      const saved = data.program || payload.programs[0];
-      setPrograms((prev) => [...prev, saved]);
       toast.success("Program added");
-    } else {
-      toast.error(data.message || "Failed to add program");
+      return true;
     }
+    toast.error(data.message || "Failed to add program");
+    return false;
   };
 
   const handleEditProgram = async (payload) => {
-    const res = await mahaverseFetch('/client-programs.php', {
+    const program = payload?.programs?.[0] || payload;
+    const domainId = program.domainId || program.domain_id;
+    const body = {
+      client_id: clientId,
+      programs: [
+        {
+          id: program.id,
+          domainId,
+          name: program.name,
+          description: program.description || "",
+          status: program.status || "Active",
+          archived: program.archived ?? 0,
+        },
+      ],
+    };
+    const res = await mahaverseFetch("/client-modules.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "update", ...payload }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     if (data.success) {
-      const saved = data.program || payload.programs[0];
-      setPrograms((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
       toast.success("Program updated");
-    } else {
-      toast.error(data.message || "Failed to update program");
+      return true;
     }
+    toast.error(data.message || "Failed to update program");
+    return false;
   };
 
   const handleAddTarget = async (payload) => {
     const activity = {
       id: payload.id,
-      programId: payload.program_id,
+      programId: payload.programId || payload.program_id,
       name: payload.name,
-      goalDescription: payload.description || "",
+      goalDescription:
+        payload.goalDescription || payload.description || "",
       trials: payload.trials || 1,
-      activityType: payload.activity_type || "",
+      activityType: payload.activityType || payload.activity_type || "",
       instructions: payload.instructions || "",
       status: payload.status || "Active",
       archived: 0,
@@ -176,11 +223,12 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
   const handleEditTarget = async (payload) => {
     const activity = {
       id: payload.id,
-      programId: payload.program_id,
+      programId: payload.programId || payload.program_id,
       name: payload.name,
-      goalDescription: payload.description || "",
+      goalDescription:
+        payload.goalDescription || payload.description || "",
       trials: payload.trials || 1,
-      activityType: payload.activity_type || "",
+      activityType: payload.activityType || payload.activity_type || "",
       instructions: payload.instructions || "",
       status: payload.status || "Active",
       archived: payload.archived ?? 0,

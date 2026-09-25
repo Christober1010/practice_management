@@ -258,6 +258,8 @@ export default function ClaimsView({ userRole }) {
   const [serviceCodeFilter, setServiceCodeFilter] = useState("");
   const [fromDateFilter, setFromDateFilter] = useState(defaults.from);
   const [toDateFilter, setToDateFilter] = useState(defaults.to);
+  /** ready_to_bill | claims_submitted | all */
+  const [claimStatusFilter, setClaimStatusFilter] = useState("ready_to_bill");
   const [expandedClaimKeys, setExpandedClaimKeys] = useState(() => new Set());
 
   const selectedSessionsRows = useMemo(
@@ -318,10 +320,13 @@ export default function ClaimsView({ userRole }) {
       if (toDateFilter && dos > toDateFilter) return false;
 
       const normalized = normalizeClaimStatus(session);
-      if (normalized !== "ready_to_bill") return false;
-      return true;
+      if (normalized !== "ready_to_bill" && normalized !== "claims_submitted") {
+        return false;
+      }
+      if (claimStatusFilter === "all") return true;
+      return normalized === claimStatusFilter;
     });
-  }, [sessions, serviceCodeFilter, fromDateFilter, toDateFilter]);
+  }, [sessions, serviceCodeFilter, fromDateFilter, toDateFilter, claimStatusFilter]);
 
   const filteredSessionIds = useMemo(
     () => filteredSessions.map((s) => String(s.session_id)),
@@ -473,7 +478,10 @@ export default function ClaimsView({ userRole }) {
           (row) => String(row.status || row.STATUS || "").toLowerCase() !== "cancelled"
         );
         setSessions(
-          activeSessions.filter((row) => normalizeClaimStatus(row) === "ready_to_bill")
+          activeSessions.filter((row) => {
+            const status = normalizeClaimStatus(row);
+            return status === "ready_to_bill" || status === "claims_submitted";
+          })
         );
       } catch (err) {
         console.error("Claims sessions load failed", err);
@@ -823,8 +831,9 @@ export default function ClaimsView({ userRole }) {
         <div>
           <h2 className="text-3xl font-bold text-slate-800">Claims</h2>
           <p className="text-slate-600 mt-1">
-            Ready to Bill claims grouped by date of service, client, and authorization
-            number — one CMS-1500 per claim, with sessions as service lines
+            Claims grouped by date of service, client, and authorization number —
+            filter Ready to Bill or Submitted; one CMS-1500 per claim, with sessions as
+            service lines
           </p>
         </div>
         <Button
@@ -887,9 +896,22 @@ export default function ClaimsView({ userRole }) {
             </div>
             <div className="space-y-2">
               <p className="text-sm text-slate-600">Claim status</p>
-              <div className="flex h-10 items-center rounded-md border border-green-200 bg-green-50 px-3 text-sm font-medium text-green-800">
-                Ready to Bill only
-              </div>
+              <Select
+                value={claimStatusFilter}
+                onValueChange={(v) => {
+                  setClaimStatusFilter(v);
+                  setPreviewEntries(null);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Claim status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ready_to_bill">Ready to Bill</SelectItem>
+                  <SelectItem value="claims_submitted">Submitted</SelectItem>
+                  <SelectItem value="all">Ready to Bill & Submitted</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -993,7 +1015,13 @@ export default function ClaimsView({ userRole }) {
                 <div className="p-4 text-sm text-slate-500">Loading sessions...</div>
               ) : filteredSessions.length === 0 ? (
                 <div className="p-4 text-sm text-slate-500">
-                  No Ready to Bill sessions in this date range
+                  No{" "}
+                  {claimStatusFilter === "claims_submitted"
+                    ? "Submitted"
+                    : claimStatusFilter === "all"
+                      ? "Ready to Bill or Submitted"
+                      : "Ready to Bill"}{" "}
+                  sessions in this date range
                   {selectedClientId !== CLIENT_FILTER_ALL ? " for this client" : ""}.
                 </div>
               ) : (

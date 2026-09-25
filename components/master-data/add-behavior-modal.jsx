@@ -33,12 +33,15 @@ function generateId() {
   return `beh_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+const EMPTY_CATEGORIES = [];
+const EMPTY_CLIENTS = [];
+
 export default function AddBehaviorModal({
   isOpen,
   onClose,
   onSave,
-  categories = [],
-  clients = [],
+  categories = EMPTY_CATEGORIES,
+  clients = EMPTY_CLIENTS,
   loading = false,
   editingBehavior = null,
   recordingTypeLocked = false,
@@ -69,6 +72,7 @@ export default function AddBehaviorModal({
   const selectedCategory = categories.find((c) => c.id === categoryId);
 
   useEffect(() => {
+    if (!isOpen) return;
     if (isEditing && editingBehavior) {
       setName(editingBehavior.name || "");
       setCategoryId(editingBehavior.category_id || editingBehavior.categoryId || "");
@@ -103,7 +107,7 @@ export default function AddBehaviorModal({
         setSelectedClientValue(String(clients[0].id || clients[0].client_id));
       } else {
         const pendingClient = localStorage.getItem("pendingClientForMasterData");
-        if (pendingClient && isOpen) {
+        if (pendingClient) {
           try {
             const info = JSON.parse(pendingClient);
             if (info?.clientId) setSelectedClientValue(String(info.clientId));
@@ -116,7 +120,8 @@ export default function AddBehaviorModal({
         }
       }
     }
-  }, [isEditing, editingBehavior, isOpen, hideClientSelector, clients]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- init when modal opens / edit target changes
+  }, [isEditing, editingBehavior, isOpen, hideClientSelector]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

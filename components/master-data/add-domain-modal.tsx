@@ -25,21 +25,38 @@ import {
   inferDomainModuleKey,
   resolveModuleIdForDomain,
 } from "@/lib/domain-module-options";
+import { resolveClientRecordId } from "@/lib/master-data-client-scope";
 
 function generateId() {
   return `domain_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
+const EMPTY_MODULES: any[] = [];
+const EMPTY_CLIENTS: any[] = [];
+
 export default function AddDomainModal({
   isOpen,
   onClose,
   onAdd,
-  modules = [], // Keep for backward compatibility but not used
-  clients = [],
+  modules = EMPTY_MODULES,
+  clients = EMPTY_CLIENTS,
   loading = false,
   editingDomain = null,
+  lockedClientId = "",
+  lockedClientName = "",
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onAdd: (domain: any) => Promise<void | boolean>;
+  modules?: any[];
+  clients?: any[];
+  loading?: boolean;
+  editingDomain?: any | null;
+  lockedClientId?: string;
+  lockedClientName?: string;
 }) {
   const isEditing = !!editingDomain;
+  const isClientLocked = Boolean(lockedClientId);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -47,61 +64,83 @@ export default function AddDomainModal({
   const [selectedClientValue, setSelectedClientValue] = useState("generic");
   const [moduleKey, setModuleKey] = useState(DEFAULT_DOMAIN_MODULE_KEY);
 
-  // Find selected client
-  const selectedClientObj =
-    selectedClientValue === "generic"
+  const selectedClientObj = isClientLocked
+    ? clients.find(
+        (c) =>
+          String(c.id) === String(lockedClientId) ||
+          String(c.client_id) === String(lockedClientId)
+      ) || {
+        id: lockedClientId,
+        client_id: lockedClientId,
+        first_name: lockedClientName || "",
+        last_name: "",
+        name: lockedClientName || "",
+      }
+    : selectedClientValue === "generic"
       ? null
       : clients.find((c) => String(c.id) === String(selectedClientValue)) || null;
 
-  // Reset / fill form
   useEffect(() => {
+    if (!isOpen) return;
     if (isEditing && editingDomain) {
-      setName(editingDomain.name || "");
+      setName(editingDomain.name || editingDomain.NAME || "");
       setDescription(editingDomain.description || "");
       setStatus(editingDomain.status || "Active");
       setModuleKey(
         inferDomainModuleKey(
           modules,
-          editingDomain.moduleId || editingDomain.module_id
+          editingDomain.moduleId ||
+            editingDomain.module_id ||
+            editingDomain.MODULE_ID
         )
       );
-
-      setSelectedClientValue(editingDomain.client_id ? String(editingDomain.client_id) : "generic");
+      setSelectedClientValue(
+        editingDomain.client_id
+          ? String(editingDomain.client_id)
+          : isClientLocked
+            ? String(lockedClientId)
+            : "generic"
+      );
     } else {
       setName("");
       setDescription("");
       setStatus("Active");
       setModuleKey(DEFAULT_DOMAIN_MODULE_KEY);
-      
-      // Check for pending client from client view navigation
-      const pendingClient = localStorage.getItem("pendingClientForMasterData");
-      if (pendingClient && isOpen) {
-        try {
-          const clientInfo = JSON.parse(pendingClient);
-          // Try to find client by ID first, then by name
-          const foundClient = clients.find(
-            (c) => String(c.id) === String(clientInfo.id) || c.name === clientInfo.name
-          );
-          if (foundClient) {
-            setSelectedClientValue(String(foundClient.id ?? foundClient.name));
-          } else if (clientInfo.id) {
-            setSelectedClientValue(String(clientInfo.id));
-          } else if (clientInfo.name) {
-            setSelectedClientValue(clientInfo.name);
-          } else {
+
+      if (isClientLocked) {
+        setSelectedClientValue(String(lockedClientId));
+      } else {
+        const pendingClient = localStorage.getItem("pendingClientForMasterData");
+        if (pendingClient) {
+          try {
+            const clientInfo = JSON.parse(pendingClient);
+            const foundClient = clients.find(
+              (c) =>
+                String(c.id) === String(clientInfo.id) ||
+                c.name === clientInfo.name
+            );
+            if (foundClient) {
+              setSelectedClientValue(String(foundClient.id ?? foundClient.name));
+            } else if (clientInfo.id) {
+              setSelectedClientValue(String(clientInfo.id));
+            } else if (clientInfo.name) {
+              setSelectedClientValue(clientInfo.name);
+            } else {
+              setSelectedClientValue("generic");
+            }
+          } catch (err) {
+            console.error("Error parsing pending client info:", err);
             setSelectedClientValue("generic");
           }
-        } catch (err) {
-          console.error("Error parsing pending client info:", err);
+        } else {
           setSelectedClientValue("generic");
         }
-      } else {
-        setSelectedClientValue("generic");
       }
     }
-  }, [editingDomain, isEditing, isOpen, clients, modules]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingDomain, isEditing, isOpen, isClientLocked, lockedClientId]);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!name.trim()) {
@@ -115,21 +154,31 @@ export default function AddDomainModal({
       return;
     }
 
+    const clientPayload =
+      isClientLocked || selectedClientValue !== "generic"
+        ? {
+            client_id: isClientLocked
+              ? lockedClientId
+              : resolveClientRecordId(selectedClientObj) ||
+                selectedClientObj?.id ||
+                selectedClientValue,
+          }
+        : {};
+
     const payload = {
       id: editingDomain?.rawId || editingDomain?.id || generateId(),
       name: name.trim(),
       description: description.trim(),
-      status: status,
+      status,
       archived: 0,
       moduleId,
       module_id: moduleId,
-      ...(selectedClientValue !== "generic"
-        ? { client_id: selectedClientObj?.id || selectedClientValue }
-        : {}),
+      ...clientPayload,
     };
 
     try {
-      await onAdd(payload);
+      const result = await onAdd(payload);
+      if (result === false) return;
       onClose();
     } catch (err) {
       console.error(err);
@@ -149,7 +198,6 @@ export default function AddDomainModal({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Module (parent of domain) */}
           <div className="space-y-2">
             <Label>Module *</Label>
             <Select value={moduleKey} onValueChange={setModuleKey} disabled={loading}>
@@ -166,42 +214,62 @@ export default function AddDomainModal({
             </Select>
           </div>
 
-          {/* Client Selector */}
           <div className="space-y-2">
             <Label>Assign to Client</Label>
-            <Select
-              value={selectedClientValue === "generic" ? "generic" : selectedClientValue}
-              onValueChange={(val) => setSelectedClientValue(val === "generic" ? "generic" : val)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Generic (no client)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="generic">Generic (no client)</SelectItem>
-                {clients.map((client) => {
-                  const displayName =
-                    `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
-                    client.name ||
-                    "Unnamed Client";
-                  return (
-                    <SelectItem key={client.id} value={String(client.id)}>
-                      {displayName}
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-
-            {selectedClientObj && (
-              <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded-md text-sm">
-                <div className="font-medium text-purple-900">
-                  {selectedClientObj.first_name || ""} {selectedClientObj.last_name || ""}
+            {isClientLocked ? (
+              <div className="p-3 bg-teal-50 border border-teal-200 rounded-md text-sm">
+                <div className="font-medium text-teal-900">
+                  {lockedClientName ||
+                    `${selectedClientObj?.first_name || ""} ${selectedClientObj?.last_name || ""}`.trim() ||
+                    "This client"}
                 </div>
+                <p className="text-xs text-teal-700 mt-1">
+                  Domain will be saved for this client.
+                </p>
               </div>
+            ) : (
+              <>
+                <Select
+                  value={
+                    selectedClientValue === "generic"
+                      ? "generic"
+                      : selectedClientValue
+                  }
+                  onValueChange={(val) =>
+                    setSelectedClientValue(val === "generic" ? "generic" : val)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Generic (no client)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="generic">Generic (no client)</SelectItem>
+                    {clients.map((client) => {
+                      const displayName =
+                        `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
+                        client.name ||
+                        "Unnamed Client";
+                      return (
+                        <SelectItem key={client.id} value={String(client.id)}>
+                          {displayName}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+
+                {selectedClientObj && (
+                  <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded-md text-sm">
+                    <div className="font-medium text-purple-900">
+                      {selectedClientObj.first_name || ""}{" "}
+                      {selectedClientObj.last_name || ""}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
-          {/* Domain Name */}
           <div className="space-y-2">
             <Label>Domain Name *</Label>
             <Input
@@ -213,7 +281,6 @@ export default function AddDomainModal({
             />
           </div>
 
-          {/* Description */}
           <div className="space-y-2">
             <Label>Description (optional)</Label>
             <Textarea
@@ -225,7 +292,6 @@ export default function AddDomainModal({
             />
           </div>
 
-          {/* Status on edit */}
           {isEditing && (
             <div className="space-y-2">
               <Label>Status</Label>

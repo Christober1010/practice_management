@@ -33,6 +33,8 @@ import toast from "react-hot-toast";
 import { Card, CardContent, CardHeader } from "../ui/card";
 import { mahaverseFetch } from "@/lib/mahaverse-api";
 import PromptMultiSelect from "@/components/master-data/prompt-multi-select";
+import { getDomainModuleLabel, DEFAULT_DOMAIN_MODULE_KEY } from "@/lib/domain-module-options";
+import AddTargetModal from "@/components/master-data/add-target-modal";
 
 const activityTypes = [
   "Task Analysis",
@@ -90,43 +92,52 @@ export default function ClientTargetModal({
     (p) => String(p.id) === String(programId)
   );
   const selectedDomain = domains.find(
-    (d) => d.id === selectedProgram?.domain_id
+    (d) =>
+      String(d.id) ===
+      String(selectedProgram?.domain_id || selectedProgram?.domainId)
   );
-  const selectedModule = modules.find(
-    (m) => m.id === selectedDomain?.module_id
+  const selectedModuleLabel = getDomainModuleLabel(
+    modules,
+    selectedDomain?.module_id ||
+      selectedDomain?.moduleId ||
+      selectedDomain?.MODULE_ID ||
+      (selectedDomain ? DEFAULT_DOMAIN_MODULE_KEY : "")
   );
+
+  const programOptionLabel = (program) => {
+    const domain = domains.find(
+      (d) =>
+        String(d.id) ===
+        String(program.domain_id || program.domainId || program.DOMAIN_ID)
+    );
+    const moduleName = domain
+      ? getDomainModuleLabel(
+          modules,
+          domain.module_id ||
+            domain.moduleId ||
+            domain.MODULE_ID ||
+            DEFAULT_DOMAIN_MODULE_KEY
+        )
+      : "—";
+    const domainName = domain?.name || domain?.NAME || "";
+    const programName = program.name || program.NAME || "Unnamed Program";
+    const modulePart =
+      moduleName && moduleName !== "—" ? moduleName : domain ? "Skill Acquisition" : "Module";
+    const domainPart = domainName || "Domain";
+    return `${modulePart} - ${domainPart} - ${programName}`;
+  };
 
   const sortedFilteredPrograms = [...programs]
     .filter((p) => p.id && String(p.id).trim() !== "")
-    .sort((a, b) => {
-      const domainA = domains.find((d) => d.id === a.domain_id);
-      const domainB = domains.find((d) => d.id === b.domain_id);
-      const moduleA =
-        modules.find((m) => m.id === domainA?.module_id)?.name || "";
-      const moduleB =
-        modules.find((m) => m.id === domainB?.module_id)?.name || "";
-
-      const moduleCompare = moduleA.localeCompare(moduleB);
-      if (moduleCompare !== 0) return moduleCompare;
-
-      const domainCompare = (domainA?.name || "").localeCompare(
-        domainB?.name || ""
-      );
-      if (domainCompare !== 0) return domainCompare;
-
-      return a.name.localeCompare(b.name);
-    })
-    .filter((p) => {
-      const domain = domains.find((d) => d.id === p.domain_id);
-      const module = modules.find((m) => m.id === domain?.module_id);
-      const label = `${module?.name || ""} - ${domain?.name || ""} - ${p.name}`;
-      return label.toLowerCase().includes(programSearch.toLowerCase());
-    });
+    .sort((a, b) => programOptionLabel(a).localeCompare(programOptionLabel(b)))
+    .filter((p) =>
+      programOptionLabel(p)
+        .toLowerCase()
+        .includes(programSearch.toLowerCase())
+    );
 
   const selectedProgramLabel = selectedProgram
-    ? `${selectedModule?.name || "Module"} - ${
-        selectedDomain?.name || "Domain"
-      } - ${selectedProgram.name}`
+    ? programOptionLabel(selectedProgram)
     : "";
 
   const buildPromptObjects = () => {
@@ -213,15 +224,22 @@ export default function ClientTargetModal({
               </span>
             </div>
 
-            {selectedModule && selectedDomain && selectedProgram && (
+            {selectedModuleLabel &&
+              selectedModuleLabel !== "—" &&
+              selectedDomain &&
+              selectedProgram && (
               <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground flex-wrap justify-center">
                 <span className="font-medium">{clientName}</span>
                 <ChevronRight size={16} className="text-muted-foreground" />
-                <span className="font-medium">{selectedModule.name}</span>
+                <span className="font-medium">{selectedModuleLabel}</span>
                 <ChevronRight size={16} className="text-muted-foreground" />
-                <span className="font-medium">{selectedDomain.name}</span>
+                <span className="font-medium">
+                  {selectedDomain.name || selectedDomain.NAME}
+                </span>
                 <ChevronRight size={16} className="text-muted-foreground" />
-                <span className="font-medium">{selectedProgram.name}</span>
+                <span className="font-medium">
+                  {selectedProgram.name || selectedProgram.NAME}
+                </span>
                 {name && (
                   <>
                     <ChevronRight size={16} className="text-muted-foreground" />
@@ -264,21 +282,11 @@ export default function ClientTargetModal({
                 </div>
 
                 {sortedFilteredPrograms.length > 0 ? (
-                  sortedFilteredPrograms.map((program) => {
-                    const domain = domains.find(
-                      (d) => d.id === program.domain_id
-                    );
-                    const module = modules.find(
-                      (m) => m.id === domain?.module_id
-                    );
-                    const label = `${module?.name} - ${domain?.name} - ${program.name}`;
-
-                    return (
-                      <SelectItem key={program.id} value={String(program.id)}>
-                        {label}
-                      </SelectItem>
-                    );
-                  })
+                  sortedFilteredPrograms.map((program) => (
+                    <SelectItem key={program.id} value={String(program.id)}>
+                      {programOptionLabel(program)}
+                    </SelectItem>
+                  ))
                 ) : (
                   <div className="py-2 px-3 text-sm text-muted-foreground">
                     No programs found
@@ -463,14 +471,24 @@ export function TargetsListModal({
               <div className="space-y-3">
                 {targets.map((target) => {
                   const program = programs.find(
-                    (p) => String(p.id) === String(target.program_id)
+                    (p) =>
+                      String(p.id) ===
+                      String(target.program_id || target.programId)
                   );
                   const domain = domains.find(
-                    (d) => d.id === program?.domain_id
+                    (d) =>
+                      String(d.id) ===
+                      String(program?.domain_id || program?.domainId)
                   );
-                  const module = modules.find(
-                    (m) => m.id === domain?.module_id
-                  );
+                  const moduleLabel = domain
+                    ? getDomainModuleLabel(
+                        modules,
+                        domain.module_id ||
+                          domain.moduleId ||
+                          domain.MODULE_ID ||
+                          DEFAULT_DOMAIN_MODULE_KEY
+                      )
+                    : "—";
 
                   return (
                     <Card
@@ -481,7 +499,7 @@ export function TargetsListModal({
                         <div className="flex items-center justify-between">
                           <div className="flex-1">
                             <h3 className="font-semibold text-lg capitalize">
-                              {target.name}
+                              {target.name || target.NAME || "Unnamed Target"}
                             </h3>
                             {target.description && (
                               <p className="text-sm text-gray-600 mt-1">
@@ -491,21 +509,33 @@ export function TargetsListModal({
                             <div className="flex items-center gap-1 mt-2 flex-wrap text-xs text-black">
                               <span className="flex items-center gap-1">
                                 <span className="font-medium">Module:</span>
-                                <span>{module?.name || "Not assigned"}</span>
+                                <span>
+                                  {moduleLabel && moduleLabel !== "—"
+                                    ? moduleLabel
+                                    : "Not assigned"}
+                                </span>
                               </span>
 
                               <ArrowRight className="w-3 h-3 text-muted-foreground" />
 
                               <span className="flex items-center gap-1">
                                 <span className="font-medium">Domain:</span>
-                                <span>{domain?.name || "Not assigned"}</span>
+                                <span>
+                                  {domain?.name ||
+                                    domain?.NAME ||
+                                    "Not assigned"}
+                                </span>
                               </span>
 
                               <ArrowRight className="w-3 h-3 text-muted-foreground" />
 
                               <span className="flex items-center gap-1">
                                 <span className="font-medium">Program:</span>
-                                <span>{program?.name || "Not assigned"}</span>
+                                <span>
+                                  {program?.name ||
+                                    program?.NAME ||
+                                    "Not assigned"}
+                                </span>
                               </span>
 
                               <ArrowRight className="w-3 h-3 text-muted-foreground" />
@@ -515,7 +545,9 @@ export function TargetsListModal({
                                   Activity type:
                                 </span>
                                 <span>
-                                  {target.activity_type || "No activity type"}
+                                  {target.activity_type ||
+                                    target.activityType ||
+                                    "No activity type"}
                                 </span>
                               </span>
 
@@ -523,7 +555,9 @@ export function TargetsListModal({
 
                               <span className="flex items-center gap-1">
                                 <span className="font-medium">Status:</span>
-                                <span>{target.status || "Active"}</span>
+                                <span>
+                                  {target.status || target.STATUS || "Active"}
+                                </span>
                               </span>
                             </div>
                             {Array.isArray(target.prompts) &&
@@ -583,8 +617,8 @@ export function TargetsListModal({
         </DialogContent>
       </Dialog>
 
-      {/* Add/Edit modal */}
-      <ClientTargetModal
+      {/* Add/Edit modal — same form as Configure data → Targets */}
+      <AddTargetModal
         isOpen={isTargetFormOpen}
         onClose={() => {
           setIsTargetFormOpen(false);
@@ -592,14 +626,14 @@ export function TargetsListModal({
         }}
         onAdd={(newTarget) => handleTargetSaved(newTarget, false)}
         onEdit={(updatedTarget) => handleTargetSaved(updatedTarget, true)}
-        clientId={clientId}
-        clientName={clientName}
         programs={programs}
         domains={domains}
         modules={modules}
         allPrompts={allPrompts}
         loading={loading}
         editingTarget={editingTarget}
+        lockedClientId={clientId ? String(clientId) : ""}
+        lockedClientName={clientName || ""}
       />
     </>
   );

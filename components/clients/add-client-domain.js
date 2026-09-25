@@ -1,7 +1,5 @@
 "use client";
 
-import { mahaverseFetch } from "@/lib/mahaverse-api";
-
 import { useState, useEffect } from "react";
 import {
   Dialog,
@@ -10,26 +8,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Plus, Edit, Trash2, Layers } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
-import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   DEFAULT_DOMAIN_MODULE_KEY,
-  DOMAIN_MODULE_OPTIONS,
-  inferDomainModuleKey,
-  resolveModuleIdForDomain,
+  getDomainModuleLabel,
 } from "@/lib/domain-module-options";
+import AddDomainModal from "@/components/master-data/add-domain-modal";
+import { mahaverseFetch } from "@/lib/mahaverse-api";
 
 const generateUUID = () =>
   "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -37,6 +24,37 @@ const generateUUID = () =>
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
+
+/** MySQL on some hosts returns NAME/STATUS uppercase — normalize for UI. */
+function normalizeDomainRow(d) {
+  if (!d || typeof d !== "object") return d;
+  const moduleId =
+    d.module_id ||
+    d.moduleId ||
+    d.MODULE_ID ||
+    DEFAULT_DOMAIN_MODULE_KEY;
+  return {
+    ...d,
+    id: d.id,
+    name: d.name || d.NAME || d.Name || "Unnamed Domain",
+    description: d.description || d.DESCRIPTION || "",
+    status: d.status || d.STATUS || "Active",
+    module_id: moduleId,
+    moduleId,
+    archived: d.archived === 1 || d.archived === true || d.archived === "1",
+  };
+}
+
+function normalizeModuleRow(m) {
+  if (!m || typeof m !== "object") return m;
+  return {
+    ...m,
+    id: m.id,
+    name: m.name || m.NAME || m.Name || "Unnamed Module",
+    description: m.description || m.DESCRIPTION || "",
+    status: m.status || m.STATUS || "Active",
+  };
+}
 
 export default function DomainsListModal({
   isOpen,
@@ -50,8 +68,6 @@ export default function DomainsListModal({
   const [isDomainFormOpen, setIsDomainFormOpen] = useState(false);
   const [editingDomain, setEditingDomain] = useState(null);
 
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost";
-
   useEffect(() => {
     if (isOpen && clientId) {
       fetchDomains();
@@ -62,12 +78,17 @@ export default function DomainsListModal({
   const fetchDomains = async () => {
     setLoading(true);
     try {
-      const response = await mahaverseFetch(`/client-modules.php?client_id=${clientId}`
+      const response = await mahaverseFetch(
+        `/client-modules.php?client_id=${clientId}`
       );
       const result = await response.json();
 
       if (result.success && result.data.domains) {
-        setDomains(result.data.domains);
+        setDomains(
+          (result.data.domains || [])
+            .map(normalizeDomainRow)
+            .filter((d) => d && !d.archived)
+        );
       }
     } catch (error) {
       toast.error("Failed to load domains");
@@ -78,12 +99,13 @@ export default function DomainsListModal({
 
   const fetchModules = async () => {
     try {
-      const response = await mahaverseFetch(`/client-modules.php?client_id=${clientId}`
+      const response = await mahaverseFetch(
+        `/client-modules.php?client_id=${clientId}`
       );
       const result = await response.json();
 
       if (result.success && result.data.modules) {
-        setModules(result.data.modules);
+        setModules((result.data.modules || []).map(normalizeModuleRow));
       }
     } catch (error) {
       console.error("Failed to load modules:", error);
@@ -95,37 +117,40 @@ export default function DomainsListModal({
   };
 
   const handleSaveDomain = async (domainData) => {
-    const payload = editingDomain
-      ? { ...editingDomain, ...domainData }
-      : {
-          id: generateUUID(),
-          ...domainData,
-          status: "Active",
-          archived: false,
-        };
+    const domainRow = {
+      id: domainData.id || editingDomain?.id || generateUUID(),
+      name: domainData.name,
+      description: domainData.description || "",
+      status: domainData.status || "Active",
+      archived: domainData.archived ?? 0,
+      moduleId: domainData.moduleId || domainData.module_id,
+      module_id: domainData.module_id || domainData.moduleId,
+      client_id: clientId,
+    };
 
     try {
-      const res = await mahaverseFetch('/client-modules.php', {
-        method: editingDomain ? "PUT" : "POST",
+      // POST upsert (PUT domainId path is a different shape) — matches Configure data master list
+      const res = await mahaverseFetch("/client-modules.php", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           client_id: clientId,
-          domains: [payload],
+          domains: [domainRow],
         }),
       });
       const json = await res.json();
       if (json.success) {
-        setDomains((prev) =>
-          editingDomain
-            ? prev.map((d) => (d.id === payload.id ? payload : d))
-            : [...prev, payload]
-        );
         toast.success(editingDomain ? "Domain updated" : "Domain added");
         setIsDomainFormOpen(false);
         setEditingDomain(null);
+        await fetchDomains();
+        return true;
       }
+      toast.error(json.message || "Failed to save domain");
+      return false;
     } catch (err) {
       toast.error("Failed to save domain");
+      return false;
     }
   };
 
@@ -189,26 +214,40 @@ export default function DomainsListModal({
                 </CardContent>
               </Card>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {domains.map((domain) => {
+                  const moduleLabel = getDomainModuleLabel(
+                    modules,
+                    domain.module_id ||
+                      domain.moduleId ||
+                      domain.MODULE_ID ||
+                      DEFAULT_DOMAIN_MODULE_KEY
+                  );
+                  const moduleName =
+                    moduleLabel && moduleLabel !== "—" ? moduleLabel : null;
                   return (
                     <Card
                       key={domain.id}
-                      className="border-l-4 border-l-teal-500"
+                      className="border-l-4 border-l-teal-500 shadow-sm"
                     >
-                      <CardHeader className="pb-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-lg">
-                              {domain.name}
+                      <CardContent className="py-3 px-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-base truncate">
+                              {domain.name || "Unnamed Domain"}
                             </h3>
-                            {domain.description && (
-                              <p className="text-sm text-gray-600 mt-1">
+                            {domain.description ? (
+                              <p className="text-sm text-gray-600 mt-0.5 line-clamp-2">
                                 {domain.description}
                               </p>
-                            )}
+                            ) : null}
+                            {moduleName ? (
+                              <p className="text-xs text-slate-500 mt-1">
+                                Module: {moduleName}
+                              </p>
+                            ) : null}
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 shrink-0">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -229,7 +268,7 @@ export default function DomainsListModal({
                             </Button>
                           </div>
                         </div>
-                      </CardHeader>
+                      </CardContent>
                     </Card>
                   );
                 })}
@@ -239,119 +278,23 @@ export default function DomainsListModal({
         </DialogContent>
       </Dialog>
 
-      {/* Domain Form Modal */}
-      <DomainFormModal
+      <AddDomainModal
         isOpen={isDomainFormOpen}
         onClose={() => {
           setIsDomainFormOpen(false);
           setEditingDomain(null);
         }}
-        onSave={handleSaveDomain}
+        onAdd={handleSaveDomain}
         modules={modules}
-        editingDomain={editingDomain}
+        loading={loading}
+        editingDomain={
+          editingDomain
+            ? { ...editingDomain, client_id: clientId }
+            : null
+        }
+        lockedClientId={clientId ? String(clientId) : ""}
+        lockedClientName={clientName || ""}
       />
     </>
-  );
-}
-
-export function DomainFormModal({
-  isOpen,
-  onClose,
-  onSave,
-  modules = [],
-  editingDomain,
-}) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [moduleKey, setModuleKey] = useState(DEFAULT_DOMAIN_MODULE_KEY);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (editingDomain) {
-      setName(editingDomain.name || "");
-      setDescription(editingDomain.description || "");
-      setModuleKey(
-        inferDomainModuleKey(
-          modules,
-          editingDomain.moduleId || editingDomain.module_id
-        )
-      );
-    } else {
-      setName("");
-      setDescription("");
-      setModuleKey(DEFAULT_DOMAIN_MODULE_KEY);
-    }
-  }, [editingDomain, isOpen, modules]);
-
-  const handleSubmit = async () => {
-    if (!name.trim()) return toast.error("Name is required");
-
-    const moduleId = resolveModuleIdForDomain(modules, moduleKey);
-    if (!moduleId) return toast.error("Please select a module");
-
-    setLoading(true);
-    await onSave({
-      name: name.trim(),
-      description: description.trim(),
-      moduleId,
-      module_id: moduleId,
-    });
-    setLoading(false);
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {editingDomain ? "Edit Domain" : "Add Domain"}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <Label>Module *</Label>
-            <Select value={moduleKey} onValueChange={setModuleKey}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select module" />
-              </SelectTrigger>
-              <SelectContent>
-                {DOMAIN_MODULE_OPTIONS.map((opt) => (
-                  <SelectItem key={opt.key} value={opt.key}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label>Name *</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-
-          <div>
-            <Label>Description</Label>
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-            />
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={loading}
-              className="bg-teal-600 hover:bg-teal-700"
-            >
-              {loading ? "Saving..." : "Save"}
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }

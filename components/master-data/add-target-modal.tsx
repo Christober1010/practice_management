@@ -27,26 +27,33 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
+  DEFAULT_DOMAIN_MODULE_KEY,
   getDomainModuleLabel,
   mergeCanonicalDomainModules,
 } from "@/lib/domain-module-options";
 import {
   filterMasterDataForClientScope,
   findClientByValue,
+  isArchivedEntity,
   resolveClientRecordId,
 } from "@/lib/master-data-client-scope";
 import {
   formatTargetInstructions,
   normalizeTaskStepsForApi,
   parseTargetInstructions,
+  TARGET_STATUS_OPTIONS,
+  MASTERY_TYPE_OPTIONS,
+  DEFAULT_TARGET_META,
+  todayLocalYmd,
 } from "@/lib/target-instructions-format";
 import PromptMultiSelect from "@/components/master-data/prompt-multi-select";
+import { mahaverseFetch } from "@/lib/mahaverse-api";
 
 interface AddTargetModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (target: any) => Promise<void>;
-  onEdit: (target: any) => Promise<void>;
+  onAdd: (target: any) => Promise<void | boolean>;
+  onEdit: (target: any) => Promise<void | boolean>;
   programs?: any[];
   domains?: any[];
   modules?: any[];
@@ -54,6 +61,9 @@ interface AddTargetModalProps {
   allPrompts?: any[];
   loading?: boolean;
   editingTarget?: any | null;
+  /** When set, locks the form to this client (Configure data → client Targets). */
+  lockedClientId?: string;
+  lockedClientName?: string;
 }
 
 const activityTypes = [
@@ -67,20 +77,29 @@ function generateId() {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
 
+const EMPTY_CLIENTS: any[] = [];
+const EMPTY_PROGRAMS: any[] = [];
+const EMPTY_DOMAINS: any[] = [];
+const EMPTY_MODULES: any[] = [];
+const EMPTY_PROMPTS: any[] = [];
+
 export default function AddTargetModal({
   isOpen,
   onClose,
   onAdd,
   onEdit,
-  programs = [],
-  domains = [],
-  modules = [],
-  clients = [],
-  allPrompts = [],
+  programs = EMPTY_PROGRAMS,
+  domains = EMPTY_DOMAINS,
+  modules = EMPTY_MODULES,
+  clients = EMPTY_CLIENTS,
+  allPrompts = EMPTY_PROMPTS,
   loading = false,
   editingTarget = null,
+  lockedClientId = "",
+  lockedClientName = "",
 }: AddTargetModalProps) {
   const isEditing = !!editingTarget;
+  const isClientLocked = Boolean(lockedClientId);
 
   const [name, setName] = useState("");
   const [programId, setProgramId] = useState("");
@@ -90,9 +109,28 @@ export default function AddTargetModal({
 
   const [goalDescription, setGoalDescription] = useState("");
   const [sd, setSd] = useState("");
+  const [generalizationPlan, setGeneralizationPlan] = useState("");
   const [instructions, setInstructions] = useState("");
   const [trials, setTrials] = useState("1");
   const [selectedPrompts, setSelectedPrompts] = useState<string[]>([]);
+  const [masteryType, setMasteryType] = useState(DEFAULT_TARGET_META.mastery_type);
+  const [targetStatus, setTargetStatus] = useState(DEFAULT_TARGET_META.target_status);
+  const [dateOpened, setDateOpened] = useState("");
+  const [dateMastered, setDateMastered] = useState("");
+  const [dateClosed, setDateClosed] = useState("");
+  const [metBaseline, setMetBaseline] = useState("");
+  const [overrideResponseCriteria, setOverrideResponseCriteria] = useState(
+    DEFAULT_TARGET_META.override_response_criteria
+  );
+  const [overrideConsecutiveDays, setOverrideConsecutiveDays] = useState(
+    DEFAULT_TARGET_META.override_consecutive_days
+  );
+  const [overrideFirstTrialIndependent, setOverrideFirstTrialIndependent] =
+    useState(DEFAULT_TARGET_META.override_first_trial_independent);
+  const [maintenanceLevel, setMaintenanceLevel] = useState("");
+  const [maintenancePeriods, setMaintenancePeriods] = useState<
+    { id: string; name: string }[]
+  >([]);
 
   const [tasks, setTasks] = useState<
     { id: string; name: string; sequence: number }[]
@@ -101,40 +139,147 @@ export default function AddTargetModal({
   const [newTaskSequence, setNewTaskSequence] = useState("1");
   const [programSearch, setProgramSearch] = useState("");
 
-  const selectedClientObj = findClientByValue(clients, selectedClientValue);
+  function resetForm() {
+    setName("");
+    setProgramId("");
+    setActivityType("");
+    setStatus("Active");
+    setGoalDescription("");
+    setSd("");
+    setGeneralizationPlan("");
+    setInstructions("");
+    setTrials("1");
+    setTasks([]);
+    setNewTaskName("");
+    setNewTaskSequence("1");
+    setSelectedPrompts([]);
+    setSelectedClientValue(isClientLocked ? String(lockedClientId) : "generic");
+    setProgramSearch("");
+    setMasteryType(DEFAULT_TARGET_META.mastery_type);
+    setTargetStatus(DEFAULT_TARGET_META.target_status);
+    setDateOpened(todayLocalYmd());
+    setDateMastered("");
+    setDateClosed("");
+    setMetBaseline("");
+    setOverrideResponseCriteria(DEFAULT_TARGET_META.override_response_criteria);
+    setOverrideConsecutiveDays(DEFAULT_TARGET_META.override_consecutive_days);
+    setOverrideFirstTrialIndependent(
+      DEFAULT_TARGET_META.override_first_trial_independent
+    );
+    setMaintenanceLevel("");
+  }
 
-  const selectedClientId =
-    selectedClientValue === "generic"
+  const selectedClientObj = isClientLocked
+    ? findClientByValue(clients, lockedClientId) || {
+        id: lockedClientId,
+        client_id: lockedClientId,
+        first_name: lockedClientName || "",
+        last_name: "",
+        name: lockedClientName || "",
+      }
+    : findClientByValue(clients, selectedClientValue);
+
+  const selectedClientId = isClientLocked
+    ? String(lockedClientId).trim()
+    : selectedClientValue === "generic"
       ? ""
       : resolveClientRecordId(selectedClientObj) || String(selectedClientValue).trim();
 
   const modulesForLookup = mergeCanonicalDomainModules(modules);
 
-  const domainsForClient = filterMasterDataForClientScope(domains, {
-    clientId: selectedClientId,
-    isGeneric: selectedClientValue === "generic",
-    keepId: "",
-  });
+  const filterClientScopedRows = (items: any[], keepId = "") =>
+    (items || []).filter((item) => {
+      if (item?.id == null || String(item.id).trim() === "") return false;
+      if (isArchivedEntity(item) && String(item.id) !== String(keepId ?? "")) {
+        return false;
+      }
+      return true;
+    });
 
-  const programsForClient = filterMasterDataForClientScope(programs, {
-    clientId: selectedClientId,
-    isGeneric: selectedClientValue === "generic",
-    keepId: programId,
-  });
+  // Client Configure data already passes this client's rows (often without client_id).
+  const domainsForClient = isClientLocked
+    ? filterClientScopedRows(domains)
+    : filterMasterDataForClientScope(domains, {
+        clientId: selectedClientId,
+        isGeneric: selectedClientValue === "generic",
+        keepId: "",
+      });
+
+  const programsForClient = isClientLocked
+    ? filterClientScopedRows(programs, programId)
+    : filterMasterDataForClientScope(programs, {
+        clientId: selectedClientId,
+        isGeneric: selectedClientValue === "generic",
+        keepId: programId,
+      });
 
   const isTaskAnalysisType = activityType === "Task Analysis";
+  const isDttOrTa =
+    activityType === "Task Analysis" ||
+    activityType === "Discrete Trial Training";
 
-  // Pre-fill fields when editing
   useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await mahaverseFetch("/maintenance-periods.php?activeOnly=true");
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (data?.success && Array.isArray(data.data)) {
+          setMaintenancePeriods(
+            data.data.map((row: any) => ({
+              id: String(row.id),
+              name: String(row.name || row.period_name || ""),
+            }))
+          );
+        }
+      } catch {
+        if (!cancelled) setMaintenancePeriods([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  // Pre-fill fields when editing / reset when opening for create
+  useEffect(() => {
+    if (!isOpen) return;
+
     if (isEditing && editingTarget) {
       setName(editingTarget.name || "");
       setProgramId(editingTarget.programId || editingTarget.program_id || "");
       setActivityType(editingTarget.activityType || editingTarget.activity_type || "");
       setStatus(editingTarget.status || "Active");
-      setGoalDescription(editingTarget.goalDescription || editingTarget.goal_description || "");
+      setGoalDescription(
+        editingTarget.goalDescription ||
+          editingTarget.goal_description ||
+          editingTarget.description ||
+          ""
+      );
       const parsed = parseTargetInstructions(editingTarget.instructions || "");
       setSd(parsed.sd);
+      setGeneralizationPlan(parsed.generalizationPlan || "");
       setInstructions(parsed.instructions);
+      const meta = parsed.meta || DEFAULT_TARGET_META;
+      setMasteryType(meta.mastery_type || DEFAULT_TARGET_META.mastery_type);
+      setTargetStatus(meta.target_status || DEFAULT_TARGET_META.target_status);
+      setDateOpened(meta.date_opened || "");
+      setDateMastered(meta.date_mastered || "");
+      setDateClosed(meta.date_closed || "");
+      setMetBaseline(meta.met_baseline || "");
+      setOverrideResponseCriteria(
+        meta.override_response_criteria || DEFAULT_TARGET_META.override_response_criteria
+      );
+      setOverrideConsecutiveDays(
+        meta.override_consecutive_days || DEFAULT_TARGET_META.override_consecutive_days
+      );
+      setOverrideFirstTrialIndependent(
+        meta.override_first_trial_independent ||
+          DEFAULT_TARGET_META.override_first_trial_independent
+      );
+      setMaintenanceLevel(meta.maintenance_level || "");
       setTrials(String(editingTarget.trials || 1));
 
       // Set prompts - extract IDs from prompt objects
@@ -153,37 +298,47 @@ export default function AddTargetModal({
         })) || [];
       setTasks(taskList);
 
-      setSelectedClientValue(editingTarget.client_id ? String(editingTarget.client_id) : "generic");
+      setSelectedClientValue(
+        editingTarget.client_id
+          ? String(editingTarget.client_id)
+          : isClientLocked
+            ? String(lockedClientId)
+            : "generic"
+      );
     } else {
       resetForm();
-      
-      // Check for pending client from client view navigation
-      const pendingClient = localStorage.getItem("pendingClientForMasterData");
-      if (pendingClient && isOpen) {
-        try {
-          const clientInfo = JSON.parse(pendingClient);
-          // Try to find client by ID first, then by name
-          const foundClient = clients.find(
-            (c) => String(c.id) === String(clientInfo.id) || c.name === clientInfo.name
-          );
-          if (foundClient) {
-            setSelectedClientValue(
-              resolveClientRecordId(foundClient) || String(foundClient.id ?? foundClient.name)
+      if (isClientLocked) {
+        setSelectedClientValue(String(lockedClientId));
+      } else {
+        // Check for pending client from client view navigation
+        const pendingClient = localStorage.getItem("pendingClientForMasterData");
+        if (pendingClient) {
+          try {
+            const clientInfo = JSON.parse(pendingClient);
+            // Try to find client by ID first, then by name
+            const foundClient = clients.find(
+              (c) => String(c.id) === String(clientInfo.id) || c.name === clientInfo.name
             );
-          } else if (clientInfo.id) {
-            setSelectedClientValue(String(clientInfo.id));
-          } else if (clientInfo.name) {
-            setSelectedClientValue(clientInfo.name);
-          } else {
+            if (foundClient) {
+              setSelectedClientValue(
+                resolveClientRecordId(foundClient) || String(foundClient.id ?? foundClient.name)
+              );
+            } else if (clientInfo.id) {
+              setSelectedClientValue(String(clientInfo.id));
+            } else if (clientInfo.name) {
+              setSelectedClientValue(clientInfo.name);
+            } else {
+              setSelectedClientValue("generic");
+            }
+          } catch (err) {
+            console.error("Error parsing pending client info:", err);
             setSelectedClientValue("generic");
           }
-        } catch (err) {
-          console.error("Error parsing pending client info:", err);
-          setSelectedClientValue("generic");
         }
       }
     }
-  }, [editingTarget, isEditing, isOpen, clients]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when modal opens / edit target changes
+  }, [isOpen, editingTarget, isEditing, isClientLocked, lockedClientId]);
 
   useEffect(() => {
     if (!programId) return;
@@ -248,9 +403,25 @@ export default function AddTargetModal({
       return;
     }
 
-    const storedInstructions = isTaskAnalysisType
-      ? formatTargetInstructions(sd, instructions)
-      : instructions.trim();
+    const targetMeta = {
+      mastery_type: masteryType,
+      target_status: targetStatus,
+      date_opened: dateOpened,
+      date_mastered: dateMastered,
+      date_closed: dateClosed,
+      met_baseline: metBaseline,
+      override_response_criteria: overrideResponseCriteria,
+      override_consecutive_days: overrideConsecutiveDays,
+      override_first_trial_independent: overrideFirstTrialIndependent,
+      maintenance_level: maintenanceLevel,
+    };
+
+    const storedInstructions = formatTargetInstructions(
+      sd,
+      instructions,
+      generalizationPlan,
+      targetMeta
+    );
 
     if (Number.parseInt(trials) < 1 || Number.parseInt(trials) > 100) {
       toast.error("Number of Trials must be between 1 and 100");
@@ -285,6 +456,17 @@ export default function AddTargetModal({
       .filter(Boolean);
 
     try {
+      const clientPayload =
+        isClientLocked || selectedClientValue !== "generic"
+          ? {
+              client_id:
+                (isClientLocked
+                  ? lockedClientId
+                  : resolveClientRecordId(selectedClientObj) || selectedClientValue) ||
+                undefined,
+            }
+          : {};
+
       if (isEditing) {
         // Update existing target
         const updatedTarget = {
@@ -298,14 +480,10 @@ export default function AddTargetModal({
           trials: Number.parseInt(trials) || 1,
           prompts: promptObjects,
           tasks: taskPayload,
-          ...(selectedClientValue !== "generic"
-            ? {
-                client_id:
-                  resolveClientRecordId(selectedClientObj) || selectedClientValue,
-              }
-            : {}),
+          ...clientPayload,
         };
-        await onEdit(updatedTarget);
+        const result = await onEdit(updatedTarget);
+        if (result === false) return;
       } else {
         // Add new target
         const newTarget = {
@@ -320,14 +498,10 @@ export default function AddTargetModal({
           trials: Number.parseInt(trials) || 1,
           prompts: promptObjects,
           tasks: taskPayload,
-          ...(selectedClientValue !== "generic"
-            ? {
-                client_id:
-                  resolveClientRecordId(selectedClientObj) || selectedClientValue,
-              }
-            : {}),
+          ...clientPayload,
         };
-        await onAdd(newTarget);
+        const result = await onAdd(newTarget);
+        if (result === false) return;
       }
 
       resetForm();
@@ -336,23 +510,6 @@ export default function AddTargetModal({
       console.error("Error saving target:", error);
       toast.error("Failed to save target");
     }
-  };
-
-  const resetForm = () => {
-    setName("");
-    setProgramId("");
-    setActivityType("");
-    setStatus("Active");
-    setGoalDescription("");
-    setSd("");
-    setInstructions("");
-    setTrials("1");
-    setTasks([]);
-    setNewTaskName("");
-    setNewTaskSequence("1");
-    setSelectedPrompts([]);
-    setSelectedClientValue("generic");
-    setProgramSearch("");
   };
 
   const getDomainName = (dom) => {
@@ -374,7 +531,10 @@ export default function AddTargetModal({
   const selectedModuleName = selectedDomain
     ? getDomainModuleLabel(
         modulesForLookup,
-        selectedDomain.moduleId || selectedDomain.module_id
+        selectedDomain.moduleId ||
+          selectedDomain.module_id ||
+          selectedDomain.MODULE_ID ||
+          DEFAULT_DOMAIN_MODULE_KEY
       )
     : "";
   const selectedProgramName = selectedProgram ? getProgramName(selectedProgram) : "";
@@ -386,12 +546,17 @@ export default function AddTargetModal({
     const modName = domain
       ? getDomainModuleLabel(
           modulesForLookup,
-          domain.moduleId || domain.module_id
+          domain.moduleId ||
+            domain.module_id ||
+            domain.MODULE_ID ||
+            DEFAULT_DOMAIN_MODULE_KEY
         )
       : "—";
-    const domName = domain ? getDomainName(domain) : "";
+    const domName = domain ? getDomainName(domain) : "Domain";
     const progName = getProgramName(program);
-    return `${modName !== "—" ? modName : "—"} - ${domName} - ${progName}`;
+    const modulePart =
+      modName && modName !== "—" ? modName : domain ? "Skill Acquisition" : "Module";
+    return `${modulePart} - ${domName || "Domain"} - ${progName}`;
   };
 
   // SAFE filtering + sorting (scoped to client or generic)
@@ -433,43 +598,58 @@ export default function AddTargetModal({
           {/* Client Selector */}
           <div className="space-y-2">
             <Label>Assign to Client</Label>
-            <Select
-              value={selectedClientValue === "generic" ? "generic" : selectedClientValue}
-              onValueChange={(val) => {
-                setSelectedClientValue(val === "generic" ? "generic" : val);
-                setProgramSearch("");
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Generic (no client)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="generic">Generic (no client)</SelectItem>
-                {clients
-                  .map((client) => {
-                    const cid = resolveClientRecordId(client);
-                    if (!cid) return null;
-                    const displayName =
-                      `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
-                      client.name ||
-                      client.NAME ||
-                      "Unnamed Client";
-                    return (
-                      <SelectItem key={cid} value={cid}>
-                        {displayName}
-                      </SelectItem>
-                    );
-                  })
-                  .filter(Boolean)}
-              </SelectContent>
-            </Select>
-
-            {selectedClientObj && (
-              <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded-md text-sm">
-                <div className="font-medium text-purple-900">
-                  {selectedClientObj.first_name || ""} {selectedClientObj.last_name || ""}
+            {isClientLocked ? (
+              <div className="p-3 bg-teal-50 border border-teal-200 rounded-md text-sm">
+                <div className="font-medium text-teal-900">
+                  {lockedClientName ||
+                    `${selectedClientObj?.first_name || ""} ${selectedClientObj?.last_name || ""}`.trim() ||
+                    "This client"}
                 </div>
+                <p className="text-xs text-teal-700 mt-1">
+                  Target will be saved for this client.
+                </p>
               </div>
+            ) : (
+              <>
+                <Select
+                  value={selectedClientValue === "generic" ? "generic" : selectedClientValue}
+                  onValueChange={(val) => {
+                    setSelectedClientValue(val === "generic" ? "generic" : val);
+                    setProgramSearch("");
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Generic (no client)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="generic">Generic (no client)</SelectItem>
+                    {clients
+                      .map((client) => {
+                        const cid = resolveClientRecordId(client);
+                        if (!cid) return null;
+                        const displayName =
+                          `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
+                          client.name ||
+                          client.NAME ||
+                          "Unnamed Client";
+                        return (
+                          <SelectItem key={cid} value={cid}>
+                            {displayName}
+                          </SelectItem>
+                        );
+                      })
+                      .filter(Boolean)}
+                  </SelectContent>
+                </Select>
+
+                {selectedClientObj && (
+                  <div className="mt-2 p-3 bg-purple-50 border border-purple-200 rounded-md text-sm">
+                    <div className="font-medium text-purple-900">
+                      {selectedClientObj.first_name || ""} {selectedClientObj.last_name || ""}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -580,18 +760,30 @@ export default function AddTargetModal({
             />
           </div>
 
-          {isTaskAnalysisType && (
-            <div className="space-y-2">
-              <Label htmlFor="target-sd">SD (Discriminative Stimulus) *</Label>
-              <Input
-                id="target-sd"
-                placeholder='e.g. Lets go potty'
-                value={sd}
-                onChange={(e) => setSd(e.target.value)}
-                disabled={loading}
-              />
-            </div>
-          )}
+          <div className="space-y-2">
+            <Label htmlFor="target-sd">
+              SD (Discriminative Stimulus){isTaskAnalysisType ? " *" : ""}
+            </Label>
+            <Input
+              id="target-sd"
+              placeholder='e.g. Lets go potty'
+              value={sd}
+              onChange={(e) => setSd(e.target.value)}
+              disabled={loading}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="generalization-plan">Generalization Plan</Label>
+            <Textarea
+              id="generalization-plan"
+              placeholder="Describe how this skill will be generalized across people, settings, and materials"
+              value={generalizationPlan}
+              onChange={(e) => setGeneralizationPlan(e.target.value)}
+              disabled={loading}
+              rows={2}
+            />
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="instructions">
@@ -610,6 +802,175 @@ export default function AddTargetModal({
               rows={isTaskAnalysisType ? 4 : 2}
             />
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>Mastery Type</Label>
+              <Select value={masteryType} onValueChange={setMasteryType} disabled={loading}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Mastery Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MASTERY_TYPE_OPTIONS.map((opt) => (
+                    <SelectItem key={opt} value={opt}>
+                      {opt}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Target Status</Label>
+              <Select
+                value={targetStatus}
+                onValueChange={setTargetStatus}
+                disabled={loading}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Target Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TARGET_STATUS_OPTIONS.map((opt) => (
+                    <SelectItem key={opt} value={opt}>
+                      {opt}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <Card className="border-slate-200">
+            <CardHeader className="py-3">
+              <CardTitle className="text-base">Advanced Options</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-2">
+                <Label htmlFor="date-opened">Date Opened</Label>
+                <Input
+                  id="date-opened"
+                  type="date"
+                  value={dateOpened}
+                  onChange={(e) => setDateOpened(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="date-mastered">Date Mastered</Label>
+                <Input
+                  id="date-mastered"
+                  type="date"
+                  value={dateMastered}
+                  onChange={(e) => setDateMastered(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="date-closed">Date Closed</Label>
+                <Input
+                  id="date-closed"
+                  type="date"
+                  value={dateClosed}
+                  onChange={(e) => setDateClosed(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="met-baseline">Met Baseline</Label>
+                <Input
+                  id="met-baseline"
+                  type="date"
+                  value={metBaseline}
+                  onChange={(e) => setMetBaseline(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200">
+            <CardHeader className="py-3">
+              <CardTitle className="text-base">Override Mastery Criterion</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="response-criteria">Response Criteria</Label>
+                  <Input
+                    id="response-criteria"
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={overrideResponseCriteria}
+                    onChange={(e) => setOverrideResponseCriteria(e.target.value)}
+                    disabled={loading}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="consecutive-days">Consecutive Days</Label>
+                  <Input
+                    id="consecutive-days"
+                    type="number"
+                    min="1"
+                    value={overrideConsecutiveDays}
+                    onChange={(e) => setOverrideConsecutiveDays(e.target.value)}
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>First Trial Must Be Independent</Label>
+                <Select
+                  value={overrideFirstTrialIndependent}
+                  onValueChange={setOverrideFirstTrialIndependent}
+                  disabled={loading}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Yes">Yes</SelectItem>
+                    <SelectItem value="No">No</SelectItem>
+                  </SelectContent>
+                </Select>
+                {!isDttOrTa && (
+                  <p className="text-xs text-red-600">
+                    This field is applicable only for DTT or TA.
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200">
+            <CardHeader className="py-3">
+              <CardTitle className="text-base">Maintenance Level</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <Label>Maintenance Level</Label>
+                <Select
+                  value={maintenanceLevel || "__none__"}
+                  onValueChange={(v) =>
+                    setMaintenanceLevel(v === "__none__" ? "" : v)
+                  }
+                  disabled={loading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Maintenance Level" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {maintenancePeriods.map((p) => (
+                      <SelectItem key={p.id} value={p.name}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="space-y-2">
             <Label htmlFor="trials">

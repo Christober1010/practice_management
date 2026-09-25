@@ -1,6 +1,7 @@
 "use client";
 
 import { mahaverseFetch } from "@/lib/mahaverse-api";
+import { parseTargetInstructions } from "@/lib/target-instructions-format";
 
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,6 +50,7 @@ import DeleteConfirmModal from "./DeleteConfirmModal";
 import {
   getDomainModuleLabel,
   mergeCanonicalDomainModules,
+  resolveDomainModuleId,
 } from "@/lib/domain-module-options";
 
 export default function TargetsList() {
@@ -198,7 +200,8 @@ export default function TargetsList() {
             (d) => String(d.id) === String(program.domainId || program.domain_id)
           )
         : null;
-      const moduleId = domain?.moduleId || domain?.module_id;
+      const moduleId = resolveDomainModuleId(domain);
+      const parsed = parseTargetInstructions(a.instructions || a.INSTRUCTIONS || "");
       return {
         id: `generic-${a.id}`,
         rawId: a.id,
@@ -208,6 +211,8 @@ export default function TargetsList() {
         trials: a.trials,
         instructions: a.instructions || a.INSTRUCTIONS || "",
         status: a.status || a.STATUS || "Active",
+        masteryType: parsed.meta?.mastery_type || "Automatic",
+        targetStatus: parsed.meta?.target_status || "In-Treatment",
         archived: !!a.archived,
         programId: a.programId || a.program_id,
         programName: program?.name || program?.NAME || "N/A",
@@ -280,10 +285,11 @@ export default function TargetsList() {
           })
         : null;
       
-      // Get module ID from domain (try both field names)
-      const domainModuleId = domain?.module_id || domain?.moduleId;
+      // Get module ID from domain (canonical + MODULE_ID + default)
+      const domainModuleId = resolveDomainModuleId(domain);
       
       const clientName = clientMap[String(a.client_id)] || "Unknown Client";
+      const parsed = parseTargetInstructions(a.instructions || a.INSTRUCTIONS || "");
 
       return {
         id: `client-${a.id}`,
@@ -294,6 +300,8 @@ export default function TargetsList() {
         trials: a.trials,
         instructions: a.instructions || a.INSTRUCTIONS || "",
         status: a.status || a.STATUS || "Active",
+        masteryType: parsed.meta?.mastery_type || "Automatic",
+        targetStatus: parsed.meta?.target_status || "In-Treatment",
         archived: a.archived === 1 || a.archived === true,
         programId: targetProgramId,
         programName: program?.name || program?.NAME || "—",
@@ -794,6 +802,12 @@ export default function TargetsList() {
                     <TableHead className="hidden md:table-cell">
                       Activity Type
                     </TableHead>
+                    <TableHead className="hidden lg:table-cell">
+                      Mastery Type
+                    </TableHead>
+                    <TableHead className="hidden lg:table-cell">
+                      Target Status
+                    </TableHead>
                     <TableHead className="hidden sm:table-cell">
                       Status
                     </TableHead>
@@ -847,6 +861,14 @@ export default function TargetsList() {
                         >
                           {t.activityType || "N/A"}
                         </Badge>
+                      </TableCell>
+
+                      <TableCell className="hidden lg:table-cell p-2 text-sm text-slate-700">
+                        {t.masteryType || "—"}
+                      </TableCell>
+
+                      <TableCell className="hidden lg:table-cell p-2 text-sm text-slate-700">
+                        {t.targetStatus || "—"}
                       </TableCell>
 
                       <TableCell className="hidden sm:table-cell p-2">
