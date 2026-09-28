@@ -1,0 +1,62 @@
+{
+  "family": "launchpad",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/launchpadTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "launchpad-api",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/launchpad-api:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8081,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "PORT", "value": "8081" },
+        { "name": "LAUNCHPAD_DB_PORT", "value": "3306" },
+        { "name": "LAUNCHPAD_DB_NAME", "value": "launchpad" },
+        { "name": "LAUNCHPAD_CORS_ORIGINS", "value": "https://launchpad.example.com" },
+        { "name": "LAUNCHPAD_UPLOAD_DIR", "value": "/data/uploads" }
+      ],
+      "secrets": [
+        {
+          "name": "LAUNCHPAD_DB_HOST",
+          "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/launchpad/db/host"
+        },
+        {
+          "name": "LAUNCHPAD_DB_USER",
+          "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/launchpad/db/user"
+        },
+        {
+          "name": "LAUNCHPAD_DB_PASS",
+          "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/launchpad/db/password"
+        },
+        {
+          "name": "SSN_ENCRYPTION_KEY",
+          "valueFrom": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/launchpad/ssn-encryption-key"
+        }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -sf http://127.0.0.1:8081/actuator/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/launchpad-api",
+          "awslogs-region": "REGION",
+          "awslogs-stream-prefix": "api"
+        }
+      }
+    }
+  ]
+}

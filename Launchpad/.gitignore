@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+data/
+*.log
+.env
+.env.local
+!.env.example
+target/
+.idea/
+*.iml
+.DS_Store

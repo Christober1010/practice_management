@@ -1,0 +1,62 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: launchpad-mysql
+    ports:
+      - "3307:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: launchpad
+      MYSQL_USER: launchpad
+      MYSQL_PASSWORD: launchpad
+    volumes:
+      - launchpad-mysql-data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --sql-mode=
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    container_name: launchpad-api
+    ports:
+      - "8081:8081"
+    environment:
+      PORT: "8081"
+      LAUNCHPAD_DB_HOST: mysql
+      LAUNCHPAD_DB_PORT: "3306"
+      LAUNCHPAD_DB_NAME: launchpad
+      LAUNCHPAD_DB_USER: launchpad
+      LAUNCHPAD_DB_PASS: launchpad
+      LAUNCHPAD_CORS_ORIGINS: "http://localhost:3001,http://127.0.0.1:3001"
+      LAUNCHPAD_UPLOAD_DIR: /data/uploads
+    volumes:
+      - launchpad-uploads:/data/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  ui:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.ui
+    container_name: launchpad-ui
+    ports:
+      - "3001:80"
+    depends_on:
+      - api
+    profiles:
+      - full
+
+volumes:
+  launchpad-mysql-data:
+  launchpad-uploads:

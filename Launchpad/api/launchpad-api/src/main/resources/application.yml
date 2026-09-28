@@ -1,0 +1,29 @@
+server:
+  port: ${PORT:8081}
+
+spring:
+  application:
+    name: launchpad-api
+  datasource:
+    url: jdbc:mysql://${LAUNCHPAD_DB_HOST:127.0.0.1}:${LAUNCHPAD_DB_PORT:3307}/${LAUNCHPAD_DB_NAME:launchpad}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${LAUNCHPAD_DB_USER:launchpad}
+    password: ${LAUNCHPAD_DB_PASS:launchpad}
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 30MB
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+launchpad:
+  cors-origins: ${LAUNCHPAD_CORS_ORIGINS:*}
+  upload-dir: ${LAUNCHPAD_UPLOAD_DIR:./data/uploads}
+  ssn-encryption-key: ${SSN_ENCRYPTION_KEY:}
+  smtp-from: ${LAUNCHPAD_SMTP_FROM:noreply@launchpad.local}
