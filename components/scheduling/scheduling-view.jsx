@@ -17,6 +17,7 @@ import {
   List,
   Trash2,
   BookOpen,
+  ClipboardList,
 } from "lucide-react";
 import {
   Select,
@@ -340,6 +341,8 @@ export default function SchedulingView({ userRole }) {
   const [sessionToDelete, setSessionToDelete] = useState(null);
   const [isSessionNotesModalOpen, setIsSessionNotesModalOpen] = useState(false);
   const [sessionNotesClient, setSessionNotesClient] = useState(null);
+  const [sessionNotesInitialTab, setSessionNotesInitialTab] =
+    useState("session-notes");
   const [sessionNotesLink, setSessionNotesLink] = useState({
     date: null,
     sessionId: null,
@@ -938,7 +941,7 @@ export default function SchedulingView({ userRole }) {
     setIsViewModalOpen(true);
   };
 
-  const handleOpenSessionNotes = (session) => {
+  const handleOpenSessionNotes = (session, tab = "session-notes") => {
     if (!allowNotes) {
       toast.error("You don’t have permission to view session notes.");
       return;
@@ -958,6 +961,9 @@ export default function SchedulingView({ userRole }) {
       sessionId: session.sessionId ?? null,
     });
     setSessionNotesClient(client);
+    setSessionNotesInitialTab(
+      tab === "data-collection" ? "data-collection" : "session-notes"
+    );
     setIsSessionNotesModalOpen(true);
   };
 
@@ -1485,6 +1491,20 @@ export default function SchedulingView({ userRole }) {
                               <BookOpen className="h-3 w-3" />
                             </Button>
                           )}
+                          {allowNotes && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenSessionNotes(s, "data-collection");
+                              }}
+                              className="bg-white/90 hover:bg-white border-slate-300 text-indigo-600 hover:text-indigo-700 h-7 text-xs px-2"
+                              title="Data Collection"
+                            >
+                              <ClipboardList className="h-3 w-3" />
+                            </Button>
+                          )}
                           {allowUpdate && (
                             <Button
                               variant="outline"
@@ -1807,6 +1827,23 @@ export default function SchedulingView({ userRole }) {
                                     >
                                       <BookOpen className="h-3 w-3 mr-1" />
                                       Notes
+                                    </Button>
+                                  )}
+                                  {allowNotes && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenSessionNotes(
+                                          s,
+                                          "data-collection"
+                                        );
+                                      }}
+                                      className="flex-1 text-xs text-indigo-600 hover:text-indigo-700"
+                                    >
+                                      <ClipboardList className="h-3 w-3 mr-1" />
+                                      Data
                                     </Button>
                                   )}
                                 </div>
@@ -2370,12 +2407,13 @@ export default function SchedulingView({ userRole }) {
         onClose={() => {
           setIsSessionNotesModalOpen(false);
           setSessionNotesClient(null);
+          setSessionNotesInitialTab("session-notes");
           setSessionNotesLink({ date: null, sessionId: null });
         }}
         client={sessionNotesClient}
         linkedSessionDate={sessionNotesLink.date}
         linkedSessionId={sessionNotesLink.sessionId}
-        initialTab="session-notes"
+        initialTab={sessionNotesInitialTab}
         onSessionBillingFinalized={(billing) => {
           if (billing && (billing.session_id != null || billing.claim_id)) {
             const sid = String(billing.session_id ?? "");

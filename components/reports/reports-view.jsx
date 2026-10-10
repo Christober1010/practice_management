@@ -54,7 +54,7 @@ export default function ReportsView({ initialTab = "sessionImport", userRole = n
       {isDataCollection ? (
         <DataCollectionReportView />
       ) : isSessionNotes ? (
-        <SessionNotesReportView />
+        <SessionNotesReportView userRole={userRole} />
       ) : isMileage ? (
         <MileageView userRole={userRole} />
       ) : isInsuranceView ? (

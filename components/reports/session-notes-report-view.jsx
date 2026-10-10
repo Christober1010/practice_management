@@ -123,9 +123,14 @@ function rowBucket(row) {
   return sessionIsRenderedOrReadyToBill(row) ? "Rendered" : "Scheduled";
 }
 
-export default function SessionNotesReportView({ initialClientId = "" }) {
+export default function SessionNotesReportView({
+  initialClientId = "",
+  userRole = null,
+}) {
   const dispatch = useAppDispatch();
   const clients = useAppSelector((state) => state.clients?.items || []);
+  const isAdminUser =
+    String(userRole?.role || "").toLowerCase() === "admin";
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState([]);
   const [summary, setSummary] = useState({});
@@ -374,6 +379,9 @@ export default function SessionNotesReportView({ initialClientId = "" }) {
                   <TableHead>Staff</TableHead>
                   <TableHead>Billing Code</TableHead>
                   <TableHead>Session ID</TableHead>
+                  {isAdminUser ? (
+                    <TableHead>Exclude Session</TableHead>
+                  ) : null}
                   <TableHead className="text-right w-[220px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -381,7 +389,7 @@ export default function SessionNotesReportView({ initialClientId = "" }) {
                 {loading ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={isAdminUser ? 7 : 6}
                       className="text-center py-10 text-slate-500"
                     >
                       Loading…
@@ -390,7 +398,7 @@ export default function SessionNotesReportView({ initialClientId = "" }) {
                 ) : visibleRows.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={6}
+                      colSpan={isAdminUser ? 7 : 6}
                       className="text-center py-10 text-slate-500"
                     >
                       No {activeTab === "rendered" ? "rendered" : "scheduled"}{" "}
@@ -411,6 +419,11 @@ export default function SessionNotesReportView({ initialClientId = "" }) {
                       row.dos ||
                       row.appointment_date ||
                       "—";
+                    const excludeSession =
+                      row.exclude_session === "Yes" ||
+                      row.excludeSession === "Yes"
+                        ? "Yes"
+                        : "No";
                     return (
                       <TableRow key={row.id}>
                         <TableCell className="whitespace-nowrap">
@@ -428,6 +441,17 @@ export default function SessionNotesReportView({ initialClientId = "" }) {
                         <TableCell className="text-slate-600 text-sm">
                           {row.session_id || "—"}
                         </TableCell>
+                        {isAdminUser ? (
+                          <TableCell
+                            className={
+                              excludeSession === "Yes"
+                                ? "font-medium text-amber-700"
+                                : "text-slate-600"
+                            }
+                          >
+                            {excludeSession}
+                          </TableCell>
+                        ) : null}
                         <TableCell className="text-right">
                           <div className="inline-flex flex-wrap justify-end gap-1">
                             <Button
@@ -535,7 +559,7 @@ export default function SessionNotesReportView({ initialClientId = "" }) {
         }
         editingSession={editingSession}
         existingSessions={[]}
-        canEditExcludeSession={false}
+        canEditExcludeSession={isAdminUser}
         canCreatePastDates={true}
       />
     </div>
