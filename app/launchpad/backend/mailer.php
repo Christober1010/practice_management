@@ -90,10 +90,10 @@ function sendMail(string $to, string $subject, string $htmlBody, ?string $textBo
     $body .= $htmlBody . "\r\n\r\n";
     $body .= "--{$boundary}--\r\n";
 
+    // ssl = implicit SMTPS (usually port 465); tls = plain connect then STARTTLS (usually port 587)
     if ($smtpSecure === 'ssl') {
         $remote = "ssl://{$smtpHost}:{$smtpPort}";
     } else {
-        // STARTTLS is more complex; for now prefer implicit SSL (port 465).
         $remote = "{$smtpHost}:{$smtpPort}";
     }
 
@@ -145,11 +145,23 @@ function sendMail(string $to, string $subject, string $htmlBody, ?string $textBo
     }
 
     if ($smtpSecure === 'tls') {
-        // For STARTTLS we'd need to send STARTTLS and enable crypto; not implemented here.
-        // To avoid half-secure setups, we log and abort.
-        error_log('sendMail: SMTP_SECURE=tls is not supported in this lightweight mailer. Use ssl with port 465.');
-        fclose($fp);
-        return false;
+        $write('STARTTLS');
+        if (!$expect('220')) {
+            fclose($fp);
+            return false;
+        }
+        $cryptoOk = @stream_socket_enable_crypto($fp, true, STREAM_CRYPTO_METHOD_TLS_CLIENT);
+        if (!$cryptoOk) {
+            error_log('sendMail: STARTTLS negotiation failed');
+            fclose($fp);
+            return false;
+        }
+        // Re-EHLO after TLS upgrade (required by most SMTP servers).
+        $write("EHLO {$hostName}");
+        if (!$expect('250')) {
+            fclose($fp);
+            return false;
+        }
     }
 
     // AUTH LOGIN

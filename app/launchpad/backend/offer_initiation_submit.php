@@ -43,8 +43,10 @@ if ($colRes) { while ($r = $colRes->fetch_row()) $existingCols[] = $r[0]; }
 if (!in_array('position_code', $existingCols))    $conn->query("ALTER TABLE StaffOfferInitiations ADD COLUMN position_code VARCHAR(50) NULL AFTER pay_rate");
 if (!in_array('offer_letter_body', $existingCols)) $conn->query("ALTER TABLE StaffOfferInitiations ADD COLUMN offer_letter_body TEXT NULL AFTER position_code");
 
-function sendOfferInitiatedEmail(string $toEmail, array $offer): void {
-    if (!filter_var($toEmail, FILTER_VALIDATE_EMAIL)) return;
+function sendOfferInitiatedEmail(string $toEmail, array $offer): bool {
+    if (!filter_var($toEmail, FILTER_VALIDATE_EMAIL)) {
+        return false;
+    }
     $employeeName = htmlspecialchars((string)$offer['employee_name'], ENT_QUOTES, 'UTF-8');
     $firstNameRaw = isset($offer['first_name']) ? trim((string)$offer['first_name']) : '';
     $firstName = $firstNameRaw !== '' ? htmlspecialchars($firstNameRaw, ENT_QUOTES, 'UTF-8') : htmlspecialchars(strtok((string)$offer['employee_name'], ' ') ?: 'there', ENT_QUOTES, 'UTF-8');
@@ -131,8 +133,8 @@ function sendOfferInitiatedEmail(string $toEmail, array $offer): void {
         </html>
         ";
 
-    // Use centralized mail helper (SMTP / DKIM etc.) best-effort
-    sendMail($toEmail, $subject, $message);
+    // Use centralized mail helper (SMTP / DKIM etc.)
+    return sendMail($toEmail, $subject, $message);
 }
 
 function generateTempPassword(): string {
@@ -455,9 +457,11 @@ try {
     if (!$ins->execute()) throw new Exception('Offer insert failed: ' . $ins->error);
     $ins->close();
 
+    $emailSent = false;
+    $emailSkippedReason = null;
     if ($sendEmail) {
-        if ($staffEmail !== '') {
-            sendOfferInitiatedEmail($staffEmail, [
+        if ($staffEmail !== '' && filter_var($staffEmail, FILTER_VALIDATE_EMAIL)) {
+            $emailSent = sendOfferInitiatedEmail($staffEmail, [
                 'employee_name' => $employeeName,
                 'first_name' => $firstNamePayload,
                 'job_title' => $jobTitle,
@@ -465,11 +469,33 @@ try {
                 'email' => $userCreated ? $staffEmail : '',
                 'temp_password' => $userCreated ? $tempPassword : '',
             ]);
+            if (!$emailSent) {
+                $emailSkippedReason = 'SMTP rejected or failed to send offer email to ' . $staffEmail;
+                error_log('offer_initiation_submit: ' . $emailSkippedReason . " (staff_id={$staffId})");
+            }
+        } else {
+            $emailSkippedReason = 'Staff email missing or invalid; offer saved but no email was sent.';
+            error_log("offer_initiation_submit: {$emailSkippedReason} (staff_id={$staffId})");
         }
+    } else {
+        $emailSkippedReason = 'send_email disabled';
     }
 
     $conn->commit();
-    echo json_encode(['success' => true, 'message' => 'Offer initiated.', 'staff_id' => $staffId, 'user_created' => $userCreated, 'staff_created' => $staffCreated]);
+    $msg = 'Offer initiated.';
+    if ($sendEmail && !$emailSent) {
+        $msg = 'Offer initiated, but the email could not be delivered. Use Send Reminder or ask them to reset password.';
+    }
+    echo json_encode([
+        'success' => true,
+        'message' => $msg,
+        'staff_id' => $staffId,
+        'user_created' => $userCreated,
+        'staff_created' => $staffCreated,
+        'email_sent' => $emailSent,
+        'email_to' => $staffEmail !== '' ? $staffEmail : null,
+        'email_error' => $emailSkippedReason,
+    ]);
 } catch (Throwable $e) {
     if ($conn) { @$conn->rollback(); }
     http_response_code(500);

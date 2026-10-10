@@ -304,6 +304,88 @@ function session_row_is_completed(array $row): bool
     return false;
 }
 
+/** True when sessions.exclude_session is Yes. */
+function session_row_is_excluded(array $row): bool
+{
+    $ex = strtolower(trim((string)($row['exclude_session'] ?? $row['excludeSession'] ?? 'No')));
+    return $ex === 'yes' || $ex === 'y' || $ex === '1' || $ex === 'true';
+}
+
+/**
+ * When exclude_session=Yes and the session is Rendered, mirror rendered_hours into session_log.misc_hrs.
+ */
+function sessions_sync_misc_hrs_for_excluded_rendered(
+    mysqli $conn,
+    int $sessionId,
+    ?string $excludeSession = null,
+    ?string $status = null,
+    ?float $renderedHours = null
+): void {
+    if ($sessionId <= 0) {
+        return;
+    }
+
+    $r = @$conn->query("SHOW TABLES LIKE 'session_log'");
+    $hasTable = ($r && $r->num_rows > 0);
+    if ($r) {
+        $r->free();
+    }
+    if (!$hasTable) {
+        return;
+    }
+
+    if ($excludeSession === null || $status === null || $renderedHours === null) {
+        $excludeSelect = sessions_has_exclude_session_column($conn) ? ', exclude_session' : '';
+        $statusCol = sessions_status_column($conn);
+        $stmt = $conn->prepare(
+            "SELECT `{$statusCol}` AS status, rendered_hours{$excludeSelect} FROM sessions WHERE session_id = ? LIMIT 1"
+        );
+        if (!$stmt) {
+            return;
+        }
+        $stmt->bind_param('i', $sessionId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row) {
+            return;
+        }
+        $excludeSession = $excludeSession ?? ($row['exclude_session'] ?? 'No');
+        $status = $status ?? session_row_status_value($row, '');
+        $renderedHours = $renderedHours ?? (float)($row['rendered_hours'] ?? 0);
+    }
+
+    if (!session_row_is_excluded(['exclude_session' => $excludeSession])) {
+        return;
+    }
+    // Accept Rendered/Completed, or prod rows that are effectively completed via hours/claim.
+    $completed = session_is_completed_status($status)
+        || session_row_is_completed([
+            'status' => $status,
+            'STATUS' => $status,
+            'rendered_hours' => $renderedHours,
+        ]);
+    if (!$completed) {
+        return;
+    }
+    $hrs = round((float)$renderedHours, 2);
+    if ($hrs <= 0) {
+        return;
+    }
+
+    $miscStr = (string)$hrs;
+    $stmt = $conn->prepare(
+        'INSERT INTO session_log (session_id, misc_hrs) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE misc_hrs = VALUES(misc_hrs)'
+    );
+    if (!$stmt) {
+        return;
+    }
+    $stmt->bind_param('is', $sessionId, $miscStr);
+    $stmt->execute();
+    $stmt->close();
+}
+
 function session_status_is_cancelled($status): bool
 {
     return strtolower(trim((string)$status)) === 'cancelled';
@@ -1665,6 +1747,13 @@ INSERT INTO sessions (
             if (session_is_completed_status($status)) {
                 ensure_session_claim_ready($conn, (int)$stmt->insert_id, $session['start'], $billableOverride);
             }
+            sessions_sync_misc_hrs_for_excluded_rendered(
+                $conn,
+                (int)$stmt->insert_id,
+                $excludeSession,
+                $status,
+                (float)$renderedHours
+            );
         } else {
             throw new Exception("Failed to create session: " . $stmt->error);
         }

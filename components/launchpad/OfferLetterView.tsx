@@ -483,10 +483,13 @@ export default function OfferLetterView(props: {
       }
       setOfferInitiated(true);
       setInitAccountCreated(!!res.user_created);
+      const emailSent = res.email_sent !== false;
       toast({
-        title: 'Offer initiated',
-        description: `${res.staff_created ? 'Staff created' : 'Staff selected'}. ${res.user_created ? 'Account created' : 'Account already exists'}. Email notification has been sent. You will be notified once the staff accepts.`,
-        variant: 'success',
+        title: emailSent ? 'Offer initiated' : 'Offer saved — email may have failed',
+        description: emailSent
+          ? `${res.staff_created ? 'Staff created' : 'Staff selected'}. ${res.user_created ? 'Account created' : 'Account already exists'}. Email notification has been sent. You will be notified once the staff accepts.`
+          : `${res.message || 'Offer was saved, but the email could not be confirmed as sent.'} Use Send Reminder, or have them reset password at login.`,
+        variant: emailSent ? 'success' : 'error',
       });
       setIsInitModalOpen(false);
       props.onRefreshStaffList?.();

@@ -18,6 +18,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
+// Optional shared helpers (create/update path). Session Log keeps local exclude→misc
+// logic below so a stale scheduling_session_lib.php deploy cannot disable this report.
+@include_once __DIR__ . '/scheduling_session_lib.php';
 
 $authUser = requireAuthReadWrite('reports.read', 'reports.write', 'mahaverse');
 $method = $_SERVER['REQUEST_METHOD'];
@@ -315,6 +318,63 @@ function session_log_session_status($row): string
     return 'Scheduled';
 }
 
+/** True when sessions.exclude_session is Yes (self-contained; does not need shared lib). */
+function session_log_row_is_excluded(array $row): bool
+{
+    if (function_exists('session_row_is_excluded')) {
+        return session_row_is_excluded($row);
+    }
+    $ex = strtolower(trim((string)($row['exclude_session'] ?? $row['excludeSession'] ?? 'No')));
+    return $ex === 'yes' || $ex === 'y' || $ex === '1' || $ex === 'true';
+}
+
+/**
+ * Persist misc_hrs = rendered_hours when Exclude session=Yes and session is Rendered.
+ * Local to this endpoint so report behavior survives partial deploys of shared libs.
+ */
+function session_log_sync_misc_for_excluded(mysqli $conn, array $row): ?float
+{
+    if (!session_log_row_is_excluded($row)) {
+        return null;
+    }
+    $sessionStatus = session_log_session_status($row);
+    if ($sessionStatus !== 'Rendered') {
+        return null;
+    }
+    $hrs = round((float)($row['rendered_hours'] ?? 0), 2);
+    if ($hrs <= 0) {
+        return null;
+    }
+
+    $sid = (int)($row['session_id'] ?? 0);
+    if ($sid <= 0) {
+        return $hrs;
+    }
+
+    if (function_exists('sessions_sync_misc_hrs_for_excluded_rendered')) {
+        sessions_sync_misc_hrs_for_excluded_rendered(
+            $conn,
+            $sid,
+            (string)($row['exclude_session'] ?? 'Yes'),
+            $sessionStatus,
+            $hrs
+        );
+    } else {
+        $miscStr = (string)$hrs;
+        $stmt = $conn->prepare(
+            'INSERT INTO session_log (session_id, misc_hrs) VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE misc_hrs = VALUES(misc_hrs)'
+        );
+        if ($stmt) {
+            $stmt->bind_param('is', $sid, $miscStr);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+
+    return $hrs;
+}
+
 function session_log_tab_bucket(string $sessionStatus, ?string $logStatus): string
 {
     if ($logStatus === 'Pending Payment') {
@@ -399,6 +459,14 @@ function session_log_map_row(array $row, ?string $tz = null): array
         $misc = null;
     }
 
+    // Exclude session=Yes + Rendered → Misc hrs mirrors rendered hours (display + persisted via GET sync).
+    if (session_log_row_is_excluded($row) && $sessionStatus === 'Rendered') {
+        $renderedHrs = isset($row['rendered_hours']) ? (float)$row['rendered_hours'] : 0.0;
+        if ($renderedHrs > 0) {
+            $misc = round($renderedHrs, 2);
+        }
+    }
+
     $clientFirst = trim((string)($row['client_first_name'] ?? ''));
     $clientLast = trim((string)($row['client_last_name'] ?? ''));
     if ($clientFirst === '' && $clientLast === '') {
@@ -446,6 +514,7 @@ function session_log_map_row(array $row, ?string $tz = null): array
             ? trim((string)$row['payer_name'])
             : null,
         'location_address' => $row['location_address'] ?? null,
+        'exclude_session' => $row['exclude_session'] ?? 'No',
         'claim_id' => $row['claim_id'] ?? null,
         'claim_status' => $row['claim_status'] ?? null,
         'session_status' => $sessionStatus,
@@ -480,6 +549,9 @@ if ($method === 'GET') {
     $claimIdSql = $cols['claim_id'] ? 's.claim_id' : 'NULL AS claim_id';
     $claimStatusSql = $cols['claim_status'] ? 's.claim_status' : 'NULL AS claim_status';
     $serviceCodeSql = !empty($cols['service_code']) ? 's.service_code' : 'NULL AS service_code';
+    $excludeSessionSql = !empty($cols['exclude_session'])
+        ? 's.exclude_session'
+        : "'No' AS exclude_session";
     $payerSelect = session_log_payer_select_sql($conn, !empty($cols['auth_id']));
 
     if ($dosFrom === '' && $dosTo === '') {
@@ -529,6 +601,7 @@ if ($method === 'GET') {
             {$payerSelect['id']},
             {$payerSelect['name']},
             s.location_address,
+            {$excludeSessionSql},
             s.scheduled_hours,
             s.rendered_hours,
             s.`{$statusCol}` AS STATUS,
@@ -564,6 +637,10 @@ if ($method === 'GET') {
     $result = $stmt->get_result();
     $rows = [];
     while ($row = $result->fetch_assoc()) {
+        $syncedMisc = session_log_sync_misc_for_excluded($conn, $row);
+        if ($syncedMisc !== null) {
+            $row['misc_hrs'] = $syncedMisc;
+        }
         $mapped = session_log_map_row($row, $tz);
         if ($tab !== '') {
             $tabLower = strtolower($tab);
@@ -608,9 +685,12 @@ if ($method === 'PATCH' || $method === 'PUT') {
     $sessCols = session_log_sessions_columns($conn);
     $claimIdSel = $sessCols['claim_id'] ? 's.claim_id' : 'NULL AS claim_id';
     $claimStatusSel = $sessCols['claim_status'] ? 's.claim_status' : 'NULL AS claim_status';
+    $excludeSel = !empty($sessCols['exclude_session'])
+        ? 's.exclude_session'
+        : "'No' AS exclude_session";
     $selectStmt = $conn->prepare(
         "SELECT s.session_id, s.`{$statusCol}` AS STATUS,
-                s.rendered_hours, {$claimStatusSel}, {$claimIdSel},
+                s.rendered_hours, {$excludeSel}, {$claimStatusSel}, {$claimIdSel},
                 sl.misc_hrs, sl.log_status,
                 sl.coinsurance_amount, sl.copay_amount, sl.deductible_amount,
                 sl.payer_paid_amount, sl.check_number, sl.ap_invoice, sl.ap_date
@@ -677,6 +757,16 @@ if ($method === 'PATCH' || $method === 'PUT') {
                 $nextMisc = null;
             } else {
                 $nextMisc = round((float)$raw, 2);
+            }
+        } elseif (
+            session_log_row_is_excluded($existing)
+            && $sessionStatus === 'Rendered'
+            && ($nextMisc === null || $nextMisc === '')
+        ) {
+            // Payment/AP saves must not wipe auto Misc for excluded rendered sessions.
+            $autoMisc = round((float)($existing['rendered_hours'] ?? 0), 2);
+            if ($autoMisc > 0) {
+                $nextMisc = $autoMisc;
             }
         }
 

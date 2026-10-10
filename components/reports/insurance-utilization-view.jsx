@@ -35,8 +35,8 @@ function clampPercent(value) {
   return Math.max(0, Math.min(100, value));
 }
 
-function formatDate(isoDate) {
-  if (!isoDate) return "No expiry";
+function formatDate(isoDate, emptyLabel = "—") {
+  if (!isoDate) return emptyLabel;
   const d = new Date(`${isoDate}T12:00:00`);
   if (Number.isNaN(d.getTime())) return isoDate;
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -158,9 +158,11 @@ export default function InsuranceUtilizationView() {
     return rows.filter((row) => {
       const hay = [
         row.client_name,
+        row.customer_status,
         row.insurance_label,
         row.authorization_number,
         row.billing_codes,
+        row.service_code,
         row.auth_status,
       ]
         .join(" ")
@@ -301,88 +303,122 @@ export default function InsuranceUtilizationView() {
       </div>
 
       <Card className="border-0 shadow">
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-x-auto">
           {loading ? (
             <p className="p-6 text-sm text-slate-500">Loading utilization metrics…</p>
           ) : (
-            <table className="w-full min-w-[78rem] text-sm border-separate border-spacing-0">
+            <table className="w-full min-w-[96rem] text-sm border-separate border-spacing-0">
                 <thead className="sticky top-0 z-20">
                   <tr className="border-b bg-slate-50">
-                    <th className="px-4 py-3 text-left align-middle font-medium text-muted-foreground bg-slate-100/95 backdrop-blur">
-                      Client
-                    </th>
-                    <th className="px-4 py-3 text-left align-middle font-medium text-muted-foreground bg-slate-100/95 backdrop-blur">
-                      Insurance
-                    </th>
-                    <th className="px-4 py-3 text-left align-middle font-medium text-muted-foreground bg-slate-100/95 backdrop-blur">
-                      Authorization
-                    </th>
-                    <th className="px-4 py-3 text-left align-middle font-medium text-muted-foreground bg-slate-100/95 backdrop-blur">
-                      Service code(s)
-                    </th>
-                    <th className="px-4 py-3 text-left align-middle font-medium text-muted-foreground bg-slate-100/95 backdrop-blur">
-                      Expiry
-                    </th>
-                    <th className="px-4 py-3 text-right align-middle font-medium text-muted-foreground bg-slate-100/95 backdrop-blur">
-                      Approved
-                    </th>
-                    <th className="px-4 py-3 text-right align-middle font-medium text-muted-foreground bg-slate-100/95 backdrop-blur">
-                      Consumed
-                    </th>
-                    <th className="px-4 py-3 text-right align-middle font-medium text-muted-foreground bg-slate-100/95 backdrop-blur">
-                      Remaining
-                    </th>
-                    <th className="px-4 py-3 text-right align-middle font-medium text-muted-foreground bg-slate-100/95 backdrop-blur">
-                      Consumed %
-                    </th>
-                    <th className="px-4 py-3 text-right align-middle font-medium text-muted-foreground bg-slate-100/95 backdrop-blur">
-                      Weekly target units
-                    </th>
-                    <th className="px-4 py-3 text-left align-middle font-medium text-muted-foreground bg-slate-100/95 backdrop-blur">
-                      Status
-                    </th>
+                    {[
+                      "Client Name",
+                      "Customer Status",
+                      "Insurance",
+                      "Auth#",
+                      "Auth Status",
+                      "Start dt",
+                      "End dt",
+                      "Service Code",
+                      "Approved in Units",
+                      "Hrs",
+                      "Completed Hrs",
+                      "Scheduled Hrs",
+                      "User entry date",
+                      "Act.WkAvg",
+                      "Calc wks",
+                      "Remaining Hours",
+                      "Weekly Target Hrs",
+                      "Risk",
+                    ].map((label) => (
+                      <th
+                        key={label}
+                        className={`px-3 py-3 align-middle font-medium text-muted-foreground bg-slate-100/95 backdrop-blur whitespace-nowrap ${
+                          [
+                            "Approved in Units",
+                            "Hrs",
+                            "Completed Hrs",
+                            "Scheduled Hrs",
+                            "Act.WkAvg",
+                            "Calc wks",
+                            "Remaining Hours",
+                            "Weekly Target Hrs",
+                          ].includes(label)
+                            ? "text-right"
+                            : "text-left"
+                        }`}
+                      >
+                        {label}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filteredRows.length === 0 ? (
                     <tr className="border-b">
-                      <td colSpan={11} className="px-4 py-8 text-center text-sm text-slate-500">
+                      <td colSpan={18} className="px-4 py-8 text-center text-sm text-slate-500">
                         No authorization rows found for this filter combination.
                       </td>
                     </tr>
                   ) : (
                     filteredRows.map((row) => (
                       <tr key={row.auth_row_key} className="border-b transition-colors hover:bg-muted/50">
-                        <td className="px-4 py-3 align-middle font-medium">
+                        <td className="px-3 py-3 align-middle font-medium whitespace-nowrap">
                           {row.client_name || "Unknown client"}
                         </td>
-                        <td className="px-4 py-3 align-middle">{row.insurance_label || "Unknown insurance"}</td>
-                        <td className="px-4 py-3 align-middle">{row.authorization_number || "—"}</td>
-                        <td className="px-4 py-3 align-middle">{row.billing_codes || "—"}</td>
-                        <td className="px-4 py-3 align-middle">
+                        <td className="px-3 py-3 align-middle whitespace-nowrap">
+                          {row.customer_status || "—"}
+                        </td>
+                        <td className="px-3 py-3 align-middle whitespace-nowrap">
+                          {row.insurance_label || "Unknown insurance"}
+                        </td>
+                        <td className="px-3 py-3 align-middle whitespace-nowrap">
+                          {row.authorization_number || "—"}
+                        </td>
+                        <td className="px-3 py-3 align-middle whitespace-nowrap">
+                          {row.auth_status || "—"}
+                        </td>
+                        <td className="px-3 py-3 align-middle whitespace-nowrap">
+                          {formatDate(row.start_date)}
+                        </td>
+                        <td className="px-3 py-3 align-middle whitespace-nowrap">
                           <div className="space-y-0.5">
-                            <p>{formatDate(row.expiry_date)}</p>
+                            <p>{formatDate(row.expiry_date, "No expiry")}</p>
                             {row.days_to_expiry != null && (
                               <p className="text-xs text-slate-500">{row.days_to_expiry} day(s) left</p>
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 align-middle text-right tabular-nums">
+                        <td className="px-3 py-3 align-middle whitespace-nowrap">
+                          {row.service_code || row.billing_codes || "—"}
+                        </td>
+                        <td className="px-3 py-3 align-middle text-right tabular-nums">
                           {asUnits(row.approved_units)}
                         </td>
-                        <td className="px-4 py-3 align-middle text-right tabular-nums">
-                          {asUnits(row.consumed_units)}
+                        <td className="px-3 py-3 align-middle text-right tabular-nums">
+                          {asUnits(row.approved_hours)}
                         </td>
-                        <td className="px-4 py-3 align-middle text-right tabular-nums">
-                          {asUnits(row.remaining_units)}
+                        <td className="px-3 py-3 align-middle text-right tabular-nums">
+                          {asUnits(row.completed_hours)}
                         </td>
-                        <td className="px-4 py-3 align-middle text-right tabular-nums">
-                          {Number(row.consumed_percent || 0).toFixed(1)}%
+                        <td className="px-3 py-3 align-middle text-right tabular-nums">
+                          {asUnits(row.scheduled_hours)}
                         </td>
-                        <td className="px-4 py-3 align-middle text-right tabular-nums">
-                          {asUnits(row.weekly_units_required)}
+                        <td className="px-3 py-3 align-middle whitespace-nowrap">
+                          {formatDate(row.user_entry_date)}
                         </td>
-                        <td className="px-4 py-3 align-middle">{riskBadge(row)}</td>
+                        <td className="px-3 py-3 align-middle text-right tabular-nums">
+                          {row.act_wk_avg == null ? "—" : asUnits(row.act_wk_avg)}
+                        </td>
+                        <td className="px-3 py-3 align-middle text-right tabular-nums">
+                          {row.calc_wks == null ? "—" : asUnits(row.calc_wks)}
+                        </td>
+                        <td className="px-3 py-3 align-middle text-right tabular-nums">
+                          {asUnits(row.remaining_hours)}
+                        </td>
+                        <td className="px-3 py-3 align-middle text-right tabular-nums">
+                          {row.weekly_target_hrs == null ? "—" : asUnits(row.weekly_target_hrs)}
+                        </td>
+                        <td className="px-3 py-3 align-middle">{riskBadge(row)}</td>
                       </tr>
                     ))
                   )}

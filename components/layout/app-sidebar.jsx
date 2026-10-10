@@ -24,6 +24,8 @@ import {
   Activity,
   FolderOpen,
   Car,
+  BookOpen,
+  ClipboardList,
 } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
@@ -210,6 +212,18 @@ export default function AppSidebar({
       label: "Mileage",
       icon: Car,
       color: "text-teal-700",
+    },
+    {
+      id: "reportsSessionNotes",
+      label: "Session Notes",
+      icon: BookOpen,
+      color: "text-violet-700",
+    },
+    {
+      id: "reportsDataCollection",
+      label: "Data Collection",
+      icon: ClipboardList,
+      color: "text-fuchsia-700",
     },
   ];
 

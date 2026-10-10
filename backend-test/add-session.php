@@ -644,6 +644,13 @@ try {
                     if (session_is_completed_status($status)) {
                         ensure_session_claim_ready($conn, $sessionId, $startUtc);
                     }
+                    sessions_sync_misc_hrs_for_excluded_rendered(
+                        $conn,
+                        $sessionId,
+                        $excludeSession,
+                        $status,
+                        (float)$renderedHours
+                    );
                     $putAuthId = isset($input['authId']) && $input['authId'] !== null && $input['authId'] !== ''
                         ? (int)$input['authId']
                         : (int)($session['auth_id'] ?? $currentSession['auth_id'] ?? 0);
@@ -856,6 +863,13 @@ try {
                         if (session_is_completed_status($status)) {
                             ensure_session_claim_ready($conn, $newSessionId, $occStartUtc);
                         }
+                        sessions_sync_misc_hrs_for_excluded_rendered(
+                            $conn,
+                            $newSessionId,
+                            $excludeSession,
+                            $status,
+                            (float)$renderedHours
+                        );
                         $recurringPutAuthId = isset($input['authId']) && $input['authId'] !== null && $input['authId'] !== ''
                             ? (int)$input['authId']
                             : (int)($currentSession['auth_id'] ?? 0);

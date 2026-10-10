@@ -56,6 +56,30 @@ function normalizeTab(row) {
   return "Scheduled";
 }
 
+function isExcludedSession(row) {
+  const ex = String(row?.exclude_session ?? row?.excludeSession ?? "No")
+    .trim()
+    .toLowerCase();
+  return ex === "yes" || ex === "y" || ex === "1" || ex === "true";
+}
+
+/** Exclude session=Yes + Rendered → Misc hrs = rendered hours (UI fallback if API lagging). */
+function normalizeSessionLogRow(row) {
+  const tab = normalizeTab(row);
+  const sessionStatus = String(row?.session_status || "").trim() || tab;
+  const rendered = Number(row?.rendered_hours);
+  let misc_hrs = row?.misc_hrs;
+  if (
+    isExcludedSession(row) &&
+    String(sessionStatus).toLowerCase() === "rendered" &&
+    Number.isFinite(rendered) &&
+    rendered > 0
+  ) {
+    misc_hrs = Math.round(rendered * 100) / 100;
+  }
+  return { ...row, tab, misc_hrs };
+}
+
 function emptyAmountRow() {
   return {
     coinsurance_amount: "",
@@ -223,7 +247,7 @@ export default function SessionLogGrid({
         return;
       }
       const rows = Array.isArray(json.data)
-        ? json.data.map((r) => ({ ...r, tab: normalizeTab(r) }))
+        ? json.data.map((r) => normalizeSessionLogRow(r))
         : [];
       setAllRows(rows);
       setAmounts(amountsFromRows(rows));

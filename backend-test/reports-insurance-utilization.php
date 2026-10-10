@@ -13,10 +13,10 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/rbac_helpers.php';
 $authUser = requireAuth('reports.read', 'mahaverse');
 
-$host = "db5018419668.hosting-data.io";
-$user = "dbu1183438";
+$host = "db5018266079.hosting-data.io";
+$user = "dbu3321929";
 $password = "M@h@B3h@v1or@lH3@lth4@ut1sm";
-$database = "dbs14649042";
+$database = "dbs14484433";
 
 function util_query_bool(string $name, bool $default = false): bool
 {
@@ -98,6 +98,22 @@ function util_insurance_label(array $row): string
     return 'Insurance';
 }
 
+/** Excel ROUND((end-start)/7, 0) using calendar-day serials. */
+function util_excel_weeks_between(?string $startYmd, ?string $endYmd): ?float
+{
+    $startYmd = trim((string)$startYmd);
+    $endYmd = trim((string)$endYmd);
+    if ($startYmd === '' || $endYmd === '') {
+        return null;
+    }
+    $startTs = strtotime(substr($startYmd, 0, 10) . ' 00:00:00');
+    $endTs = strtotime(substr($endYmd, 0, 10) . ' 00:00:00');
+    if ($startTs === false || $endTs === false) {
+        return null;
+    }
+    return (float)round(($endTs - $startTs) / 86400.0 / 7.0, 0);
+}
+
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'GET') {
     http_response_code(405);
     echo json_encode(['success' => false, 'message' => 'Method not allowed']);
@@ -108,6 +124,11 @@ $clientId = isset($_GET['client_id']) ? trim((string)$_GET['client_id']) : '';
 $insuranceId = isset($_GET['insurance_id']) ? trim((string)$_GET['insurance_id']) : '';
 $expiringWithinDays = isset($_GET['expiring_within_days']) ? (int)$_GET['expiring_within_days'] : 0;
 $highRiskOnly = util_query_bool('high_risk_only', false);
+// "User entry date" in the Appointment Utilization spreadsheet — defaults to today.
+$asOfDate = isset($_GET['as_of']) ? trim((string)$_GET['as_of']) : '';
+if ($asOfDate === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $asOfDate)) {
+    $asOfDate = gmdate('Y-m-d');
+}
 
 $conn = new mysqli($host, $user, $password, $database);
 if ($conn->connect_error) {
@@ -147,7 +168,8 @@ try {
         ca.end_date AS auth_end_date,
         ci.*,
         c.first_name,
-        c.last_name
+        c.last_name,
+        c.client_status
       FROM client_auth ca
       LEFT JOIN client_insurance ci ON ci.insurance_id = ca.insurance_id
       LEFT JOIN clients c ON c.client_id = ci.client_id
@@ -183,6 +205,7 @@ try {
         }
     }
 
+    // Per-auth hours: completed (rendered/ready) vs scheduled (upcoming).
     $sessionAggByAuth = [];
     if (!empty($authKeyToRowIndexes) && util_sessions_has_column($conn, 'auth_id')) {
         $ids = array_keys($authKeyToRowIndexes);
@@ -208,13 +231,9 @@ try {
                 }
                 $claim = strtolower(trim((string)($session['claim_status'] ?? '')));
                 $isReady = $claim !== '' && strpos($claim, 'ready') !== false;
-                $isRendered = $status === 'rendered';
-                if (!$isReady && !$isRendered) {
-                    continue;
-                }
+                $isRendered = $status === 'rendered' || $status === 'completed';
                 $hours = util_session_duration_hours($session);
-                $units = round($hours * 4.0, 2);
-                if ($units <= 0) {
+                if ($hours <= 0) {
                     continue;
                 }
                 $authId = (int)($session['auth_id'] ?? 0);
@@ -222,15 +241,27 @@ try {
                     continue;
                 }
                 if (!isset($sessionAggByAuth[$authId])) {
-                    $sessionAggByAuth[$authId] = 0.0;
+                    $sessionAggByAuth[$authId] = [
+                        'completed_hours' => 0.0,
+                        'scheduled_hours' => 0.0,
+                    ];
                 }
-                $sessionAggByAuth[$authId] += $units;
+                if ($isReady || $isRendered) {
+                    $sessionAggByAuth[$authId]['completed_hours'] += $hours;
+                } else {
+                    // Remaining scheduled (not yet rendered) — spreadsheet "Scheduled Hrs".
+                    $sessionAggByAuth[$authId]['scheduled_hours'] += $hours;
+                }
             }
             $stmtSessions->close();
         }
     }
 
-    $todayTs = strtotime(gmdate('Y-m-d') . ' 00:00:00');
+    $todayTs = strtotime($asOfDate . ' 00:00:00');
+    if ($todayTs === false) {
+        $todayTs = strtotime(gmdate('Y-m-d') . ' 00:00:00');
+        $asOfDate = gmdate('Y-m-d');
+    }
     $rows = [];
     $insuranceRollups = [];
     $summary = [
@@ -240,20 +271,39 @@ try {
         'total_approved_units' => 0.0,
         'total_consumed_units' => 0.0,
         'total_remaining_units' => 0.0,
+        'total_approved_hours' => 0.0,
+        'total_completed_hours' => 0.0,
+        'total_scheduled_hours' => 0.0,
+        'total_remaining_hours' => 0.0,
+        'as_of' => $asOfDate,
     ];
 
     foreach ($authRows as $idx => $row) {
-        $sessionConsumed = 0.0;
+        $completedHours = 0.0;
+        $scheduledHours = 0.0;
         foreach (['auth_id', 'auth_row_id'] as $idKey) {
             $lookup = (int)($row[$idKey] ?? 0);
             if ($lookup > 0 && isset($sessionAggByAuth[$lookup])) {
-                $sessionConsumed = max($sessionConsumed, (float)$sessionAggByAuth[$lookup]);
+                $completedHours = max($completedHours, (float)$sessionAggByAuth[$lookup]['completed_hours']);
+                $scheduledHours = max($scheduledHours, (float)$sessionAggByAuth[$lookup]['scheduled_hours']);
             }
         }
         $approved = max(0, util_num($row['units_approved_per_15_min'] ?? null));
         $storedServiced = max(0, util_num($row['units_serviced'] ?? null));
-        $consumed = round(max($sessionConsumed, $storedServiced), 2);
-        $remaining = round($approved - $consumed, 2);
+        // Spreadsheet calc columns (Appointment Utilization Report):
+        // Hrs = Approved in Units / 4
+        // Remaining Hours = Hrs - Completed Hrs - Scheduled Hrs
+        // Act.WkAvg = Hrs / ROUND((End-Start)/7,0)
+        // Calc wks = ROUND((End - User entry date)/7,0)
+        // Weekly Target Hrs = ROUND(Remaining Hours / Calc wks, 0)
+        $approvedHours = round($approved / 4.0, 4);
+        $completedFromUnits = round($storedServiced / 4.0, 4);
+        $completedHours = round(max($completedHours, $completedFromUnits), 4);
+        $scheduledHours = round($scheduledHours, 4);
+        $remainingHours = round($approvedHours - $completedHours - $scheduledHours, 4);
+
+        $consumed = round(max($completedHours * 4.0, $storedServiced), 2);
+        $remaining = round($approved - $consumed - ($scheduledHours * 4.0), 2);
         $startDate = trim((string)($row['auth_start_date'] ?? ''));
         $expiryDate = trim((string)($row['auth_end_date'] ?? ''));
         if ($expiryDate === '') {
@@ -278,6 +328,17 @@ try {
             $expiryStatus = 'no_expiry';
         }
 
+        $authPeriodWeeks = util_excel_weeks_between($startDate, $expiryDate);
+        $calcWks = util_excel_weeks_between($asOfDate, $expiryDate);
+        $actWkAvg = null;
+        if ($authPeriodWeeks !== null && $authPeriodWeeks > 0) {
+            $actWkAvg = round($approvedHours / $authPeriodWeeks, 2);
+        }
+        $weeklyTargetHrs = null;
+        if ($calcWks !== null && $calcWks > 0) {
+            $weeklyTargetHrs = (float)round($remainingHours / $calcWks, 0);
+        }
+
         $elapsedWeeks = null;
         if ($startDate !== '') {
             $startTs = strtotime($startDate . ' 00:00:00');
@@ -287,19 +348,20 @@ try {
             }
         }
         $consumptionRate = $elapsedWeeks && $elapsedWeeks > 0 ? round($consumed / $elapsedWeeks, 2) : 0.0;
-        $weeklyUnitsRequired = 0.0;
-        if ($weeksToExpiry !== null && $weeksToExpiry > 0 && $remaining > 0) {
+        $weeklyUnitsRequired = $weeklyTargetHrs !== null ? round($weeklyTargetHrs * 4.0, 2) : 0.0;
+        if ($weeklyUnitsRequired <= 0 && $weeksToExpiry !== null && $weeksToExpiry > 0 && $remaining > 0) {
             $weeklyUnitsRequired = round($remaining / $weeksToExpiry, 2);
         }
-        $projectedOverutilization = $remaining < 0;
+        $projectedOverutilization = $remainingHours < 0;
         $projectedUnderutilization = (
             !$projectedOverutilization &&
-            $remaining > 0 &&
-            $weeksToExpiry !== null &&
-            $weeksToExpiry > 0 &&
+            $remainingHours > 0 &&
+            $calcWks !== null &&
+            $calcWks > 0 &&
             (
-                $consumptionRate <= 0.0 ||
-                $weeklyUnitsRequired > ($consumptionRate * 1.15)
+                $completedHours <= 0.0 ||
+                ($weeklyTargetHrs !== null && $actWkAvg !== null && $weeklyTargetHrs > ($actWkAvg * 1.15)) ||
+                ($weeklyUnitsRequired > 0 && $consumptionRate > 0 && $weeklyUnitsRequired > ($consumptionRate * 1.15))
             )
         );
         $expiringSoon = ($daysToExpiry !== null && $daysToExpiry >= 0 && $daysToExpiry <= 45);
@@ -321,6 +383,10 @@ try {
             $clientName = 'Unknown client';
         }
         $insuranceLabel = util_insurance_label($row);
+        $customerStatus = trim((string)($row['client_status'] ?? ''));
+        if ($customerStatus === '') {
+            $customerStatus = 'Unknown';
+        }
 
         $out = [
             'auth_row_key' => (string)($row['auth_uuid'] ?? '') !== ''
@@ -328,12 +394,22 @@ try {
                 : ('auth-' . (string)($row['auth_id'] ?? $row['auth_row_id'] ?? $idx)),
             'client_id' => $clientIdValue,
             'client_name' => $clientName,
+            'customer_status' => $customerStatus,
             'insurance_id' => $insuranceIdValue,
             'insurance_label' => $insuranceLabel,
             'authorization_number' => (string)($row['authorization_number'] ?? ''),
             'billing_codes' => (string)($row['billing_codes'] ?? ''),
+            'service_code' => (string)($row['billing_codes'] ?? ''),
             'auth_status' => (string)($row['auth_status'] ?? ''),
             'approved_units' => round($approved, 2),
+            'approved_hours' => round($approvedHours, 2),
+            'completed_hours' => round($completedHours, 2),
+            'scheduled_hours' => round($scheduledHours, 2),
+            'user_entry_date' => $asOfDate,
+            'act_wk_avg' => $actWkAvg,
+            'calc_wks' => $calcWks,
+            'remaining_hours' => round($remainingHours, 2),
+            'weekly_target_hrs' => $weeklyTargetHrs,
             'consumed_units' => round($consumed, 2),
             'remaining_units' => round($remaining, 2),
             'consumed_percent' => $consumedPercent,
@@ -354,6 +430,10 @@ try {
         $summary['total_approved_units'] += $out['approved_units'];
         $summary['total_consumed_units'] += $out['consumed_units'];
         $summary['total_remaining_units'] += $out['remaining_units'];
+        $summary['total_approved_hours'] += $out['approved_hours'];
+        $summary['total_completed_hours'] += $out['completed_hours'];
+        $summary['total_scheduled_hours'] += $out['scheduled_hours'];
+        $summary['total_remaining_hours'] += $out['remaining_hours'];
         if ($out['projected_underutilization']) {
             $summary['high_risk_authorizations'] += 1;
         }
@@ -429,6 +509,10 @@ try {
     $summary['total_approved_units'] = round((float)$summary['total_approved_units'], 2);
     $summary['total_consumed_units'] = round((float)$summary['total_consumed_units'], 2);
     $summary['total_remaining_units'] = round((float)$summary['total_remaining_units'], 2);
+    $summary['total_approved_hours'] = round((float)$summary['total_approved_hours'], 2);
+    $summary['total_completed_hours'] = round((float)$summary['total_completed_hours'], 2);
+    $summary['total_scheduled_hours'] = round((float)$summary['total_scheduled_hours'], 2);
+    $summary['total_remaining_hours'] = round((float)$summary['total_remaining_hours'], 2);
     $summary['consumed_percent'] = $summary['total_approved_units'] > 0
         ? round(($summary['total_consumed_units'] / $summary['total_approved_units']) * 100.0, 2)
         : 0.0;
@@ -441,8 +525,16 @@ try {
             'summary' => $summary,
             'meta' => [
                 'generated_at' => gmdate('c'),
-                'consumption_basis' => 'rendered_and_ready',
+                'as_of' => $asOfDate,
+                'consumption_basis' => 'completed_hours_plus_scheduled_hours',
                 'granularity' => 'authorization',
+                'calc_columns' => [
+                    'approved_hours' => 'approved_units / 4',
+                    'act_wk_avg' => 'approved_hours / ROUND((end_dt - start_dt) / 7, 0)',
+                    'calc_wks' => 'ROUND((end_dt - user_entry_date) / 7, 0)',
+                    'remaining_hours' => 'approved_hours - completed_hours - scheduled_hours',
+                    'weekly_target_hrs' => 'ROUND(remaining_hours / calc_wks, 0)',
+                ],
             ],
         ],
     ]);

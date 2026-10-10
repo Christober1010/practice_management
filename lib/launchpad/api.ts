@@ -759,7 +759,16 @@ export async function initiateOffer(payload: {
   username?: string;
   email?: string;
   send_email?: boolean;
-}): Promise<{ success: boolean; message?: string; staff_id?: number; user_created?: boolean; staff_created?: boolean }> {
+}): Promise<{
+  success: boolean;
+  message?: string;
+  staff_id?: number;
+  user_created?: boolean;
+  staff_created?: boolean;
+  email_sent?: boolean;
+  email_to?: string | null;
+  email_error?: string | null;
+}> {
   try {
     const authToken = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
     const response = await fetch(`${API_BASE_URL}/backend/offer_initiation_submit.php`, {
