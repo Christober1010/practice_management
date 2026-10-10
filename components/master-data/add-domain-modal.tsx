@@ -25,7 +25,7 @@ import {
   inferDomainModuleKey,
   resolveModuleIdForDomain,
 } from "@/lib/domain-module-options";
-import { resolveClientRecordId } from "@/lib/master-data-client-scope";
+import { activeClientsForAssign, resolveClientRecordId } from "@/lib/master-data-client-scope";
 
 function generateId() {
   return `domain_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -244,7 +244,7 @@ export default function AddDomainModal({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="generic">Generic (no client)</SelectItem>
-                    {clients.map((client) => {
+                    {activeClientsForAssign(clients, selectedClientValue).map((client) => {
                       const displayName =
                         `${client.first_name || ""} ${client.last_name || ""}`.trim() ||
                         client.name ||

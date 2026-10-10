@@ -248,6 +248,18 @@ export default function SessionLogTable({
       (HOUR_SUM_KEYS.has(key) || MONEY_KEYS.has(key)) && "text-right tabular-nums"
     );
 
+  /** Received Payment has many columns: clip long text to one line, full value on hover. */
+  const truncateOnReceived = (value) => {
+    const text = String(value ?? "").trim();
+    if (!text) return "—";
+    if (activeStatus !== "Received Payment") return text;
+    return (
+      <span className="block max-w-[10rem] truncate" title={text}>
+        {text}
+      </span>
+    );
+  };
+
   const renderCell = (row, key) => {
     const client = `${row.client_first_name || ""} ${row.client_last_name || ""}`.trim();
     const staff =
@@ -265,7 +277,7 @@ export default function SessionLogTable({
       case "staff":
         return staff || "—";
       case "auth_code":
-        return row.auth_code || "—";
+        return truncateOnReceived(row.auth_code);
       case "scheduled_hours":
         return formatHours(row.scheduled_hours);
       case "rendered_hours":
@@ -358,7 +370,7 @@ export default function SessionLogTable({
         }
         return pay.ap_date || "—";
       case "location":
-        return row.location_address || "—";
+        return truncateOnReceived(row.location_address);
       case "claim_id":
         return row.claim_id || "—";
       case "claim_status":

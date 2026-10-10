@@ -9,15 +9,16 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowRight,
   Edit,
   ListChecks,
   Plus,
-  Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Card, CardContent, CardHeader } from "../ui/card";
-import { mahaverseFetch } from "@/lib/mahaverse-api";
+import { isRowArchived, setClientConfigArchived } from "@/lib/client-config-archive";
 import {
   DEFAULT_DOMAIN_MODULE_KEY,
   getDomainModuleLabel,
@@ -53,6 +54,7 @@ export function ProgramsListModal({
 }) {
   const [isProgramFormOpen, setIsProgramFormOpen] = useState(false);
   const [editingProgram, setEditingProgram] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   const openAdd = () => {
     setEditingProgram(null);
@@ -73,34 +75,26 @@ export function ProgramsListModal({
     return true;
   };
 
-  const handleDeleteProgram = async (programId) => {
+  const handleToggleArchiveProgram = async (program) => {
+    const archiving = !isRowArchived(program);
     if (
-      !confirm(
-        "Are you sure you want to delete this program? Targets under it will also be deleted."
-      )
+      archiving &&
+      !confirm("Archive this program? You can restore it from Show Archived.")
     ) {
       return;
     }
-    try {
-      const res = await mahaverseFetch("/client-modules.php", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          client_id: clientId,
-          programId,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (res.ok && json.success) {
-        toast.success("Program deleted");
-        await onReload();
-      } else {
-        toast.error(json.message || "Failed to delete program");
-      }
-    } catch (err) {
-      toast.error("Failed to delete program");
-    }
+    const ok = await setClientConfigArchived({
+      clientId,
+      kind: "program",
+      id: program.id,
+      archived: archiving,
+    });
+    if (ok) await onReload();
   };
+
+  const visiblePrograms = (programs || [])
+    .filter(Boolean)
+    .filter((p) => isRowArchived(p) === showArchived);
 
   return (
     <>
@@ -114,22 +108,35 @@ export function ProgramsListModal({
           </DialogHeader>
 
           <div className="space-y-4">
-            <Button onClick={openAdd} className="bg-teal-600 hover:bg-teal-700">
-              <Plus className="h-4 w-4 mr-2" /> Add Program
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={openAdd} className="bg-teal-600 hover:bg-teal-700">
+                <Plus className="h-4 w-4 mr-2" /> Add Program
+              </Button>
+              <Button variant="outline" onClick={() => setShowArchived(!showArchived)}>
+                {showArchived ? (
+                  <>
+                    <ArchiveRestore className="h-4 w-4 mr-2" /> Show Active
+                  </>
+                ) : (
+                  <>
+                    <Archive className="h-4 w-4 mr-2" /> Show Archived
+                  </>
+                )}
+              </Button>
+            </div>
 
             {loading ? (
               <p className="text-center py-8 text-gray-500">Loading...</p>
-            ) : programs.length === 0 ? (
+            ) : visiblePrograms.length === 0 ? (
               <Card>
                 <CardContent className="text-center py-12">
                   <ListChecks className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                  <p>No programs yet. Create one!</p>
+                  <p>{showArchived ? "No archived programs." : "No programs yet. Create one!"}</p>
                 </CardContent>
               </Card>
             ) : (
               <div className="space-y-3">
-                {programs.filter(Boolean).map((program) => {
+                {visiblePrograms.map((program) => {
                   const domain = domains.find(
                     (d) =>
                       String(d.id) ===
@@ -192,10 +199,19 @@ export function ProgramsListModal({
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleDeleteProgram(program.id)}
-                              className="text-red-600 hover:text-red-700"
+                              onClick={() => handleToggleArchiveProgram(program)}
+                              title={isRowArchived(program) ? "Restore" : "Archive"}
+                              className={
+                                isRowArchived(program)
+                                  ? "text-green-600 hover:text-green-700"
+                                  : "text-amber-600 hover:text-amber-700"
+                              }
                             >
-                              <Trash2 className="h-4 w-4" />
+                              {isRowArchived(program) ? (
+                                <ArchiveRestore className="h-4 w-4" />
+                              ) : (
+                                <Archive className="h-4 w-4" />
+                              )}
                             </Button>
                           </div>
                         </div>

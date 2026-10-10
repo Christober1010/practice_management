@@ -21,17 +21,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowRight,
   ChevronRight,
+  Copy,
   Edit,
   Plus,
   Target,
   TargetIcon,
-  Trash2,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Card, CardContent, CardHeader } from "../ui/card";
 import { mahaverseFetch } from "@/lib/mahaverse-api";
+import { isRowArchived, setClientConfigArchived } from "@/lib/client-config-archive";
 import PromptMultiSelect from "@/components/master-data/prompt-multi-select";
 import { getDomainModuleLabel, DEFAULT_DOMAIN_MODULE_KEY } from "@/lib/domain-module-options";
 import AddTargetModal from "@/components/master-data/add-target-modal";
@@ -397,6 +400,7 @@ export function TargetsListModal({
 }) {
   const [isTargetFormOpen, setIsTargetFormOpen] = useState(false);
   const [editingTarget, setEditingTarget] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   const openAdd = () => {
     setEditingTarget(null);
@@ -417,34 +421,72 @@ export function TargetsListModal({
     return true;
   };
 
-  const handleDeleteTarget = async (targetId) => {
-    if (!confirm("Are you sure you want to delete this target?")) return;
+  const handleToggleArchiveTarget = async (target) => {
+    const archiving = !isRowArchived(target);
+    if (
+      archiving &&
+      !confirm("Archive this target? You can restore it from Show Archived.")
+    ) {
+      return;
+    }
+    const ok = await setClientConfigArchived({
+      clientId,
+      kind: "target",
+      id: target.id,
+      archived: archiving,
+    });
+    if (ok) await onReload();
+  };
+
+  /** Same copy rules as Configure data → Targets → Clone. */
+  const handleCloneTarget = async (target) => {
+    const stamp = Date.now();
+    const activity = {
+      id: `target_${stamp}_${Math.random().toString(36).slice(2, 9)}`,
+      programId: target.programId || target.program_id,
+      name: `${target.name || "Target"} (Copy)`,
+      goalDescription: target.goalDescription || target.description || "",
+      trials: target.trials || 1,
+      activityType: target.activityType || target.activity_type || "",
+      instructions: target.instructions || "",
+      status: "Active",
+      archived: 0,
+      prompts: (target.prompts || []).map((p) =>
+        typeof p === "object" && p
+          ? { ...p, id: p.id ? `${p.id}_clone_${stamp}` : undefined }
+          : p
+      ),
+      tasks: (target.tasks || []).map((t, idx) => ({
+        ...t,
+        id: t.id ? `${t.id}_clone_${stamp}_${idx}` : `task_${stamp}_${idx}`,
+      })),
+    };
     try {
       const res = await mahaverseFetch("/client-modules.php", {
-        method: "DELETE",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          client_id: clientId,
-          activityId: targetId,
-        }),
+        body: JSON.stringify({ client_id: clientId, activities: [activity] }),
       });
       const json = await res.json().catch(() => ({}));
       if (res.ok && json.success) {
-        toast.success("Target deleted");
+        toast.success("Target cloned!");
         await onReload();
       } else {
-        toast.error(json.message || "Failed to delete target");
+        toast.error(json.message || "Clone failed");
       }
     } catch (err) {
-      toast.error("Failed to delete target");
+      toast.error("Clone failed");
     }
   };
+
+  const visibleTargets = (targets || []).filter(
+    (t) => isRowArchived(t) === showArchived
+  );
 
   return (
     <>
       {/* List modal */}
       <Dialog open={isOpen} onOpenChange={onClose}>
-        {console.log(programs, "programs")}
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl flex items-center gap-2">
@@ -454,22 +496,35 @@ export function TargetsListModal({
           </DialogHeader>
 
           <div className="space-y-4">
-            <Button onClick={openAdd} className="bg-teal-600 hover:bg-teal-700">
-              <Plus className="h-4 w-4 mr-2" /> Add Target
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={openAdd} className="bg-teal-600 hover:bg-teal-700">
+                <Plus className="h-4 w-4 mr-2" /> Add Target
+              </Button>
+              <Button variant="outline" onClick={() => setShowArchived(!showArchived)}>
+                {showArchived ? (
+                  <>
+                    <ArchiveRestore className="h-4 w-4 mr-2" /> Show Active
+                  </>
+                ) : (
+                  <>
+                    <Archive className="h-4 w-4 mr-2" /> Show Archived
+                  </>
+                )}
+              </Button>
+            </div>
 
             {loading ? (
               <p className="text-center py-8 text-gray-500">Loading...</p>
-            ) : targets.length === 0 ? (
+            ) : visibleTargets.length === 0 ? (
               <Card>
                 <CardContent className="text-center py-12">
                   <TargetIcon className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                  <p>No targets yet. Create one!</p>
+                  <p>{showArchived ? "No archived targets." : "No targets yet. Create one!"}</p>
                 </CardContent>
               </Card>
             ) : (
               <div className="space-y-3">
-                {targets.map((target) => {
+                {visibleTargets.map((target) => {
                   const program = programs.find(
                     (p) =>
                       String(p.id) ===
@@ -597,13 +652,32 @@ export function TargetsListModal({
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
+                            {!isRowArchived(target) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleCloneTarget(target)}
+                                title="Clone"
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleDeleteTarget(target.id)}
-                              className="text-red-600 hover:text-red-700"
+                              onClick={() => handleToggleArchiveTarget(target)}
+                              title={isRowArchived(target) ? "Restore" : "Archive"}
+                              className={
+                                isRowArchived(target)
+                                  ? "text-green-600 hover:text-green-700"
+                                  : "text-amber-600 hover:text-amber-700"
+                              }
                             >
-                              <Trash2 className="h-4 w-4" />
+                              {isRowArchived(target) ? (
+                                <ArchiveRestore className="h-4 w-4" />
+                              ) : (
+                                <Archive className="h-4 w-4" />
+                              )}
                             </Button>
                           </div>
                         </div>

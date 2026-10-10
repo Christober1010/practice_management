@@ -25,6 +25,7 @@ import ProgramsList from "@/components/master-data/programs-list";
 import TargetsList from "@/components/master-data/targets-list";
 import PromptsList from "@/components/master-data/prompts-list";
 import MaintenancePeriodsList from "@/components/master-data/maintenance-periods-list";
+import ClearingHouseSettings from "@/components/master-data/clearing-house-settings";
 import BehaviorCategoriesList from "@/components/master-data/behavior-categories-list";
 import BehaviorsList from "@/components/master-data/behaviors-list";
 import MileageRateView from "@/components/manage-data/mileage-rate-view";
@@ -164,6 +165,8 @@ export default function DashboardLayout({ userRole, onLogout }) {
         return <PromptsList />;
       case "maintenancePeriods":
         return <MaintenancePeriodsList />;
+      case "clearingHouse":
+        return <ClearingHouseSettings userRole={userRole} />;
       case "behaviorCategories":
         return <BehaviorCategoriesList />;
       case "behaviors":

@@ -25,6 +25,7 @@ import {
   FolderOpen,
   Car,
   CalendarClock,
+  Network,
 } from "lucide-react";
 import { usePermissions } from "@/hooks/usePermissions";
 import {
@@ -95,6 +96,12 @@ export default function AppSidebar({
       label: "Maintenance Period",
       icon: CalendarClock,
       color: "text-cyan-700",
+    },
+    {
+      id: "clearingHouse",
+      label: "Clearing House",
+      icon: Network,
+      color: "text-cyan-800",
     },
     {
       id: "behaviors",

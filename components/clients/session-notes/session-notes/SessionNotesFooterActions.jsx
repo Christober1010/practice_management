@@ -12,10 +12,12 @@ export default function SessionNotesFooterActions({
   futureCompleteMessage = "",
   className,
   readOnly = false,
+  hideActions = false,
 }) {
+  const showActions = !readOnly && !hideActions;
   return (
     <div className={cn("space-y-3 pt-4 border-t", className)}>
-      {!readOnly && isFutureSessionDate && futureCompleteMessage ? (
+      {showActions && isFutureSessionDate && futureCompleteMessage ? (
         <p
           className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2"
           role="status"
@@ -27,7 +29,7 @@ export default function SessionNotesFooterActions({
         <Button variant="outline" onClick={onClose}>
           {readOnly ? "CLOSE" : "CANCEL"}
         </Button>
-        {!readOnly ? (
+        {showActions ? (
           <>
             <Button
               variant="outline"

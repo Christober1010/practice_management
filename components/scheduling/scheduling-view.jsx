@@ -19,15 +19,9 @@ import {
   BookOpen,
   ClipboardList,
 } from "lucide-react";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import NewSessionFormModal from "./new-session-form-modal";
+import ReportFilterMultiSelect from "@/components/reports/report-filter-multi-select";
 import DeleteConfirmationModal from "./DeleteConfirmationModal";
 import ViewSessionModal from "./ViewSessionModal";
 import SessionNotesModal from "../clients/session-notes-modal";
@@ -35,6 +29,7 @@ import { toast } from "sonner";
 import { formatTime12hFromUTC, toMinutes12h } from "@/lib/time-utils";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getMahaverseAuthHeaders } from "@/lib/api-auth";
+import { sortClientsByName } from "@/lib/sort-clients";
 import {
   allowsSchedulingCreatePastSession,
   allowsSchedulingCreateSession,
@@ -116,6 +111,52 @@ function formatDateLabel(d) {
   });
 }
 
+const DEFAULT_SESSION_START_MINUTES = 9 * 60;
+
+function dateAtMinutes(dateObj, minutesFromMidnight) {
+  const parsed = Number(minutesFromMidnight);
+  const total = Number.isFinite(parsed)
+    ? Math.max(0, Math.min(23 * 60 + 30, parsed))
+    : DEFAULT_SESSION_START_MINUTES;
+  return new Date(
+    dateObj.getFullYear(),
+    dateObj.getMonth(),
+    dateObj.getDate(),
+    Math.floor(total / 60),
+    total % 60,
+    0,
+    0
+  );
+}
+
+function renderTimelineCreateSlots({
+  timeSlots,
+  startHour,
+  pixelsPerMinute,
+  dateObj,
+  enabled,
+  onCreate,
+}) {
+  if (!enabled || !dateObj) return null;
+  return timeSlots
+    .filter((slot) => slot.minutes < 24 * 60)
+    .map((slot) => {
+      const topPosition = (slot.minutes - startHour * 60) * pixelsPerMinute;
+      const heightPx = 30 * pixelsPerMinute;
+      return (
+        <button
+          key={`create-${dateObj.getFullYear()}-${dateObj.getMonth()}-${dateObj.getDate()}-${slot.minutes}`}
+          type="button"
+          aria-label={`Add session at ${slot.label}`}
+          title={`Add session at ${slot.label}`}
+          className="absolute left-0 z-0 w-full cursor-pointer border-0 bg-transparent p-0 hover:bg-teal-600/[0.07] focus-visible:bg-teal-600/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500/40"
+          style={{ top: `${topPosition}px`, height: `${heightPx}px` }}
+          onClick={() => onCreate(dateObj, slot.minutes)}
+        />
+      );
+    });
+}
+
 function isUTCStringOnDate(utcDateTimeString, dateObj) {
   if (!utcDateTimeString) return false;
   try {
@@ -136,6 +177,17 @@ function isUTCStringOnDate(utcDateTimeString, dateObj) {
 
 // The redeclared toMinutes12h function has been removed as per linting.
 // It is assumed that the imported toMinutes12h from "@/lib/time-utils" is the intended one.
+
+function pruneSelectedIds(prev, allowed) {
+  const next = prev.filter((id) => allowed.has(String(id)));
+  if (
+    next.length === prev.length &&
+    next.every((id, i) => String(id) === String(prev[i]))
+  ) {
+    return prev;
+  }
+  return next;
+}
 
 function initials(name) {
   if (!name) return "";
@@ -321,9 +373,9 @@ export default function SchedulingView({ userRole }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [userTimezone, setUserTimezone] = useState("UTC");
-  const [locationFilter, setLocationFilter] = useState("All");
-  const [staffFilter, setStaffFilter] = useState("All");
-  const [clientFilter, setClientFilter] = useState("All");
+  const [locationFilterIds, setLocationFilterIds] = useState([]);
+  const [staffFilterIds, setStaffFilterIds] = useState([]);
+  const [clientFilterIds, setClientFilterIds] = useState([]);
   const [masterLocations, setMasterLocations] = useState([]);
   const [clientsForFilter, setClientsForFilter] = useState([]);
   const [staffForFilter, setStaffForFilter] = useState([]);
@@ -490,7 +542,9 @@ export default function SchedulingView({ userRole }) {
             : [];
         setMasterLocations(locs);
         setClientsForFilter(
-          Array.isArray(clientsData.clients) ? clientsData.clients : []
+          Array.isArray(clientsData.clients)
+            ? sortClientsByName(clientsData.clients)
+            : []
         );
         const staffRows = Array.isArray(staffData.staff_records)
           ? staffData.staff_records
@@ -573,49 +627,63 @@ export default function SchedulingView({ userRole }) {
     return map;
   }, [clientsForFilter]);
 
-  const uniqueLocations = useMemo(() => {
-    const active = masterLocations
+  const locationFilterOptions = useMemo(() => {
+    return masterLocations
       .filter(
         (l) =>
           !Number(l.archived) &&
           String(l.status || "Active").toLowerCase() === "active"
       )
       .map((l) => ({
-        id: String(l.id),
-        name: l.location_name || l.facility_name || String(l.id),
+        value: String(l.id),
+        label: l.location_name || l.facility_name || String(l.id),
       }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-    return [{ id: "All", name: "All" }, ...active];
+      .sort((a, b) => a.label.localeCompare(b.label));
   }, [masterLocations]);
 
-  const uniqueProviders = useMemo(() => {
-    const names = staffForFilter
-      .map((s) => s.fullName || `${s.firstName || ""} ${s.lastName || ""}`.trim())
-      .filter(Boolean)
-      .sort((a, b) => a.localeCompare(b));
-    return ["All", ...names];
+  const staffFilterOptions = useMemo(() => {
+    return staffForFilter
+      .map((s) => ({
+        value: String(s.id),
+        label:
+          s.fullName ||
+          `${s.firstName || ""} ${s.lastName || ""}`.trim(),
+      }))
+      .filter((o) => o.value && o.label)
+      .sort((a, b) => a.label.localeCompare(b.label));
   }, [staffForFilter]);
 
-  const uniqueClients = useMemo(() => {
-    const names = [];
+  const clientFilterOptions = useMemo(() => {
+    const locationSet = new Set(locationFilterIds.map(String));
+    const options = [];
     for (const c of clientsForFilter) {
       const id = String(c.client_id || "");
       const name =
         clientNameById[id] ||
         [c.first_name, c.middle_name, c.last_name].filter(Boolean).join(" ");
-      if (!name) continue;
+      if (!id || !name) continue;
       if (
-        locationFilter &&
-        locationFilter !== "All" &&
-        clientLocationById[id] !== locationFilter
+        locationSet.size > 0 &&
+        !locationSet.has(String(clientLocationById[id] || ""))
       ) {
         continue;
       }
-      names.push(name);
+      options.push({ value: id, label: name });
     }
-    names.sort((a, b) => a.localeCompare(b));
-    return ["All", ...names];
-  }, [clientsForFilter, locationFilter, clientLocationById, clientNameById]);
+    options.sort((a, b) => a.label.localeCompare(b.label));
+    return options;
+  }, [
+    clientsForFilter,
+    locationFilterIds,
+    clientLocationById,
+    clientNameById,
+  ]);
+
+  const staffNameById = useMemo(() => {
+    const map = {};
+    for (const o of staffFilterOptions) map[o.value] = o.label;
+    return map;
+  }, [staffFilterOptions]);
 
   const scopedSessions = useMemo(() => {
     if (isAdminUser) return sessions;
@@ -634,48 +702,50 @@ export default function SchedulingView({ userRole }) {
   }, [sessions, isAdminUser]);
 
   const filteredSessions = useMemo(() => {
+    const locationSet = new Set(locationFilterIds.map(String));
+    const staffSet = new Set(staffFilterIds.map(String));
+    const clientSet = new Set(clientFilterIds.map(String));
     return scopedSessions.filter((session) => {
       const matchesLocation =
-        locationFilter === "All" ||
-        !locationFilter ||
-        clientLocationById[String(session.clientId || "")] === locationFilter;
+        locationSet.size === 0 ||
+        locationSet.has(
+          String(clientLocationById[String(session.clientId || "")] || "")
+        );
+      const providerId = String(session.providerId || "");
+      const providerName = String(session.provider_name || "").trim();
       const matchesStaff =
-        staffFilter === "All" ||
-        !staffFilter ||
-        session.provider_name === staffFilter;
+        staffSet.size === 0 ||
+        staffSet.has(providerId) ||
+        (providerName &&
+          [...staffSet].some((id) => staffNameById[id] === providerName));
       const matchesClient =
-        clientFilter === "All" ||
-        !clientFilter ||
-        session.clientName === clientFilter;
+        clientSet.size === 0 ||
+        clientSet.has(String(session.clientId || ""));
       return matchesLocation && matchesStaff && matchesClient;
     });
   }, [
     scopedSessions,
-    locationFilter,
-    staffFilter,
-    clientFilter,
+    locationFilterIds,
+    staffFilterIds,
+    clientFilterIds,
     clientLocationById,
+    staffNameById,
   ]);
 
   useEffect(() => {
-    if (
-      clientFilter &&
-      clientFilter !== "All" &&
-      !uniqueClients.includes(clientFilter)
-    ) {
-      setClientFilter("All");
-    }
-  }, [uniqueClients, clientFilter]);
+    const allowed = new Set(clientFilterOptions.map((o) => o.value));
+    setClientFilterIds((prev) => pruneSelectedIds(prev, allowed));
+  }, [clientFilterOptions]);
 
   useEffect(() => {
-    if (
-      staffFilter &&
-      staffFilter !== "All" &&
-      !uniqueProviders.includes(staffFilter)
-    ) {
-      setStaffFilter("All");
-    }
-  }, [uniqueProviders, staffFilter]);
+    const allowed = new Set(staffFilterOptions.map((o) => o.value));
+    setStaffFilterIds((prev) => pruneSelectedIds(prev, allowed));
+  }, [staffFilterOptions]);
+
+  useEffect(() => {
+    const allowed = new Set(locationFilterOptions.map((o) => o.value));
+    setLocationFilterIds((prev) => pruneSelectedIds(prev, allowed));
+  }, [locationFilterOptions]);
 
   const calendarData = useMemo(() => {
     if (viewMode === "today") {
@@ -887,13 +957,16 @@ export default function SchedulingView({ userRole }) {
     setViewMode(newViewMode);
   };
 
-  const handleOpenAddSessionForDate = (dateObj) => {
+  const handleOpenAddSessionForDate = (
+    dateObj,
+    startMinutes = DEFAULT_SESSION_START_MINUTES
+  ) => {
     if (!allowCreate) {
       toast.error("You don’t have permission to schedule sessions.");
       return;
     }
     if (!dateObj) return;
-    setSelectedDate(dateObj);
+    setSelectedDate(dateAtMinutes(dateObj, startMinutes));
     setEditingSession(null);
     setIsNewSessionModalOpen(true);
   };
@@ -1359,7 +1432,7 @@ export default function SchedulingView({ userRole }) {
                 return shouldShowLine ? (
                   <div
                     key={idx}
-                    className="absolute w-full"
+                    className="absolute w-full pointer-events-none"
                     style={{ top: `${topPosition}px` }}
                   >
                     <div
@@ -1371,6 +1444,15 @@ export default function SchedulingView({ userRole }) {
                     />
                   </div>
                 ) : null;
+              })}
+
+              {renderTimelineCreateSlots({
+                timeSlots,
+                startHour,
+                pixelsPerMinute,
+                dateObj: currentDate,
+                enabled: allowCreate,
+                onCreate: handleOpenAddSessionForDate,
               })}
 
               {liveTimelinePosition !== null && (
@@ -1673,7 +1755,7 @@ export default function SchedulingView({ userRole }) {
                       return shouldShowLine ? (
                         <div
                           key={idx}
-                          className="absolute w-full"
+                          className="absolute w-full pointer-events-none"
                           style={{ top: `${topPosition}px` }}
                         >
                           <div
@@ -1685,6 +1767,15 @@ export default function SchedulingView({ userRole }) {
                           />
                         </div>
                       ) : null;
+                    })}
+
+                    {renderTimelineCreateSlots({
+                      timeSlots,
+                      startHour,
+                      pixelsPerMinute,
+                      dateObj,
+                      enabled: allowCreate,
+                      onCreate: handleOpenAddSessionForDate,
                     })}
 
                     {isToday && liveTimelinePosition !== null && (
@@ -1841,6 +1932,7 @@ export default function SchedulingView({ userRole }) {
                                         );
                                       }}
                                       className="flex-1 text-xs text-indigo-600 hover:text-indigo-700"
+                                      title="Data Collection"
                                     >
                                       <ClipboardList className="h-3 w-3 mr-1" />
                                       Data
@@ -2180,62 +2272,38 @@ export default function SchedulingView({ userRole }) {
         <CardHeader className="pb-4">
           <div className="flex flex-col gap-4">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="appointments-filter-location">Location</Label>
-                <Select
-                  value={locationFilter || "All"}
-                  onValueChange={(v) => {
-                    setLocationFilter(v);
-                    setClientFilter("All");
-                  }}
-                >
-                  <SelectTrigger id="appointments-filter-location">
-                    <SelectValue placeholder="Select Location" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {uniqueLocations.map((location) => (
-                      <SelectItem key={location.id} value={location.id}>
-                        {location.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-1.5 min-w-0">
+                <Label>Location</Label>
+                <ReportFilterMultiSelect
+                  options={locationFilterOptions}
+                  selected={locationFilterIds}
+                  onChange={setLocationFilterIds}
+                  placeholder="All locations"
+                  searchPlaceholder="Search locations…"
+                  emptySearchMessage="No locations found"
+                />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="appointments-filter-staff">Staff</Label>
-                <Select
-                  value={staffFilter || "All"}
-                  onValueChange={setStaffFilter}
-                >
-                  <SelectTrigger id="appointments-filter-staff">
-                    <SelectValue placeholder="Select Staff" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {uniqueProviders.map((provider) => (
-                      <SelectItem key={provider} value={provider}>
-                        {provider}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-1.5 min-w-0">
+                <Label>Staff</Label>
+                <ReportFilterMultiSelect
+                  options={staffFilterOptions}
+                  selected={staffFilterIds}
+                  onChange={setStaffFilterIds}
+                  placeholder="All staff"
+                  searchPlaceholder="Search staff…"
+                  emptySearchMessage="No staff found"
+                />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="appointments-filter-client">Client</Label>
-                <Select
-                  value={clientFilter || "All"}
-                  onValueChange={setClientFilter}
-                >
-                  <SelectTrigger id="appointments-filter-client">
-                    <SelectValue placeholder="Select Client" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {uniqueClients.map((client) => (
-                      <SelectItem key={client} value={client}>
-                        {client}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-1.5 min-w-0">
+                <Label>Client</Label>
+                <ReportFilterMultiSelect
+                  options={clientFilterOptions}
+                  selected={clientFilterIds}
+                  onChange={setClientFilterIds}
+                  placeholder="All clients"
+                  searchPlaceholder="Search clients…"
+                  emptySearchMessage="No clients found"
+                />
               </div>
             </div>
             <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
@@ -2360,10 +2428,9 @@ export default function SchedulingView({ userRole }) {
         selectedDate={selectedDate}
         editingSession={editingSession}
         existingSessions={sessions}
-        locationFilterId={
-          locationFilter && locationFilter !== "All" ? locationFilter : ""
-        }
+        locationFilterIds={locationFilterIds}
         canEditExcludeSession={isAdminUser}
+        canEditServiceType={isAdminUser}
         canCreatePastDates={allowCreatePast || isAdminUser}
         focusField={claimFocusField}
       />
@@ -2410,10 +2477,11 @@ export default function SchedulingView({ userRole }) {
           setSessionNotesInitialTab("session-notes");
           setSessionNotesLink({ date: null, sessionId: null });
         }}
+        initialTab={sessionNotesInitialTab}
         client={sessionNotesClient}
         linkedSessionDate={sessionNotesLink.date}
         linkedSessionId={sessionNotesLink.sessionId}
-        initialTab={sessionNotesInitialTab}
+        userRole={userRole}
         onSessionBillingFinalized={(billing) => {
           if (billing && (billing.session_id != null || billing.claim_id)) {
             const sid = String(billing.session_id ?? "");

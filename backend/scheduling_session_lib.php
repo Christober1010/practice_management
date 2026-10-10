@@ -304,6 +304,88 @@ function session_row_is_completed(array $row): bool
     return false;
 }
 
+/** True when sessions.exclude_session is Yes. */
+function session_row_is_excluded(array $row): bool
+{
+    $ex = strtolower(trim((string)($row['exclude_session'] ?? $row['excludeSession'] ?? 'No')));
+    return $ex === 'yes' || $ex === 'y' || $ex === '1' || $ex === 'true';
+}
+
+/**
+ * When exclude_session=Yes and the session is Rendered, mirror rendered_hours into session_log.misc_hrs.
+ */
+function sessions_sync_misc_hrs_for_excluded_rendered(
+    mysqli $conn,
+    int $sessionId,
+    ?string $excludeSession = null,
+    ?string $status = null,
+    ?float $renderedHours = null
+): void {
+    if ($sessionId <= 0) {
+        return;
+    }
+
+    $r = @$conn->query("SHOW TABLES LIKE 'session_log'");
+    $hasTable = ($r && $r->num_rows > 0);
+    if ($r) {
+        $r->free();
+    }
+    if (!$hasTable) {
+        return;
+    }
+
+    if ($excludeSession === null || $status === null || $renderedHours === null) {
+        $excludeSelect = sessions_has_exclude_session_column($conn) ? ', exclude_session' : '';
+        $statusCol = sessions_status_column($conn);
+        $stmt = $conn->prepare(
+            "SELECT `{$statusCol}` AS status, rendered_hours{$excludeSelect} FROM sessions WHERE session_id = ? LIMIT 1"
+        );
+        if (!$stmt) {
+            return;
+        }
+        $stmt->bind_param('i', $sessionId);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if (!$row) {
+            return;
+        }
+        $excludeSession = $excludeSession ?? ($row['exclude_session'] ?? 'No');
+        $status = $status ?? session_row_status_value($row, '');
+        $renderedHours = $renderedHours ?? (float)($row['rendered_hours'] ?? 0);
+    }
+
+    if (!session_row_is_excluded(['exclude_session' => $excludeSession])) {
+        return;
+    }
+    // Accept Rendered/Completed, or prod rows that are effectively completed via hours/claim.
+    $completed = session_is_completed_status($status)
+        || session_row_is_completed([
+            'status' => $status,
+            'STATUS' => $status,
+            'rendered_hours' => $renderedHours,
+        ]);
+    if (!$completed) {
+        return;
+    }
+    $hrs = round((float)$renderedHours, 2);
+    if ($hrs <= 0) {
+        return;
+    }
+
+    $miscStr = (string)$hrs;
+    $stmt = $conn->prepare(
+        'INSERT INTO session_log (session_id, misc_hrs) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE misc_hrs = VALUES(misc_hrs)'
+    );
+    if (!$stmt) {
+        return;
+    }
+    $stmt->bind_param('is', $sessionId, $miscStr);
+    $stmt->execute();
+    $stmt->close();
+}
+
 function session_status_is_cancelled($status): bool
 {
     return strtolower(trim((string)$status)) === 'cancelled';
@@ -1439,7 +1521,7 @@ $renderedHours = $renderedHoursRaw !== null && $renderedHoursRaw !== ''
 // Validate auth / balance (match active auth + client's insurance). Identifier may be auth_id OR id column.
 $caMatch = client_auth_identifier_where($conn, 'ca.');
 $sqlAuthValidate = "
-SELECT ca.insurance_id, ca.status, ca.balance_units, ci.client_id
+SELECT ca.insurance_id, ca.status, ca.balance_units, ca.start_date, ca.end_date, ci.client_id
 FROM client_auth ca
 INNER JOIN client_insurance ci ON ca.insurance_id = ci.insurance_id AND ci.client_id = ?
 WHERE {$caMatch['clause']} AND UPPER(TRIM(IFNULL(ca.status,''))) = 'ACTIVE'
@@ -1513,6 +1595,39 @@ if (!$authData) {
     return $fail(400, array_merge(['error' => 'Invalid or inactive auth_id, or auth_id does not belong to client'], $why));
 }
 
+// Session calendar date must fall within authorization start_date / end_date.
+$sessionDayForAuth = sessions_start_local_ymd((string)$startMySQL, $startTz);
+$authStartYmd = trim((string)($authData['start_date'] ?? ''));
+$authEndYmd = trim((string)($authData['end_date'] ?? ''));
+if (strlen($authStartYmd) >= 10) {
+    $authStartYmd = substr($authStartYmd, 0, 10);
+} else {
+    $authStartYmd = '';
+}
+if (strlen($authEndYmd) >= 10) {
+    $authEndYmd = substr($authEndYmd, 0, 10);
+} else {
+    $authEndYmd = '';
+}
+if ($sessionDayForAuth !== '' && $authStartYmd !== '' && $sessionDayForAuth < $authStartYmd) {
+    return $fail(400, [
+        'error' => 'Session date is before authorization start date',
+        'code' => 'auth_date_out_of_range',
+        'session_date' => $sessionDayForAuth,
+        'auth_start_date' => $authStartYmd,
+        'auth_end_date' => $authEndYmd !== '' ? $authEndYmd : null,
+    ]);
+}
+if ($sessionDayForAuth !== '' && $authEndYmd !== '' && $sessionDayForAuth > $authEndYmd) {
+    return $fail(400, [
+        'error' => 'Session date is after authorization end date',
+        'code' => 'auth_date_out_of_range',
+        'session_date' => $sessionDayForAuth,
+        'auth_start_date' => $authStartYmd !== '' ? $authStartYmd : null,
+        'auth_end_date' => $authEndYmd,
+    ]);
+}
+
 $currentBalance = (float)($authData['balance_units'] ?? '0.00'); // Cast VARCHAR to float
 $totalScheduledHours = floatval($scheduledHours); // For single session
 if ($currentBalance < $totalScheduledHours) {
@@ -1541,30 +1656,45 @@ if ($recurringFrequency !== 'No' && $recurringFrequency !== 'Never') {
             $endLimit = new DateTime($recurringData['ends']['date'] . ' 23:59:59', new DateTimeZone('UTC'));
         } elseif (!empty($recurringData['ends']['type']) && $recurringData['ends']['type'] === 'After' && !empty($recurringData['ends']['occurrences'])) {
             $maxOccurrences = intval($recurringData['ends']['occurrences']);
+        } elseif ($authEndYmd !== '') {
+            // Open-ended repeats must stop at authorization end (prevents ~2yr weekly runs).
+            $endLimit = new DateTime($authEndYmd . ' 23:59:59', new DateTimeZone('UTC'));
+        } else {
+            return $fail(400, [
+                'error' => 'Recurring sessions require an end date, occurrence count, or an authorization end date',
+                'code' => 'recurring_end_required',
+            ]);
         }
 
         while ($occurrenceCount < $maxOccurrences) {
             if ($endLimit && $currentDate > $endLimit) break;
+            $occYmd = $currentDate->format('Y-m-d');
+            if ($authEndYmd !== '' && $occYmd > $authEndYmd) {
+                break;
+            }
 
+            $withinAuthWindow = ($authStartYmd === '' || $occYmd >= $authStartYmd);
             $shouldInclude = false;
-            switch ($recurringFrequency) {
-                case 'Daily':
-                    $shouldInclude = true;
-                    break;
-                case 'Weekly':
-                    if (!empty($recurringData['days'])) {
-                        $dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                        $currentDayName = $dayNames[$currentDate->format('w')];
-                        $shouldInclude = in_array($currentDayName, $recurringData['days']);
-                    }
-                    break;
-                case 'Biweekly':
-                    $weeksDiff = floor($currentDate->diff($startDate)->days / 7);
-                    $shouldInclude = ($weeksDiff % 2 === 0);
-                    break;
-                case 'Monthly':
-                    $shouldInclude = ($currentDate->format('j') === $startDate->format('j'));
-                    break;
+            if ($withinAuthWindow) {
+                switch ($recurringFrequency) {
+                    case 'Daily':
+                        $shouldInclude = true;
+                        break;
+                    case 'Weekly':
+                        if (!empty($recurringData['days'])) {
+                            $dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                            $currentDayName = $dayNames[$currentDate->format('w')];
+                            $shouldInclude = in_array($currentDayName, $recurringData['days']);
+                        }
+                        break;
+                    case 'Biweekly':
+                        $weeksDiff = floor($currentDate->diff($startDate)->days / 7);
+                        $shouldInclude = ($weeksDiff % 2 === 0);
+                        break;
+                    case 'Monthly':
+                        $shouldInclude = ($currentDate->format('j') === $startDate->format('j'));
+                        break;
+                }
             }
 
             if ($shouldInclude) {
@@ -1597,6 +1727,22 @@ if ($recurringFrequency !== 'No' && $recurringFrequency !== 'Never') {
         'start' => $startMySQL,
         'end' => $endMySQL
     ];
+}
+
+// Re-check units against the full occurrence list (recurring can exceed single-session balance).
+if (!empty($sessionsToCreate)) {
+    $hoursPerSession = $scheduledHours !== null && $scheduledHours !== ''
+        ? floatval($scheduledHours)
+        : floatval(computeScheduledHours($startMySQL, $endMySQL));
+    $requiredHours = $hoursPerSession * count($sessionsToCreate);
+    if ($currentBalance < $requiredHours) {
+        return $fail(400, [
+            'error' => "Insufficient balance_units: available=$currentBalance, required=$requiredHours",
+            'code' => 'insufficient_auth_units',
+            'sessions_to_create' => count($sessionsToCreate),
+            'hours_per_session' => $hoursPerSession,
+        ]);
+    }
 }
 
 // Dry-run: validate provider schedule conflicts without inserting (import validate).
@@ -1754,6 +1900,13 @@ INSERT INTO sessions (
             if (session_is_completed_status($status)) {
                 ensure_session_claim_ready($conn, (int)$stmt->insert_id, $session['start'], $billableOverride);
             }
+            sessions_sync_misc_hrs_for_excluded_rendered(
+                $conn,
+                (int)$stmt->insert_id,
+                $excludeSession,
+                $status,
+                (float)$renderedHours
+            );
         } else {
             throw new Exception("Failed to create session: " . $stmt->error);
         }

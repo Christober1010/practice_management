@@ -77,6 +77,7 @@ import { useSelector } from "react-redux";
 import { DropdownMenuLabel } from "@radix-ui/react-dropdown-menu";
 import ClientModulesModal from "./add-client-module";
 import ClientDomainModal from "./add-client-domain";
+import { isRowArchived } from "@/lib/client-config-archive";
 import ClientProgramModal, { ProgramsListModal } from "./add-client-program";
 import ClientTargetModal, { TargetsListModal } from "./add-client-target";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -721,6 +722,7 @@ export default function ClientsView({ userRole }) {
             description: d.description || "",
             module_id: moduleId,
             moduleId,
+            archived: isRowArchived(d),
           };
         });
 
@@ -736,6 +738,7 @@ export default function ClientsView({ userRole }) {
           description: p.description || "",
           domain_id: p.domain_id,
           status: p.status || "Active",
+          archived: isRowArchived(p),
         }));
 
         const normalizedTargets = rawTargets.map((t) => ({
@@ -754,6 +757,7 @@ export default function ClientsView({ userRole }) {
           prompts: t.prompts || [],
           tasks: t.tasks || [],
           client_id: clientId,
+          archived: isRowArchived(t),
         }));
 
         setClientDomains(normalizedDomains);

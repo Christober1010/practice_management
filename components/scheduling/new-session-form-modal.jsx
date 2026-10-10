@@ -2,7 +2,7 @@
 
 import { mahaverseFetch } from "@/lib/mahaverse-api";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 import { Users, Clock, FileText, Repeat, Trash2 } from "lucide-react";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useDispatch, useSelector } from "react-redux";
@@ -45,9 +45,43 @@ import { highlightClaimFocusElement } from "@/lib/claim-warning-nav";
 import {
   authorizationBillingCodeLabel,
   authorizationBillingCodeMatches,
+  authorizationRequiresProviderAsSupervising,
+  authorizationRequiresStaffAssignedSupervisor,
+  billingTextRequiresProviderAsSupervising,
+  billingTextRequiresStaffAssignedSupervisor,
+  extractProcedureCodesFromBillingText,
 } from "@/lib/authorization-billing-code";
 import { findLocalProviderScheduleConflict } from "@/lib/scheduling-provider-conflict";
-import { isActiveAuthorization } from "@/lib/client-authorization-active";
+import {
+  authorizationCoversSessionDate,
+  isActiveAuthorization,
+} from "@/lib/client-authorization-active";
+import {
+  hoursToAuthUnits,
+  authorizationApprovedUnits,
+  authorizationRemainingUnits,
+} from "@/lib/authorization-units";
+
+function staffIdsMatch(a, b) {
+  return String(a || "") !== "" && String(a) === String(b);
+}
+
+function assignedSupervisorsForStaff(staffMember, staffDirectory = []) {
+  const ids = Array.isArray(staffMember?.assignedStaff)
+    ? staffMember.assignedStaff.map(String).filter(Boolean)
+    : [];
+  const names = Array.isArray(staffMember?.assignedStaffNames)
+    ? staffMember.assignedStaffNames
+    : [];
+  return ids.map((id, i) => {
+    const fromList = staffDirectory.find((s) => staffIdsMatch(s.id, id));
+    return {
+      id,
+      fullName: fromList?.fullName || names[i] || "",
+      staffType: fromList?.staffType || "Supervisor",
+    };
+  });
+}
 
 const jsonAuthHeaders = () =>
   getMahaverseAuthHeaders({
@@ -287,8 +321,11 @@ export default function NewSessionFormModal({
   selectedDate = null,
   existingSessions = [],
   locationFilterId = "",
+  locationFilterIds,
   /** Only admins may change Exclude session (Yes/No). */
   canEditExcludeSession = false,
+  /** Admins may change Service type on completed sessions. */
+  canEditServiceType = false,
   /** When false, new sessions may only start on today or future (clinic calendar). */
   canCreatePastDates = true,
   /** Deep-link focus: supervising | hours | pos */
@@ -306,6 +343,8 @@ export default function NewSessionFormModal({
   const [cancelMode, setCancelMode] = useState("single");
   const [isSaving, setIsSaving] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [serviceCodeRuleByCode, setServiceCodeRuleByCode] = useState({});
+  const lastAutoSupervisingRef = useRef("");
   const dispatch = useDispatch();
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
 
@@ -357,6 +396,7 @@ export default function NewSessionFormModal({
     const fetchStaff = async () => {
       setLoadingStaff(true);
       try {
+        // Same endpoint as scheduling-view / staff module (not /api/v1/… which 404s).
         const res = await mahaverseFetch("/staff.php?scope=assigned", {
           headers: getMahaverseAuthHeaders(),
         });
@@ -365,7 +405,12 @@ export default function NewSessionFormModal({
           const activeStaff = data.staff_records.filter(
             (s) => s.status === "Active" && s.archived !== "1"
           );
-          setStaff(activeStaff);
+          setStaff(
+            activeStaff.map((s) => ({
+              ...s,
+              id: s?.id != null ? String(s.id) : s.id,
+            }))
+          );
         }
       } catch (err) {
         toast.error("Failed to load providers");
@@ -377,6 +422,55 @@ export default function NewSessionFormModal({
   }, [isOpen, baseUrl]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    const loadRules = async () => {
+      try {
+        const res = await mahaverseFetch("/service-code-rules.php", {
+          headers: getMahaverseAuthHeaders(),
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (data?.success && Array.isArray(data.data)) {
+          const map = {};
+          for (const row of data.data) {
+            const code = String(row?.code ?? "").trim();
+            if (!code) continue;
+            map[code] = String(row?.supervising_provider_rule ?? "").trim();
+          }
+          setServiceCodeRuleByCode(map);
+        } else {
+          setServiceCodeRuleByCode({});
+        }
+      } catch (err) {
+        if (!cancelled) setServiceCodeRuleByCode({});
+      }
+    };
+    loadRules();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
+
+  const supervisingRuleForBillingText = useCallback(
+    (raw) => {
+      const codes = extractProcedureCodesFromBillingText(raw);
+      if (codes.length === 0) return { provider: false, staffAssignedSupervisor: false };
+      let provider = false;
+      let staffAssignedSupervisor = false;
+      for (const c of codes) {
+        const rule = String(serviceCodeRuleByCode?.[c] ?? "");
+        if (rule === "provider_as_supervising") provider = true;
+        if (rule === "staff_assigned_supervisor") staffAssignedSupervisor = true;
+      }
+      // Provider rule takes precedence.
+      if (provider) staffAssignedSupervisor = false;
+      return { provider, staffAssignedSupervisor };
+    },
+    [serviceCodeRuleByCode]
+  );
+
+  useEffect(() => {
     if (isOpen && userTimezone) {
       setForm((prev) => ({
         ...prev,
@@ -386,20 +480,38 @@ export default function NewSessionFormModal({
     }
   }, [isOpen, userTimezone]);
 
-  useEffect(() => {
+  const scheduledHoursComputed = useMemo(() => {
     if (!form.startDateTime || !form.endDateTime) {
-      setForm((prev) => ({ ...prev, scheduledHours: "" }));
-      return;
+      return { num: 0, label: "" };
     }
-    const start = new Date(form.startDateTime);
-    const end = new Date(form.endDateTime);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
-      setForm((prev) => ({ ...prev, scheduledHours: "" }));
-      return;
+    // Prefer local-parts parse so datetime-local values never depend on TZ quirks.
+    const parseLocal = (raw) => {
+      const m = String(raw).match(
+        /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/
+      );
+      if (m) {
+        return new Date(
+          Number(m[1]),
+          Number(m[2]) - 1,
+          Number(m[3]),
+          Number(m[4]),
+          Number(m[5]),
+          0,
+          0
+        );
+      }
+      const d = new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    const start = parseLocal(form.startDateTime);
+    const end = parseLocal(form.endDateTime);
+    if (!start || !end || end <= start) {
+      return { num: 0, label: "" };
     }
     const diffMs = end.getTime() - start.getTime();
     const hours = diffMs / (1000 * 60 * 60);
-    setForm((prev) => ({ ...prev, scheduledHours: hours.toFixed(2) }));
+    const rounded = Math.round(hours * 100) / 100;
+    return { num: rounded, label: rounded.toFixed(2) };
   }, [form.startDateTime, form.endDateTime]);
 
   // useEffect(() => {
@@ -600,26 +712,57 @@ export default function NewSessionFormModal({
           "",
       });
     } else if (selectedDate && userTimezone) {
-      const y = selectedDate.getFullYear();
-      const m = String(selectedDate.getMonth() + 1).padStart(2, "0");
-      const d = String(selectedDate.getDate()).padStart(2, "0");
+      const start = new Date(
+        selectedDate.getFullYear(),
+        selectedDate.getMonth(),
+        selectedDate.getDate(),
+        selectedDate.getHours(),
+        selectedDate.getMinutes(),
+        0,
+        0
+      );
+      const end = new Date(start.getTime() + 60 * 60 * 1000);
+      if (
+        end.getFullYear() !== start.getFullYear() ||
+        end.getMonth() !== start.getMonth() ||
+        end.getDate() !== start.getDate()
+      ) {
+        end.setTime(start.getTime());
+        end.setHours(23, 59, 0, 0);
+      }
+      const toLocalInput = (value) => {
+        const y = value.getFullYear();
+        const m = String(value.getMonth() + 1).padStart(2, "0");
+        const d = String(value.getDate()).padStart(2, "0");
+        const hh = String(value.getHours()).padStart(2, "0");
+        const mm = String(value.getMinutes()).padStart(2, "0");
+        return `${y}-${m}-${d}T${hh}:${mm}`;
+      };
       setForm((prev) => ({
         ...initialForm,
-        startDateTime: `${y}-${m}-${d}T09:00`,
-        endDateTime: `${y}-${m}-${d}T10:00`,
+        startDateTime: toLocalInput(start),
+        endDateTime: toLocalInput(end),
         startTZ: userTimezone,
         endTZ: userTimezone,
       }));
     }
   }, [isOpen, editingSession, selectedDate, userTimezone, staff, clients]);
 
+  const selectedLocationIds = useMemo(() => {
+    if (Array.isArray(locationFilterIds) && locationFilterIds.length > 0) {
+      return locationFilterIds.map(String);
+    }
+    if (locationFilterId) return [String(locationFilterId)];
+    return [];
+  }, [locationFilterId, locationFilterIds]);
+
   const clientOptions = useMemo(
     () =>
       clients
         .filter(isClientActive)
         .filter((c) => {
-          if (!locationFilterId) return true;
-          return String(c.location || "") === String(locationFilterId);
+          if (selectedLocationIds.length === 0) return true;
+          return selectedLocationIds.includes(String(c.location || ""));
         })
         .map((c) => ({
         id: c.client_id,
@@ -629,7 +772,7 @@ export default function NewSessionFormModal({
         authorizations: Array.isArray(c.authorizations) ? c.authorizations : [],
         address: clientAddressOptions(c),
       })),
-    [clients, locationFilterId]
+    [clients, selectedLocationIds]
   );
 
   const selectedClient = useMemo(
@@ -662,6 +805,49 @@ export default function NewSessionFormModal({
     [editingSession]
   );
 
+  /** 97151 / 97155 / 97156 → supervising provider must equal session provider. */
+  const providerAsSupervisingRequired = useMemo(() => {
+    const authRow = selectedClient
+      ? resolveAuthorizationRow(selectedClient, form)
+      : null;
+    const authText = authRow?.billing_codes ?? null;
+    const fromRules =
+      authText != null ? supervisingRuleForBillingText(authText) : null;
+    if (fromRules && fromRules.provider) return true;
+    const fromRules2 = supervisingRuleForBillingText(form.authCode);
+    if (fromRules2.provider) return true;
+    if (authRow && authorizationRequiresProviderAsSupervising(authRow)) return true;
+    return billingTextRequiresProviderAsSupervising(form.authCode);
+  }, [selectedClient, form.authId, form.authCode, form.clientId, supervisingRuleForBillingText]);
+
+  /** 97153 → prefill supervising provider from the staff Assigned Supervisor. */
+  const staffAssignedSupervisorRequired = useMemo(() => {
+    if (providerAsSupervisingRequired) return false;
+    const authRow = selectedClient
+      ? resolveAuthorizationRow(selectedClient, form)
+      : null;
+    const authText = authRow?.billing_codes ?? null;
+    const fromRules =
+      authText != null ? supervisingRuleForBillingText(authText) : null;
+    if (fromRules && fromRules.staffAssignedSupervisor) return true;
+    const fromRules2 = supervisingRuleForBillingText(form.authCode);
+    if (fromRules2.staffAssignedSupervisor) return true;
+    if (authRow && authorizationRequiresStaffAssignedSupervisor(authRow)) return true;
+    return billingTextRequiresStaffAssignedSupervisor(form.authCode);
+  }, [
+    providerAsSupervisingRequired,
+    selectedClient,
+    form.authId,
+    form.authCode,
+    form.clientId,
+    supervisingRuleForBillingText,
+  ]);
+
+  const selectedProviderAssignedSupervisors = useMemo(() => {
+    const providerStaff = staff.find((s) => staffIdsMatch(s.id, form.provider));
+    return assignedSupervisorsForStaff(providerStaff, staff);
+  }, [staff, form.provider]);
+
   /** Completed sessions: claim fixes need supervisor + billing code; client/provider stay locked. */
   const COMPLETED_EDITABLE_FIELDS = [
     "startDateTime",
@@ -677,6 +863,8 @@ export default function NewSessionFormModal({
   const fieldLocked = (fieldId) =>
     isCompletedLimitedEdit && !COMPLETED_EDITABLE_FIELDS.includes(fieldId);
 
+  const serviceTypeLocked = isCompletedLimitedEdit && !canEditServiceType;
+
   useEffect(() => {
     if (!isOpen || !form.authId || !selectedClient?.authorizations?.length) {
       return;
@@ -688,6 +876,102 @@ export default function NewSessionFormModal({
         : prev
     );
   }, [isOpen, selectedClient, form.authId, form.authCode, form.clientId]);
+
+  // Prefill supervising = provider for 97151 / 97155 / 97156, but keep the field editable.
+  useEffect(() => {
+    if (!isOpen) {
+      lastAutoSupervisingRef.current = "";
+      return;
+    }
+    if (!providerAsSupervisingRequired || !form.provider) return;
+
+    const providerStaff = staff.find((s) => staffIdsMatch(s.id, form.provider));
+    const name =
+      providerStaff?.fullName || form.providerName || "";
+
+    setForm((prev) => {
+      const nextId = String(prev.provider);
+      // Treat prior auto-fills (incl. 97153 staff supervisor) as replaceable when
+      // billing code switches to provider-as-supervising.
+      const stillDefault =
+        !prev.supervisingProvider ||
+        staffIdsMatch(prev.supervisingProvider, lastAutoSupervisingRef.current) ||
+        staffIdsMatch(prev.supervisingProvider, prev.provider);
+      if (!stillDefault) return prev;
+
+      lastAutoSupervisingRef.current = nextId;
+      if (
+        staffIdsMatch(prev.supervisingProvider, nextId) &&
+        (prev.supervisingProviderName || !name)
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        supervisingProvider: nextId,
+        supervisingProviderName: name || prev.providerName || "",
+      };
+    });
+  }, [
+    isOpen,
+    providerAsSupervisingRequired,
+    form.provider,
+    form.providerName,
+    staff,
+  ]);
+
+  // Auto-set supervising from staff Assigned Supervisor for 97153.
+  useEffect(() => {
+    if (!isOpen || !staffAssignedSupervisorRequired || !form.provider) return;
+
+    const assigned = selectedProviderAssignedSupervisors;
+    const pick = assigned[0] || null;
+
+    setForm((prev) => {
+      if (pick) {
+        const pickId = String(pick.id);
+        const alreadyAssigned = assigned.some((a) =>
+          staffIdsMatch(a.id, prev.supervisingProvider)
+        );
+        if (alreadyAssigned) {
+          lastAutoSupervisingRef.current = String(prev.supervisingProvider);
+          const current = assigned.find((a) =>
+            staffIdsMatch(a.id, prev.supervisingProvider)
+          );
+          if (current?.fullName && !prev.supervisingProviderName) {
+            return { ...prev, supervisingProviderName: current.fullName };
+          }
+          return prev;
+        }
+        const stillDefault =
+          !prev.supervisingProvider ||
+          staffIdsMatch(prev.supervisingProvider, lastAutoSupervisingRef.current) ||
+          staffIdsMatch(prev.supervisingProvider, prev.provider);
+        if (!stillDefault) return prev;
+
+        lastAutoSupervisingRef.current = pickId;
+        return {
+          ...prev,
+          supervisingProvider: pickId,
+          supervisingProviderName: pick.fullName || "",
+        };
+      }
+
+      if (
+        prev.supervisingProvider &&
+        staffIdsMatch(prev.supervisingProvider, prev.provider)
+      ) {
+        lastAutoSupervisingRef.current = "";
+        return { ...prev, supervisingProvider: "", supervisingProviderName: "" };
+      }
+      return prev;
+    });
+  }, [
+    isOpen,
+    staffAssignedSupervisorRequired,
+    form.provider,
+    selectedProviderAssignedSupervisors,
+  ]);
 
   const setField = (key, value) => {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -714,6 +998,10 @@ export default function NewSessionFormModal({
     const e = {};
     if (!form.clientId) e.clientId = "Required";
     if (!form.provider) e.provider = "Required";
+    const supervisingId = String(form.supervisingProvider || "").trim();
+    if (!supervisingId || supervisingId === "not-available") {
+      e.supervisingProvider = "Required";
+    }
     if (!form.placeOfService) e.placeOfService = "Required";
     if (!form.locationAddress.trim()) e.locationAddress = "Required";
     if (!form.startDateTime) e.startDateTime = "Required";
@@ -771,6 +1059,52 @@ export default function NewSessionFormModal({
     ) {
       e.authId =
         "Pick Billing code again — this authorization is not valid for this client.";
+    } else if (!editingSession && form.excludeSession !== "Yes") {
+      const authRow = selectedClient
+        ? resolveAuthorizationRow(selectedClient, form)
+        : null;
+      const sessionYmd = String(form.startDateTime || "").slice(0, 10);
+      if (
+        authRow &&
+        /^\d{4}-\d{2}-\d{2}$/.test(sessionYmd) &&
+        !authorizationCoversSessionDate(authRow, sessionYmd)
+      ) {
+        e.authId =
+          "Session date is outside this authorization’s start/end dates";
+      }
+      const approved = authorizationApprovedUnits(authRow);
+      if (approved > 0) {
+        const hours = scheduledHoursComputed.num || 0;
+        let occurrences = 1;
+        if (
+          form.recurring === "Repeats" &&
+          form.ends === "After" &&
+          Number.parseInt(form.endAfterOccurrences, 10) > 0
+        ) {
+          occurrences = Number.parseInt(form.endAfterOccurrences, 10);
+        }
+        const required = hoursToAuthUnits(hours) * occurrences;
+        const remaining = authorizationRemainingUnits(authRow);
+        if (required - remaining > 0.009) {
+          e.authId = "No units available to schedule appointments";
+        }
+      }
+    }
+
+    // Recurring with no end can generate ~100 sessions (~2 years weekly).
+    // Require an end bound, or stop at authorization end_date on the server.
+    if (form.recurring === "Repeats" && form.ends === "Never") {
+      const authRow = selectedClient
+        ? resolveAuthorizationRow(selectedClient, form)
+        : null;
+      const authEnd = String(authRow?.end_date ?? authRow?.endDate ?? "").slice(
+        0,
+        10
+      );
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(authEnd)) {
+        e.ends =
+          "Set an end date or occurrence count — open-ended repeats are not allowed without an authorization end date";
+      }
     }
 
     if (form.recurring === "Repeats") {
@@ -799,7 +1133,7 @@ export default function NewSessionFormModal({
       return;
     }
 
-    const scheduledHoursNum = Number.parseFloat(form.scheduledHours) || 0;
+    const scheduledHoursNum = scheduledHoursComputed.num || 0;
     const renderedHoursNum = Number.parseFloat(form.renderedHours) || 0;
 
     const authRowForSubmit = resolveAuthorizationRow(selectedClient, form);
@@ -894,8 +1228,8 @@ export default function NewSessionFormModal({
       payload.supervisingProvider = form.supervisingProvider || "";
       payload.supervisingProviderName = form.supervisingProviderName || "";
       // authCode / authId already set from the form above
-    } else if (form.supervisingProvider) {
-      payload.supervisingProvider = form.supervisingProvider;
+    } else {
+      payload.supervisingProvider = form.supervisingProvider || "";
       payload.supervisingProviderName = form.supervisingProviderName || "";
     }
 
@@ -934,7 +1268,7 @@ export default function NewSessionFormModal({
         });
         handleClose();
       } else {
-        toast.error(schedulingSaveErrorMessage(data));
+        toast.error(schedulingSaveErrorMessage(data) || "Failed to save session");
       }
     } catch (err) {
       toast.error("A server error occurred during submission.");
@@ -1064,7 +1398,9 @@ export default function NewSessionFormModal({
             </DialogTitle>
             <DialogDescription>
               {isCompletedLimitedEdit
-                ? "This session is completed. You can change time, location, supervising provider, and billing code."
+                ? canEditServiceType
+                  ? "This session is completed. You can change time, location, supervising provider, billing code, and service type."
+                  : "This session is completed. You can change time, location, supervising provider, and billing code."
                 : `Fill in the details for the therapy session. Times are shown in your local timezone (${userTimezone}).`}
             </DialogDescription>
           </DialogHeader>
@@ -1149,7 +1485,7 @@ export default function NewSessionFormModal({
                         staff
                           .sort((a, b) => a.fullName.localeCompare(b.fullName))
                           .map((s) => (
-                            <SelectItem key={s.id} value={s.id}>
+                            <SelectItem key={String(s.id)} value={String(s.id)}>
                               {s.fullName} ({s.staffType})
                             </SelectItem>
                           )),
@@ -1158,10 +1494,20 @@ export default function NewSessionFormModal({
                     </div>
                     {renderSelectWithError(
                       "supervisingProvider",
-                      `Supervising Provider`,
-                      form.supervisingProvider,
+                      providerAsSupervisingRequired
+                        ? "Supervising Provider * (same as Provider for this billing code)"
+                        : staffAssignedSupervisorRequired
+                          ? "Supervising Provider * (staff assigned supervisor)"
+                          : "Supervising Provider *",
+                      form.supervisingProvider
+                        ? String(form.supervisingProvider)
+                        : "",
                       (id) => {
-                        const selected = staff.find((s) => s.id === id);
+                        const selected =
+                          staff.find((s) => staffIdsMatch(s.id, id)) ||
+                          selectedProviderAssignedSupervisors.find((s) =>
+                            staffIdsMatch(s.id, id)
+                          );
                         setField("supervisingProvider", id);
                         setField(
                           "supervisingProviderName",
@@ -1169,12 +1515,25 @@ export default function NewSessionFormModal({
                         );
                       },
                       (() => {
-                        const availableSupervisors = staff.filter(
-                          (s) =>
-                            s.id !== form.provider &&
-                            s.status === "Active" &&
-                            s.archived !== "1"
-                        );
+                        // Include current provider so BCBA can be both rendering + supervising
+                        // (required for 97151 / 97155 / 97156 claim Box 31).
+                        const byId = new Map();
+                        for (const s of staff) {
+                          if (
+                            (s.status === "Active" && s.archived !== "1") ||
+                            staffIdsMatch(s.id, form.provider) ||
+                            staffIdsMatch(s.id, form.supervisingProvider)
+                          ) {
+                            byId.set(String(s.id), s);
+                          }
+                        }
+                        for (const assigned of selectedProviderAssignedSupervisors) {
+                          if (!byId.has(String(assigned.id))) {
+                            byId.set(String(assigned.id), assigned);
+                          }
+                        }
+
+                        const availableSupervisors = [...byId.values()];
 
                         if (availableSupervisors.length === 0) {
                           return [
@@ -1183,15 +1542,19 @@ export default function NewSessionFormModal({
                               value="not-available"
                               disabled
                             >
-                              No other staff available
+                              No staff available
                             </SelectItem>,
                           ];
                         }
 
                         return availableSupervisors
-                          .sort((a, b) => a.fullName.localeCompare(b.fullName))
+                          .sort((a, b) =>
+                            String(a.fullName || "").localeCompare(
+                              String(b.fullName || "")
+                            )
+                          )
                           .map((s) => (
-                            <SelectItem key={s.id} value={s.id}>
+                            <SelectItem key={String(s.id)} value={String(s.id)}>
                               {s.fullName} ({s.staffType})
                             </SelectItem>
                           ));
@@ -1472,7 +1835,7 @@ export default function NewSessionFormModal({
                               type="number"
                               step="0.25"
                               min="0"
-                              value={form.scheduledHours}
+                              value={scheduledHoursComputed.label}
                               readOnly
                             />
                             <p className="text-xs text-muted-foreground">
@@ -1523,7 +1886,7 @@ export default function NewSessionFormModal({
                             id="service-type"
                             className={cn(
                               "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                              isCompletedLimitedEdit &&
+                              serviceTypeLocked &&
                                 "bg-muted cursor-not-allowed opacity-90"
                             )}
                             value={
@@ -1531,7 +1894,7 @@ export default function NewSessionFormModal({
                                 ? "Direct"
                                 : "Indirect"
                             }
-                            disabled={isCompletedLimitedEdit}
+                            disabled={serviceTypeLocked}
                             onChange={(e) =>
                               setField("serviceType", e.target.value)
                             }

@@ -24,6 +24,7 @@ export default function AddServiceCodeModal({
   const [form, setForm] = useState({
     code: "",
     code_description: "",
+    supervising_provider_rule: "",
   });
 
   useEffect(() => {
@@ -31,11 +32,13 @@ export default function AddServiceCodeModal({
       setForm({
         code: editingCode.code || "",
         code_description: editingCode.code_description || "",
+        supervising_provider_rule: editingCode.supervising_provider_rule || "",
       });
     } else {
       setForm({
         code: "",
         code_description: "",
+        supervising_provider_rule: "",
       });
     }
   }, [editingCode, isEditing, isOpen]);
@@ -104,6 +107,24 @@ export default function AddServiceCodeModal({
               required
               disabled={loading}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Supervising Provider Rule</Label>
+            <select
+              name="supervising_provider_rule"
+              value={form.supervising_provider_rule || ""}
+              onChange={handleChange}
+              disabled={loading}
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
+              <option value="">Default (no special rule)</option>
+              <option value="provider_as_supervising">Supervising = Provider</option>
+              <option value="staff_assigned_supervisor">Supervising = Staff Assigned Supervisor</option>
+            </select>
+            <p className="text-xs text-slate-500">
+              Used by Scheduling to auto-populate and validate Supervising Provider for this CPT.
+            </p>
           </div>
 
           <div className="flex justify-end gap-3 pt-4">

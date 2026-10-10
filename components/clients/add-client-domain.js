@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Edit, Trash2, Layers } from "lucide-react";
+import { Plus, Edit, Archive, ArchiveRestore, Layers } from "lucide-react";
 import toast, { Toaster } from "react-hot-toast";
 import {
   DEFAULT_DOMAIN_MODULE_KEY,
@@ -17,6 +17,7 @@ import {
 } from "@/lib/domain-module-options";
 import AddDomainModal from "@/components/master-data/add-domain-modal";
 import { mahaverseFetch } from "@/lib/mahaverse-api";
+import { setClientConfigArchived } from "@/lib/client-config-archive";
 
 const generateUUID = () =>
   "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
@@ -67,6 +68,7 @@ export default function DomainsListModal({
   const [loading, setLoading] = useState(false);
   const [isDomainFormOpen, setIsDomainFormOpen] = useState(false);
   const [editingDomain, setEditingDomain] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
     if (isOpen && clientId) {
@@ -85,9 +87,7 @@ export default function DomainsListModal({
 
       if (result.success && result.data.domains) {
         setDomains(
-          (result.data.domains || [])
-            .map(normalizeDomainRow)
-            .filter((d) => d && !d.archived)
+          (result.data.domains || []).map(normalizeDomainRow).filter(Boolean)
         );
       }
     } catch (error) {
@@ -154,35 +154,24 @@ export default function DomainsListModal({
     }
   };
 
-  const handleDeleteDomain = async (domainId) => {
+  const handleToggleArchiveDomain = async (domain) => {
+    const archiving = !domain.archived;
     if (
-      !confirm(
-        "Are you sure you want to delete this domain? Programs and targets under it will also be deleted."
-      )
+      archiving &&
+      !confirm("Archive this domain? You can restore it from Show Archived.")
     ) {
       return;
     }
-
-    try {
-      const res = await mahaverseFetch("/client-modules.php", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          client_id: clientId,
-          domainId,
-        }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (res.ok && json.success) {
-        setDomains((prev) => prev.filter((d) => d.id !== domainId));
-        toast.success("Domain deleted");
-      } else {
-        toast.error(json.message || "Failed to delete domain");
-      }
-    } catch (err) {
-      toast.error("Failed to delete domain");
-    }
+    const ok = await setClientConfigArchived({
+      clientId,
+      kind: "domain",
+      id: domain.id,
+      archived: archiving,
+    });
+    if (ok) await fetchDomains();
   };
+
+  const visibleDomains = domains.filter((d) => !!d.archived === showArchived);
 
   return (
     <>
@@ -197,25 +186,38 @@ export default function DomainsListModal({
           </DialogHeader>
 
           <div className="space-y-4">
-            <Button
-              onClick={handleAddDomain}
-              className="bg-teal-600 hover:bg-teal-700"
-            >
-              <Plus className="h-4 w-4 mr-2" /> Add Domain
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={handleAddDomain}
+                className="bg-teal-600 hover:bg-teal-700"
+              >
+                <Plus className="h-4 w-4 mr-2" /> Add Domain
+              </Button>
+              <Button variant="outline" onClick={() => setShowArchived(!showArchived)}>
+                {showArchived ? (
+                  <>
+                    <ArchiveRestore className="h-4 w-4 mr-2" /> Show Active
+                  </>
+                ) : (
+                  <>
+                    <Archive className="h-4 w-4 mr-2" /> Show Archived
+                  </>
+                )}
+              </Button>
+            </div>
 
             {loading ? (
               <p className="text-center py-8 text-gray-500">Loading...</p>
-            ) : domains.length === 0 ? (
+            ) : visibleDomains.length === 0 ? (
               <Card>
                 <CardContent className="text-center py-12">
                   <Layers className="h-12 w-12 mx-auto text-gray-400 mb-4" />
-                  <p>No domains yet. Create one!</p>
+                  <p>{showArchived ? "No archived domains." : "No domains yet. Create one!"}</p>
                 </CardContent>
               </Card>
             ) : (
               <div className="space-y-2">
-                {domains.map((domain) => {
+                {visibleDomains.map((domain) => {
                   const moduleLabel = getDomainModuleLabel(
                     modules,
                     domain.module_id ||
@@ -261,10 +263,19 @@ export default function DomainsListModal({
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleDeleteDomain(domain.id)}
-                              className="text-red-600 hover:text-red-700"
+                              onClick={() => handleToggleArchiveDomain(domain)}
+                              title={domain.archived ? "Restore" : "Archive"}
+                              className={
+                                domain.archived
+                                  ? "text-green-600 hover:text-green-700"
+                                  : "text-amber-600 hover:text-amber-700"
+                              }
                             >
-                              <Trash2 className="h-4 w-4" />
+                              {domain.archived ? (
+                                <ArchiveRestore className="h-4 w-4" />
+                              ) : (
+                                <Archive className="h-4 w-4" />
+                              )}
                             </Button>
                           </div>
                         </div>

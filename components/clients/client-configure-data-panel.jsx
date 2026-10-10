@@ -21,6 +21,7 @@ import { ProgramsListModal } from "./add-client-program";
 import ClientBehaviorSetupSection from "./client-behavior-setup-section";
 import { TargetsListModal } from "./add-client-target";
 import { DEFAULT_DOMAIN_MODULE_KEY } from "@/lib/domain-module-options";
+import { isRowArchived } from "@/lib/client-config-archive";
 
 export default function ClientConfigureDataPanel({ clientId, clientName }) {
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
@@ -67,6 +68,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
               description: d.description || "",
               module_id: moduleId,
               moduleId,
+              archived: isRowArchived(d),
             };
           }),
         );
@@ -86,6 +88,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
             domainId: p.domainId || p.domain_id,
             client_id: clientId,
             status: p.status || "Active",
+            archived: isRowArchived(p),
           })),
         );
         setTargets(
@@ -105,6 +108,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
             prompts: t.prompts || [],
             tasks: t.tasks || [],
             client_id: clientId,
+            archived: isRowArchived(t),
           })),
         );
         setAllPrompts(prompts);
@@ -127,6 +131,8 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
   useEffect(() => {
     loadClientPrograms();
   }, [loadClientPrograms]);
+
+  const activeDomains = clientDomains.filter((d) => !d.archived);
 
   const handleAddProgram = async (payload) => {
     const program = payload?.programs?.[0] || payload;
@@ -422,7 +428,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
             <CardContent className="text-sm">
               {loading ? (
                 <p className="text-slate-500 py-6 text-center">Loading…</p>
-              ) : clientDomains.length === 0 ? (
+              ) : activeDomains.length === 0 ? (
                 <div className="text-center py-8 text-slate-500 space-y-2">
                   <p>No domains yet.</p>
                   <Button type="button" size="sm" onClick={() => setDomainsOpen(true)}>
@@ -431,9 +437,9 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
                 </div>
               ) : (
                 <ul className="space-y-1">
-                  {clientDomains.map((domain) => {
+                  {activeDomains.map((domain) => {
                     const domainPrograms = programs.filter(
-                      (p) => String(p.domain_id) === String(domain.id),
+                      (p) => !p.archived && String(p.domain_id) === String(domain.id),
                     );
                     const expanded = expandedDomainIds.has(domain.id);
                     return (
@@ -464,7 +470,7 @@ export default function ClientConfigureDataPanel({ clientId, clientName }) {
                             ) : (
                               domainPrograms.map((program) => {
                                 const progTargets = targets.filter(
-                                  (t) => String(t.program_id) === String(program.id),
+                                  (t) => !t.archived && String(t.program_id) === String(program.id),
                                 );
                                 const progExpanded = expandedProgramIds.has(program.id);
                                 return (

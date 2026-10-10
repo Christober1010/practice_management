@@ -32,6 +32,7 @@ import {
   mergeCanonicalDomainModules,
 } from "@/lib/domain-module-options";
 import {
+  activeClientsForAssign,
   filterMasterDataForClientScope,
   findClientByValue,
   isArchivedEntity,
@@ -623,7 +624,7 @@ export default function AddTargetModal({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="generic">Generic (no client)</SelectItem>
-                    {clients
+                    {activeClientsForAssign(clients, selectedClientValue)
                       .map((client) => {
                         const cid = resolveClientRecordId(client);
                         if (!cid) return null;

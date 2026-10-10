@@ -22,11 +22,12 @@ export default function SessionNotesPanel({
 }) {
   const [showEmployeeSignatureDialog, setShowEmployeeSignatureDialog] = useState(false);
   const [showGuardianSignatureDialog, setShowGuardianSignatureDialog] = useState(false);
+  const [activeTab, setActiveTab] = useState("overview");
 
   return (
     <>
       <div className={readOnly ? "pointer-events-none select-none" : undefined}>
-        <Tabs defaultValue="overview" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="sticky top-0 z-10 -mx-6 mb-5 flex flex-wrap justify-start gap-2 border-b border-slate-200 bg-background/95 px-6 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80 pointer-events-auto">
             {[
               { value: "overview", label: "Overview" },
@@ -44,13 +45,7 @@ export default function SessionNotesPanel({
           </TabsList>
 
           <TabsContent value="overview" className="mt-0">
-            <OverviewTab
-              client={client}
-              sessionDate={sessionDate}
-              sessionData={sessionData}
-              sessionNotes={sessionNotes}
-              setSessionNotes={setSessionNotes}
-            />
+            <OverviewTab client={client} sessionDate={sessionDate} sessionData={sessionData} />
           </TabsContent>
 
           <TabsContent value="clinical" className="mt-0">
@@ -80,6 +75,7 @@ export default function SessionNotesPanel({
         isFutureSessionDate={isFutureSessionDate}
         futureCompleteMessage={futureCompleteMessage}
         readOnly={readOnly}
+        hideActions={activeTab === "overview"}
       />
     </>
   );
