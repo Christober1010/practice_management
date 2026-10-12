@@ -344,5 +344,12 @@ test.describe("Session Import (External) — API", () => {
     expect(Object.prototype.hasOwnProperty.call(sample, "remaining_units")).toBeTruthy();
     expect(Object.prototype.hasOwnProperty.call(sample, "weekly_units_required")).toBeTruthy();
     expect(Object.prototype.hasOwnProperty.call(sample, "expiry_date")).toBeTruthy();
+    // Appointment Utilization spreadsheet calc columns
+    expect(Object.prototype.hasOwnProperty.call(sample, "approved_hours")).toBeTruthy();
+    expect(Object.prototype.hasOwnProperty.call(sample, "completed_hours")).toBeTruthy();
+    expect(Object.prototype.hasOwnProperty.call(sample, "scheduled_hours")).toBeTruthy();
+    expect(Object.prototype.hasOwnProperty.call(sample, "remaining_hours")).toBeTruthy();
+    expect(Object.prototype.hasOwnProperty.call(sample, "calc_wks")).toBeTruthy();
+    expect(Object.prototype.hasOwnProperty.call(sample, "weekly_target_hrs")).toBeTruthy();
   });
 });

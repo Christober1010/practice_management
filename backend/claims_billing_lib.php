@@ -1139,9 +1139,32 @@ function cms1500_build_claim_payload(mysqli $conn, array $input, array $options 
     $signingProviderName = $supervisingProvider
         ? trim(($supervisingProvider['firstName'] ?? '') . ' ' . ($supervisingProvider['lastName'] ?? ''))
         : trim((string)($firstSession['supervising_provider_name'] ?? ''));
+    if ($signingProviderName === '' && $supervisingProvider) {
+        $signingProviderName = trim((string)($supervisingProvider['fullName'] ?? ''));
+    }
     $signingProviderNpi = $supervisingProvider ? trim((string)($supervisingProvider['npiNumber'] ?? '')) : '';
+    // 97151 / 97155 / 97156: Box 31 is the rendering provider when session supervising is blank.
     if ($signingProviderName === '') {
-        $warnings[] = 'Supervising provider (Box 31) is empty; set supervising BCBA on the session or staff record.';
+        $procText = trim((string)($firstSession['auth_code'] ?? ''));
+        if (preg_match('/\b(97151|97155|97156)\b/', $procText)) {
+            if ($renderingProvider) {
+                $signingProviderName = trim(
+                    ($renderingProvider['firstName'] ?? '') . ' ' . ($renderingProvider['lastName'] ?? '')
+                );
+                if ($signingProviderName === '') {
+                    $signingProviderName = trim((string)($renderingProvider['fullName'] ?? ''));
+                }
+                if ($signingProviderNpi === '') {
+                    $signingProviderNpi = trim((string)($renderingProvider['npiNumber'] ?? ''));
+                }
+            }
+            if ($signingProviderName === '') {
+                $signingProviderName = trim((string)($firstSession['provider_name'] ?? ''));
+            }
+        }
+    }
+    if ($signingProviderName === '') {
+        $warnings[] = 'Supervising provider (Box 31) is empty; set supervising BCBA on the session (Edit session — supervising provider).';
     }
 
     $billingNpi = cms1500_normalize_npi($location['billing_npi_number'] ?? '');

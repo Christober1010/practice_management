@@ -228,11 +228,17 @@ function resolveSessionLocationAddress(stored, addressOptions) {
 /**
  * Resolve which authorization row to bill. Never trust form.authId alone (stale
  * composite-split ids like 742 from cached bundles / wrong DB parity).
+ * @param {{ includeInactive?: boolean }} [options] — when editing an existing
+ *   session (claim fixes), allow matching expired/inactive auth rows so Save
+ *   is not blocked after the active-only dropdown filter would clear the field.
  */
-function resolveAuthorizationRow(selectedClient, form) {
-  const rows = Array.isArray(selectedClient?.authorizations)
-    ? selectedClient.authorizations.filter(isActiveAuthorization)
+function resolveAuthorizationRow(selectedClient, form, options = {}) {
+  const all = Array.isArray(selectedClient?.authorizations)
+    ? selectedClient.authorizations
     : [];
+  const rows = options.includeInactive
+    ? all
+    : all.filter(isActiveAuthorization);
 
   if (rows.length === 0) return null;
 
@@ -251,48 +257,100 @@ function resolveAuthorizationRow(selectedClient, form) {
 
 const getLocalTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-const convertToUserTimezone = (utcDateString, userTimezone) => {
-  if (!utcDateString || !userTimezone) return "";
+/** Format UTC instant as `YYYY-MM-DDTHH:mm` wall clock in `timeZone`. */
+const convertToUserTimezone = (utcDateString, timeZone) => {
+  if (!utcDateString || !timeZone) return "";
   try {
-    const dateStr = utcDateString.endsWith("Z")
+    const dateStr = /Z$/i.test(utcDateString)
       ? utcDateString
-      : utcDateString.replace(" ", "T") + "Z";
-    const utcDate = new Date(dateStr);
+      : utcDateString.includes("T")
+        ? utcDateString
+        : utcDateString.replace(" ", "T") + "Z";
+    const normalized = /Z$/i.test(dateStr) ? dateStr : `${dateStr}Z`;
+    const utcDate = new Date(normalized);
 
-    if (isNaN(utcDate)) {
+    if (Number.isNaN(utcDate.getTime())) {
       console.error("Invalid UTC date string provided:", utcDateString);
       return "";
     }
 
-    const year = utcDate.getFullYear();
-    const month = String(utcDate.getMonth() + 1).padStart(2, "0");
-    const day = String(utcDate.getDate()).padStart(2, "0");
-    const hours = String(utcDate.getHours()).padStart(2, "0");
-    const minutes = String(utcDate.getMinutes()).padStart(2, "0");
-    return `${year}-${month}-${day}T${hours}:${minutes}`;
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(utcDate);
+    const get = (type) => parts.find((p) => p.type === type)?.value || "";
+    return `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}`;
   } catch (error) {
     console.error("Error converting UTC to user timezone:", error);
     return "";
   }
 };
 
-const convertToUTC = (localDateTimeString, userTimezone) => {
-  if (!localDateTimeString || !userTimezone) return "";
+/**
+ * Interpret `YYYY-MM-DDTHH:mm` as wall clock in `timeZone` and return MySQL UTC.
+ */
+const convertToUTC = (localDateTimeString, timeZone) => {
+  if (!localDateTimeString || !timeZone) return "";
   try {
-    const localDate = new Date(localDateTimeString);
-    const tempDate = new Date(
-      localDate.toLocaleString("en-US", { timeZone: userTimezone })
+    const m = String(localDateTimeString).match(
+      /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/
     );
-    const utcDate = new Date(
-      localDate.getTime() + (localDate.getTime() - tempDate.getTime())
-    );
-    const year = utcDate.getUTCFullYear();
-    const month = String(utcDate.getUTCMonth() + 1).padStart(2, "0");
-    const day = String(utcDate.getUTCDate()).padStart(2, "0");
-    const hours = String(utcDate.getUTCHours()).padStart(2, "0");
-    const minutes = String(utcDate.getUTCMinutes()).padStart(2, "0");
-    const seconds = String(utcDate.getUTCSeconds()).padStart(2, "0");
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    if (!m) return localDateTimeString;
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+    const hour = Number(m[4]);
+    const minute = Number(m[5]);
+    const second = Number(m[6] || 0);
+
+    const dtf = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    });
+    const asParts = (ms) => {
+      const map = {};
+      for (const p of dtf.formatToParts(new Date(ms))) {
+        if (p.type !== "literal") map[p.type] = p.value;
+      }
+      return {
+        year: Number(map.year),
+        month: Number(map.month),
+        day: Number(map.day),
+        hour: Number(map.hour),
+        minute: Number(map.minute),
+        second: Number(map.second),
+      };
+    };
+
+    let utcMillis = Date.UTC(year, month - 1, day, hour, minute, second);
+    for (let i = 0; i < 3; i++) {
+      const got = asParts(utcMillis);
+      const wanted = Date.UTC(year, month - 1, day, hour, minute, second);
+      const gotAs = Date.UTC(
+        got.year,
+        got.month - 1,
+        got.day,
+        got.hour,
+        got.minute,
+        got.second
+      );
+      utcMillis += wanted - gotAs;
+    }
+
+    const d = new Date(utcMillis);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
   } catch (error) {
     console.error("Error converting to UTC:", error);
     return localDateTimeString;
@@ -630,10 +688,17 @@ export default function NewSessionFormModal({
         if (row) resolvedAuthCode = authorizationBillingCodeLabel(row);
       }
       if (!extractedAuthId && resolvedAuthCode) {
+        // Prefer active matches for new booking UX; fall back to any auth when
+        // editing a completed/ready-to-bill session (claim Box 31 fixes).
         const activeRows = authList.filter(isActiveAuthorization);
-        const matches = activeRows.filter((a) =>
+        let matches = activeRows.filter((a) =>
           authorizationBillingCodeMatches(a, resolvedAuthCode)
         );
+        if (matches.length !== 1) {
+          matches = authList.filter((a) =>
+            authorizationBillingCodeMatches(a, resolvedAuthCode)
+          );
+        }
         if (matches.length === 1) {
           extractedAuthId = authorizationPk(matches[0]);
           resolvedAuthCode = authorizationBillingCodeLabel(matches[0]);
@@ -869,13 +934,23 @@ export default function NewSessionFormModal({
     if (!isOpen || !form.authId || !selectedClient?.authorizations?.length) {
       return;
     }
+    // Editing (claim fixes): never wipe the session billing code — active-only
+    // resolve was clearing authId and blocking Save (Box 31 warning stuck).
+    if (editingSession?.sessionId) return;
     if (resolveAuthorizationRow(selectedClient, form)) return;
     setForm((prev) =>
       prev.authId || prev.authCode
         ? { ...prev, authId: "", authCode: "" }
         : prev
     );
-  }, [isOpen, selectedClient, form.authId, form.authCode, form.clientId]);
+  }, [
+    isOpen,
+    selectedClient,
+    form.authId,
+    form.authCode,
+    form.clientId,
+    editingSession?.sessionId,
+  ]);
 
   // Prefill supervising = provider for 97151 / 97155 / 97156, but keep the field editable.
   useEffect(() => {
@@ -1052,16 +1127,19 @@ export default function NewSessionFormModal({
       e.endDateTime = "End must be after Start";
     }
 
+    const authResolveOpts = editingSession?.sessionId
+      ? { includeInactive: true }
+      : {};
     if (!form.authId) e.authId = "Required";
     else if (
       selectedClient &&
-      !resolveAuthorizationRow(selectedClient, form)
+      !resolveAuthorizationRow(selectedClient, form, authResolveOpts)
     ) {
       e.authId =
         "Pick Billing code again — this authorization is not valid for this client.";
     } else if (!editingSession && form.excludeSession !== "Yes") {
       const authRow = selectedClient
-        ? resolveAuthorizationRow(selectedClient, form)
+        ? resolveAuthorizationRow(selectedClient, form, authResolveOpts)
         : null;
       const sessionYmd = String(form.startDateTime || "").slice(0, 10);
       if (
@@ -1136,7 +1214,9 @@ export default function NewSessionFormModal({
     const scheduledHoursNum = scheduledHoursComputed.num || 0;
     const renderedHoursNum = Number.parseFloat(form.renderedHours) || 0;
 
-    const authRowForSubmit = resolveAuthorizationRow(selectedClient, form);
+    const authRowForSubmit = resolveAuthorizationRow(selectedClient, form, {
+      includeInactive: Boolean(editingSession?.sessionId),
+    });
     if (!authRowForSubmit) {
       toast.error(
         "Billing authorization is missing or does not match this client. Open Billing code and select again. If it keeps failing, refresh the page so clients reload from the API (database must match the server)."
